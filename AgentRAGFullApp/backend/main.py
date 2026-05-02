@@ -185,7 +185,10 @@ async def lifespan(app: FastAPI):
         register_tool("verify_rue_persona", verify_rue_persona_tool)
         register_tool("fetch_dof_co_publicacion", fetch_dof_co_publicacion_tool)
         register_tool("fetch_banrep_dtf", fetch_banrep_dtf_tool)
-        logger.info("LexAI Realtime tools registered (35 total)")
+        # F3 · Subagent delegation (aditivo, no remueve tools existentes)
+        from agent.subagents.registry import delegate_to_tool
+        register_tool("delegate_to", delegate_to_tool)
+        logger.info("LexAI Realtime tools registered (36 total · 3 sub-agentes)")
     except Exception as e:
         logger.warning("LexAI tool registration failed (non-fatal): %s", e)
 

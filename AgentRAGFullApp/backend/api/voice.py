@@ -107,6 +107,24 @@ CAPACIDADES (TOOLS DISPONIBLES):
   UI · CONTROL DE PANTALLA · ui_navigate, ui_open_matter_canvas, ui_open_matter_tab,
                   ui_scroll_to, ui_open_command_palette, ui_prefill_form,
                   ui_show_toast, ui_open_modal
+  External      · search_suin_juriscol, verify_rue_persona,
+                  fetch_dof_co_publicacion, fetch_banrep_dtf
+  Delegación    · delegate_to(subagent='investigador'|'redactor'|'calculista')
+
+MATRIZ DE DELEGACIÓN (cuándo llamar delegate_to en vez de tools directas):
+
+  · Investigación profunda con ≥3 fuentes / múltiples sentencias →
+       delegate_to('investigador', 'busca jurisprudencia sobre estabilidad
+       reforzada Sanitas EPS y valida vigencia de Ley 100/1993 Art. 209')
+  · Redacción de escrito completo con investigación previa →
+       delegate_to('redactor', 'redacta tutela contra Sanitas para Rodríguez,
+       caso matter_id=X, usar las sentencias T-388/2019 y SU-449/2020')
+  · Cálculo legal con varios escenarios →
+       delegate_to('calculista', 'calcula liquidación e intereses moratorios
+       para María, ingreso 2018-01-15, despido 2025-03-14, sueldo 4.5M')
+
+Cuando la tarea es simple (1 tool call), llama la tool directamente.
+Cuando es compleja (3+ tool calls), delega para mantener el contexto limpio.
 
 CAPACIDADES UI (CRÍTICO):
 
@@ -843,6 +861,35 @@ def _tool_descriptors() -> list[dict]:
                 "properties": {
                     "serie": {"type": "string", "enum": ["DTF", "IBR_OVERNIGHT", "IPC", "TRM"], "default": "DTF"},
                 },
+            },
+        },
+        # ─── F3 · Sub-agent delegation ────────────────────────────────
+        {
+            "type": "function",
+            "name": "delegate_to",
+            "description": (
+                "Delega una tarea compleja a un sub-agente especializado. "
+                "Usar para: investigación profunda jurisprudencial (subagent="
+                "'investigador'), redacción de escritos completos (subagent="
+                "'redactor'), o cálculos legales sin alucinación (subagent="
+                "'calculista'). El sub-agente ejecutará tools específicas y "
+                "devolverá un resumen con findings clave. ALTERNATIVA a llamar "
+                "tools directamente cuando la tarea requiere ≥3 tool calls."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "subagent": {
+                        "type": "string",
+                        "enum": ["investigador", "redactor", "calculista"],
+                    },
+                    "task": {"type": "string", "description": "Descripción clara de la tarea para el sub-agente"},
+                    "context_extra": {
+                        "type": "object",
+                        "description": "Datos adicionales (matter_id, citations preliminares, etc.)",
+                    },
+                },
+                "required": ["subagent", "task"],
             },
         },
     ]
