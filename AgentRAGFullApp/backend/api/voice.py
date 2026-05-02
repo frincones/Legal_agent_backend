@@ -99,10 +99,39 @@ CAPACIDADES (TOOLS DISPONIBLES):
   Caso          · open_matter_context (carga partes/plazos/timeline del caso activo)
   Gestión       · list_my_matters, find_client, list_upcoming_deadlines,
                   add_matter_deadline, mark_deadline_done, add_matter_note,
-                  list_matter_documents, summarize_document
+                  list_matter_documents, summarize_document, extract_document_entities
   Aprobación    · list_pending_hitl, request_human_approval
   Métricas      · get_firm_metrics (mes/semana del despacho)
   Drafting      · draft_pleading (escribe a Live Canvas en streaming)
+  Judicial      · subscribe_to_expediente, list_judicial_notifications, poll_judicial_now
+  UI · CONTROL DE PANTALLA · ui_navigate, ui_open_matter_canvas, ui_open_matter_tab,
+                  ui_scroll_to, ui_open_command_palette, ui_prefill_form,
+                  ui_show_toast, ui_open_modal
+
+CAPACIDADES UI (CRÍTICO):
+
+Eres un agente con AGENCIA SOBRE LA UI del abogado. NO te limites a hablar:
+ABRE PANTALLAS, LLENA FORMULARIOS, MUESTRA SECCIONES. Cuando el abogado pide
+"ábreme", "muéstrame", "llévame a", "trabajemos en", USA las tools ui_*.
+
+Reglas:
+
+  · "Ábreme el canvas del caso X" → ui_open_matter_canvas(matter_id=X)
+  · "Muéstrame las partes del caso X" → ui_open_matter_tab(matter_id=X, tab="Partes")
+  · "Llévame a calendario / a casos / a clientes" → ui_navigate(path="/calendario")
+  · "Llena la liquidación con sueldo 4.5 millones, ingreso enero 2019" →
+       ui_prefill_form(form="liquidacion", values={salarioMensual: 4500000,
+       fechaIngreso: "2019-01-15"}, submit=false)
+  · "Calcula prescripción civil ordinaria desde 2020" →
+       ui_navigate("/calc/prescripcion") + ui_prefill_form("prescripcion", {...}, submit=true)
+  · "Buscador" / "abre el buscador" → ui_open_command_palette()
+  · "Sube a la sección X" / "Bájame a documentos" → ui_scroll_to(target="documentos")
+
+Encadena: si el abogado pide "redactemos la tutela de Rodríguez", primero
+find_client → open_matter_context → ui_open_matter_canvas → draft_pleading.
+
+NO confirmes "abriendo..." mientras hablas. Llama la tool y describe el resultado
+al final con una frase corta ("Listo, abrí el canvas de Rodríguez").
 
 REGLAS ABSOLUTAS:
 
@@ -619,6 +648,139 @@ def _tool_descriptors() -> list[dict]:
             ),
             "parameters": {"type": "object", "properties": {}},
         },
+        # ─── F1 v2 · UI Bridge · controla el browser del abogado ──────
+        {
+            "type": "function",
+            "name": "ui_navigate",
+            "description": (
+                "Navega a una ruta de la aplicación. Usar cuando el abogado "
+                "diga 'ábreme', 'muéstrame', 'llévame a', 've a'. Paths "
+                "permitidos: /inicio, /casos, /casos/:id, /casos/:id/canvas, "
+                "/casos/nuevo, /clientes, /clientes/:id, /clientes/nuevo, "
+                "/calendario, /documentos, /notificaciones, /liquidacion, "
+                "/calc/prescripcion, /calc/intereses, /canvas, "
+                "/settings/despacho, /settings/privacidad."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "ui_open_matter_canvas",
+            "description": (
+                "Abre el Live Canvas de un caso para redactar/dictar. Atajo "
+                "preferido cuando el abogado dice 'trabajemos en Canvas', "
+                "'dictemos alegatos para X', 'redactemos en X'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "matter_id": {"type": "string", "description": "uuid del matter (default: matter_id activo)"},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "name": "ui_open_matter_tab",
+            "description": (
+                "Abre el detalle del caso y selecciona una pestaña específica. "
+                "Cuando el abogado dice 'muéstrame las partes del caso X' "
+                "o 'enseñame la cronología'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "matter_id": {"type": "string"},
+                    "tab": {
+                        "type": "string",
+                        "enum": ["Resumen", "Análisis IA", "Cronología", "Documentos", "Partes", "Notas", "Calendario"],
+                    },
+                },
+                "required": ["tab"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "ui_scroll_to",
+            "description": (
+                "Hace scroll a una sección dentro de la página actual. "
+                "Usa el atributo data-scroll-target. Cuando el abogado dice "
+                "'muéstrame la sección X', 'sube a X', 'bájame a X'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"target": {"type": "string"}},
+                "required": ["target"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "ui_open_command_palette",
+            "description": "Abre el Command Palette (⌘K) opcionalmente con query inicial.",
+            "parameters": {
+                "type": "object",
+                "properties": {"initial_query": {"type": "string"}},
+            },
+        },
+        {
+            "type": "function",
+            "name": "ui_prefill_form",
+            "description": (
+                "Pre-llena un formulario con valores dictados por voz. "
+                "Usar cuando el abogado dicta datos de un cálculo/registro. "
+                "Forms disponibles: 'liquidacion' (trabajadorNombre, "
+                "fechaIngreso, fechaTerminacion, salarioMensual, causa, "
+                "tipoContrato, salarioIntegral); 'prescripcion' (caseLabel, "
+                "tipoAccion, fechaExigibilidad, fechaInterrupcion); "
+                "'intereses' (caseLabel, tipoInteres, capital, fechaInicio, "
+                "fechaFin, tasaAnual, base, metodo); 'new_matter' (clientId, "
+                "titulo, materia, tribunal, expediente, priority); "
+                "'new_client' (tipo, nombre, taxId, personalId, email, telefono, vip)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "form": {
+                        "type": "string",
+                        "enum": ["liquidacion", "prescripcion", "intereses", "new_matter", "new_client"],
+                    },
+                    "values": {"type": "object", "description": "Mapa parcial de campos a setear"},
+                    "submit": {"type": "boolean", "default": False, "description": "Si true, envía el form tras rellenar"},
+                },
+                "required": ["form", "values"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "ui_show_toast",
+            "description": "Muestra un toast notification breve al usuario (info/success/warning/error).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message": {"type": "string"},
+                    "variant": {"type": "string", "enum": ["info", "success", "warning", "error"]},
+                },
+                "required": ["message"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "ui_open_modal",
+            "description": "Abre un modal de confirmación con título, cuerpo y botones aceptar/cancelar.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "body": {"type": "string"},
+                    "confirm_label": {"type": "string"},
+                    "cancel_label": {"type": "string"},
+                },
+                "required": ["title", "body"],
+            },
+        },
     ]
 
 
@@ -913,6 +1075,24 @@ async def _handle_function_call(
             result = {"error": str(e)}
 
     duration_ms = int((time.time() - started) * 1000)
+
+    # F1 · UI BRIDGE
+    # Si la tool retorna `_ui_command` en su resultado, lo relayamos al browser
+    # como evento separado ANTES de enviar el output al modelo. El modelo recibe
+    # el resultado SIN el `_ui_command` (campo strippeado) para no contaminar
+    # el contexto. El browser escucha 'ui.command' y ejecuta la acción.
+    ui_command = None
+    if isinstance(result, dict) and "_ui_command" in result:
+        ui_command = result.pop("_ui_command")
+        try:
+            await websocket.send_json({
+                "type": "ui.command",
+                "id": call_id,
+                "tool": name,
+                "command": ui_command,
+            })
+        except Exception as e:
+            logger.warning("failed to relay ui.command: %s", e)
 
     await websocket.send_json({
         "type": "tool.finished",

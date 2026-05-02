@@ -162,7 +162,21 @@ async def lifespan(app: FastAPI):
         register_tool("subscribe_to_expediente", subscribe_to_expediente_tool)
         register_tool("list_judicial_notifications", list_judicial_notifications_tool)
         register_tool("poll_judicial_now", poll_judicial_now_tool)
-        logger.info("LexAI Realtime tools registered (23 total)")
+        # F1 v2 · UI bridge
+        from agent.tools.ui_bridge import (
+            ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
+            ui_scroll_to_tool, ui_open_command_palette_tool, ui_prefill_form_tool,
+            ui_show_toast_tool, ui_open_modal_tool,
+        )
+        register_tool("ui_navigate", ui_navigate_tool)
+        register_tool("ui_open_matter_canvas", ui_open_matter_canvas_tool)
+        register_tool("ui_open_matter_tab", ui_open_matter_tab_tool)
+        register_tool("ui_scroll_to", ui_scroll_to_tool)
+        register_tool("ui_open_command_palette", ui_open_command_palette_tool)
+        register_tool("ui_prefill_form", ui_prefill_form_tool)
+        register_tool("ui_show_toast", ui_show_toast_tool)
+        register_tool("ui_open_modal", ui_open_modal_tool)
+        logger.info("LexAI Realtime tools registered (31 total)")
     except Exception as e:
         logger.warning("LexAI tool registration failed (non-fatal): %s", e)
 
