@@ -1253,10 +1253,6 @@ async def _handle_function_call(
     duration_ms = int((time.time() - started) * 1000)
 
     # F1 · UI BRIDGE
-    # Si la tool retorna `_ui_command` en su resultado, lo relayamos al browser
-    # como evento separado ANTES de enviar el output al modelo. El modelo recibe
-    # el resultado SIN el `_ui_command` (campo strippeado) para no contaminar
-    # el contexto. El browser escucha 'ui.command' y ejecuta la acción.
     ui_command = None
     if isinstance(result, dict) and "_ui_command" in result:
         ui_command = result.pop("_ui_command")
@@ -1269,6 +1265,19 @@ async def _handle_function_call(
             })
         except Exception as e:
             logger.warning("failed to relay ui.command: %s", e)
+
+    # F6 · trace per-tool-call (no bloqueante, no levanta)
+    asyncio.create_task(_persist_trace(
+        kind="tool_call",
+        name=name,
+        firm_id=ctx.get("firm_id"),
+        matter_id=ctx.get("matter_id"),
+        session_id=ctx.get("session_id"),
+        input_obj=args,
+        output_obj=result,
+        duration_ms=duration_ms,
+        error=(result.get("error") if isinstance(result, dict) else None),
+    ))
 
     await websocket.send_json({
         "type": "tool.finished",
@@ -1334,6 +1343,49 @@ def _preview(obj: Any, max_chars: int = 220) -> Any:
 # ─────────────────────────────────────────────────────────────────────
 # Persistence
 # ─────────────────────────────────────────────────────────────────────
+
+
+async def _persist_trace(
+    *,
+    kind: str,
+    name: str,
+    firm_id: Optional[str],
+    matter_id: Optional[str],
+    session_id: Optional[str],
+    input_obj: Any = None,
+    output_obj: Any = None,
+    duration_ms: Optional[int] = None,
+    tokens_in: Optional[int] = None,
+    tokens_out: Optional[int] = None,
+    cost_usd: Optional[float] = None,
+    error: Optional[str] = None,
+) -> None:
+    """F6 · best-effort trace persist. Never raises."""
+    if not firm_id:
+        return
+    try:
+        from utils.db import get_storage
+        storage = await get_storage()
+        if not hasattr(storage, "pool"):
+            return
+        async with storage.pool.acquire() as conn:
+            await conn.execute(
+                """
+                insert into agent_traces
+                  (firm_id, matter_id, session_id, kind, name, input,
+                   output_preview, duration_ms, tokens_in, tokens_out,
+                   cost_usd, error)
+                values
+                  ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6::jsonb,
+                   $7::jsonb, $8, $9, $10, $11, $12)
+                """,
+                firm_id, matter_id, session_id, kind, name,
+                json.dumps(_preview(input_obj), default=str) if input_obj is not None else None,
+                json.dumps(_preview(output_obj), default=str) if output_obj is not None else None,
+                duration_ms, tokens_in, tokens_out, cost_usd, error,
+            )
+    except Exception as e:
+        logger.debug("trace persist failed: %s", e)
 
 
 async def _persist_voice_session(session_id: str, metrics: dict) -> None:
