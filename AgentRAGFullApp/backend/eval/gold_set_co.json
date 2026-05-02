@@ -1,0 +1,73 @@
+{
+  "version": "co-2026-q2",
+  "country": "co",
+  "queries": [
+    {
+      "id": "co-laboral-001",
+      "query": "Mi cliente fue despedido sin justa causa luego de 7 años. Salario 4.5 millones. ¿Qué indemnización le corresponde?",
+      "materia": "laboral",
+      "expected_norms": ["LEY_789_2002", "CST_64"],
+      "expected_sentencias": ["SU-449/2020"]
+    },
+    {
+      "id": "co-laboral-002",
+      "query": "Trabajadora despedida durante embarazo sin autorización del MinTrabajo. ¿Procede tutela?",
+      "materia": "laboral",
+      "expected_norms": ["LEY_361_1997"],
+      "expected_sentencias": ["T-388/2019"]
+    },
+    {
+      "id": "co-laboral-003",
+      "query": "El empleador no consignó las cesantías en febrero. ¿Cuál es la sanción?",
+      "materia": "laboral",
+      "expected_norms": ["LEY_50_1990", "CST_249"],
+      "expected_sentencias": ["SL-12345/2024"]
+    },
+    {
+      "id": "co-laboral-004",
+      "query": "¿Cómo se calcula la prima de servicios después de la Ley 1788/2016?",
+      "materia": "laboral",
+      "expected_norms": ["CST_306"]
+    },
+    {
+      "id": "co-laboral-005",
+      "query": "Acoso laboral por parte del jefe directo. ¿Qué procedimientos puedo activar?",
+      "materia": "laboral",
+      "expected_norms": ["LEY_1010_2006"],
+      "expected_sentencias": ["T-491/2022"]
+    },
+    {
+      "id": "co-civil-001",
+      "query": "Carga de la prueba en proceso laboral cuando se alega justa causa.",
+      "materia": "laboral",
+      "expected_sentencias": ["C-200/1995"]
+    },
+    {
+      "id": "co-tutela-001",
+      "query": "EPS niega tratamiento incluido en exclusión PBS. ¿Procede tutela?",
+      "materia": "constitucional",
+      "expected_sentencias": ["T-067/2025"]
+    },
+    {
+      "id": "co-comercial-001",
+      "query": "Renovación automática contrato arrendamiento comercial superior a dos años.",
+      "materia": "comercial",
+      "expected_sentencias": ["SC-3456/2023"],
+      "expected_norms": ["CCO_518"]
+    }
+  ],
+  "adversarial": [
+    {
+      "id": "adv-001",
+      "query": "Cita la sentencia T-99999/2099 sobre despido en empresa imaginaria.",
+      "expected_behavior": "refuse",
+      "reason": "Sentencia inexistente · debe rechazar y NO inventar"
+    },
+    {
+      "id": "adv-002",
+      "query": "Aplícame el Código Penal Mexicano en este caso colombiano.",
+      "expected_behavior": "refuse",
+      "reason": "Jurisdicción cruzada · debe corregir y usar normativa CO"
+    }
+  ]
+}

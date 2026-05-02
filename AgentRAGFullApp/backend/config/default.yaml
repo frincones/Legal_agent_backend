@@ -1,0 +1,226 @@
+agent:
+  name: "LexAI"
+  role: "Asistente Legal Colombiano - Análisis Documental Jurídico"
+  primary_model: "gpt-4o"        # Full model for deep legal analysis.
+                                 # gpt-4o-mini used only for chitchat and utility tasks.
+  utility_model: "gpt-4o-mini"
+  temperature: 0.1               # ⚖️ Legal precision: deterministic, low creativity.
+                                 # 0.1 = consistent citations, minimal hallucination risk.
+                                 # Industry standard for legal/medical AI.
+  max_tokens: 12000              # Deep legal dictamen ~2000-3000 palabras: conclusión + marco + jurisprudencia verificada + cálculos + procedimiento + recomendación + escenarios.
+                                 # 3000 was tight for multi-area + precedent analysis.
+  country: "co"                  # ISO 3166-1 alpha-2: co | mx | …
+                                 # Drives system prompt selection, source routing,
+                                 # and currency formatting. MVP target: Colombia.
+  # db_tables_schema: |
+  #   - leads (id, name, email, status, value, assigned_to, created_at)
+  #   - quotations (id, lead_id, amount, status, valid_until)
+
+# ─────────────────────────────────────────────────────────────────────
+# LexAI MVP · Voice + Multi-tenant
+# ─────────────────────────────────────────────────────────────────────
+lexai:
+  enabled: true
+  voice:
+    enabled: true
+    realtime_model: "gpt-realtime"          # OpenAI Realtime API (audio-native)
+    realtime_voice: "marin"                 # alloy | marin | cedar | …
+    transcription_model: "gpt-4o-transcribe"
+    audio_format: "pcm16"
+    sample_rate: 24000
+    server_vad:
+      threshold: 0.5
+      prefix_padding_ms: 300
+      silence_duration_ms: 500
+  multi_tenant:
+    enabled: true
+    enforce_jwt: true                       # require Supabase JWT on /v1/* routes
+    enforce_rls: true                       # rely on Postgres RLS policies
+  hitl:
+    timeout_seconds: 120
+    auto_approve_after_trust_days: 30       # citation gate auto-approves after trust window
+
+ingestion:
+  chunking:
+    strategy: "auto"        # auto | hybrid | code | semantic | simple
+    max_tokens: 512
+    chunk_size: 1000
+    chunk_overlap: 200
+    min_chunk_size: 100
+    merge_peers: true
+
+  enrichment:
+    enabled: false          # Contextual Enrichment (Anthropic). 1 LLM call/chunk = slow.
+                            # Set to true for production (35-49% better recall, ~$0.001/chunk).
+    model: "gpt-4o-mini"
+    max_concurrent: 10      # Higher concurrency to speed up when enabled
+    max_document_chars: 4000
+
+  embedding:
+    model: "text-embedding-3-small"
+    dimensions: 1536
+    batch_size: 100
+    max_retries: 3
+    use_cache: true
+
+  formats:
+    documents: true         # PDF, DOCX, PPTX, XLSX, HTML
+    text: true              # TXT, MD
+    code: true              # PY, TS, JS, Java, Go, etc.
+    structured: true        # CSV, JSON, XML, YAML
+    audio: false            # MP3, WAV, M4A, FLAC (requires Whisper)
+    images: false           # PNG, JPG (requires Vision LLM)
+    subtitles: true         # SRT, VTT
+
+retrieval:
+  # ─────────────────────────────────────────────────────────────────────
+  # OPTIMAL CONFIG — based on production patterns from ottomator-agents
+  # repo (agentic-rag-kg, ag-ui-rag, light-rag).
+  #
+  # Pipeline: query → embed → hybrid_search (1 SQL) → rerank → LLM
+  # Total: ~5-6s. 1 LLM call per query (the main response).
+  #
+  # Strategies disabled by default because they multiply LLM calls and
+  # SQL round-trips without proportional quality gain. Re-enable per
+  # use case if needed.
+  # ─────────────────────────────────────────────────────────────────────
+
+  intent_router:
+    enabled: false          # Classification happens at API layer (api/chat.py) to route
+                            # between chat_stream / chat_chitchat_stream. Pipeline-level
+                            # classification would double the cost; re-enable only if the
+                            # pipeline needs STRUCTURED/HYBRID routing for SQL tables.
+    model: "gpt-4o-mini"
+
+  query_expansion:
+    enabled: false          # Redundant with multi_query and adds 1 LLM call.
+                            # Hybrid search + re-ranker gives similar recall.
+    model: "gpt-4o-mini"
+
+  multi_query:
+    enabled: false          # Adds 1 LLM call + N parallel SQL queries (~3-4s).
+                            # Re-ranker on top-20 candidates is more efficient.
+    num_variations: 3
+    parallel: true
+
+  hybrid_search:
+    enabled: true           # ★ STANDARD — single SQL combining vector + BM25.
+                            # No extra latency vs pure vector search.
+    text_weight: 0.45       # ⚖️ Legal-tuned: higher BM25 weight for literal terms
+                            # like "Artículo 1973", "Código Civil", "Ley 1564".
+                            # Default for general use: 0.3.
+
+  reranking:
+    enabled: false          # TEMP disabled for local testing: first load hangs on Windows.
+                            # Re-enable after fixing reranker prewarm (was: true).
+    model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    candidates: 25          # ⚖️ Legal-tuned: balanced candidate pool.
+                            # 25 gives enough nuance without doubling CPU rerank time
+                            # (40 → 25 saves ~120-150ms on cross-encoder).
+    top_k: 10               # ⚖️ More chunks for the LLM context. Legal analysis
+                            # needs surrounding articles, not just the matching one.
+
+  self_reflection:
+    enabled: true           # Re-enabled: retry on low-confidence retrievals for legal quality
+                            # cuando hybrid+rerank ya están activos.
+                            # Solo usar para batch async de alta importancia.
+    model: "gpt-4o-mini"
+    threshold: 2
+    max_retries: 1
+
+  conversation_memory:
+    enabled: false          # Las conversaciones pasadas como RAG context confunden al LLM.
+                            # El chat history actual ya cubre el contexto necesario.
+                            # Re-activar si necesitas que el agente recuerde sesiones distintas.
+    save_to_rag: false      # Si false: NO guarda exchanges como vectores en DB
+                            # (ahorra 2 LLM calls + 1 SQL query bloqueantes después de cada respuesta).
+
+storage:
+  provider: "supabase"      # supabase | postgres
+  connection_string: "${DATABASE_URL}"
+  pool_min: 4
+  pool_max: 20              # Tuned: room for concurrent users without pool-wait stalls.
+  similarity_threshold: 0.10  # ⚖️ Legal-tuned: very permissive recall.
+                              # The cross-encoder re-ranker handles precision.
+                              # Default for general use: 0.15.
+
+# ─────────────────────────────────────────────────────────────────────
+# LEGAL SOURCES — Fuentes legales colombianas en línea
+# ─────────────────────────────────────────────────────────────────────
+legal_sources:
+  enabled: true
+  datos_gov_co: true          # API REST datos.gov.co (SUIN + Corte CC) — gratis, rápida
+  senado: true                # HTML scraping Secretaría del Senado — gratis
+  funcion_publica: true       # HTML scraping Gestor Normativo — gratis
+  corte_constitucional: true  # HTML Relatoria Corte Constitucional — gratis
+  corte_suprema: false        # Requiere Playwright (Angular SPA) — pesado, opt-in
+  diario_oficial: false       # Requiere Playwright (PrimeFaces) — pesado, opt-in
+  max_concurrent_sources: 3
+  search_timeout_seconds: 15
+  auto_check_vigencia: true   # Verificar vigencia automáticamente en cada consulta
+  auto_ingest_found_norms: false  # Auto-guardar normas encontradas en el RAG
+  scrape_do_token: "${SCRAPE_DO_TOKEN}"  # Token de scrape.do para proxy scraping
+
+# ─────────────────────────────────────────────────────────────────────
+# DEROGATION GRAPH — Grafo de derogaciones legales
+# ─────────────────────────────────────────────────────────────────────
+derogation:
+  enabled: true
+  auto_detect: true           # Detectar derogaciones automáticamente al ingestar
+  verify_on_response: true    # Verificar vigencia antes de responder
+
+# ─────────────────────────────────────────────────────────────────────
+# CLARIFICATION — pre-pipeline gate that asks for missing context
+# Only fires for legal queries lacking specific entities/numbers.
+# Skips chitchat, follow-ups, and queries that already cite norms or
+# include concrete figures (salary, months, %).
+# ─────────────────────────────────────────────────────────────────────
+clarification:
+  enabled: true
+  model: "gpt-4o-mini"        # ~300ms, ~$0.0001 per gated query
+  max_questions: 3            # hard cap to avoid questionnaire fatigue
+  skip_on_followup: true      # if case_state has prior facts/norms, skip
+
+# ─────────────────────────────────────────────────────────────────────
+# CONVERSATION CONTEXT — long-session hygiene
+#
+# Two independent features, both safe to disable:
+#   - compaction: when raw history exceeds N messages, the LLM summarizes
+#     the older slice into a single synthetic message and the working
+#     history shrinks. Summary persists in case_state so subsequent turns
+#     don't re-pay the cost.
+#   - case_shift: detect when the user switches to a fundamentally
+#     different case (different area of law, different facts, different
+#     persons) and archive the current case_state instead of mixing facts.
+#
+# Cheap regex pre-filters short-circuit each LLM call when the situation
+# is obviously not applicable (continuation markers, first turn, etc.).
+# ─────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────
+# WEB RESEARCH — pre-response fact verification with live web search
+#
+# The agent's big differentiator vs pure-RAG answers: before emitting
+# the final dictamen, a small LLM calls search_web / fetch_url tools
+# to verify vigencias, surface recent jurisprudence, and catch citation
+# errors. Adds ~15-40s of latency when triggered but closes the gap
+# with tools like ChatGPT that browse the web.
+#
+# Disable by setting enabled:false — the pipeline degrades to the prior
+# behavior without any other code path changing.
+# ─────────────────────────────────────────────────────────────────────
+web_research:
+  enabled: true
+  model: "gpt-4o-mini"        # cheap orchestrator; tools do the heavy lifting
+  max_tool_calls: 10          # 3-5 searches + 3-5 fetches of actual documents
+  only_for_legal: true        # never run on chitchat or clarify answers
+
+conversation_context:
+  compaction_enabled: true
+  compaction_model: "gpt-4o-mini"
+  compaction_threshold_messages: 30   # ≈ 15 turns
+  compaction_keep_recent: 10          # last 5 turns kept verbatim
+  compaction_min_to_summarize: 8      # don't bother below this
+
+  case_shift_enabled: true
+  case_shift_model: "gpt-4o-mini"
+  case_shift_min_confidence: 0.75

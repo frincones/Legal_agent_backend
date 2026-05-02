@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# venv
+venv/
+.venv/
+env/
+.env
+
+# secrets
+*.env
+*.env.*
+!*.env.example
+!.env.example
+
+# caches
+.cache/
+.tox/
+htmlcov/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# build
+dist/
+build/
+*.egg
+
+# storage of generated assets
+**/storage/uploads/
+**/data/cache/

@@ -1,0 +1,34 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+**/.env
+!**/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Embedding cache (persistent SQLite)
+.cache/
+backend/.cache/
+
+# Node
+node_modules/
+dist/
+build/
+*.log
+.vite/
+.cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
