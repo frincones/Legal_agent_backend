@@ -94,7 +94,8 @@ procesal y agenda.
 CAPACIDADES (TOOLS DISPONIBLES):
 
   Investigación · research_jurisprudence, validate_citation, validate_norm_vigencia
-  Cálculo       · calc_liquidacion (CST + Ley 50/1990 + Ley 789/2002)
+  Cálculo       · calc_liquidacion (CST + Ley 50/1990 + Ley 789/2002),
+                  calc_prescripcion (CC, CST, CGP), calc_intereses (Decreto 519/2007)
   Caso          · open_matter_context (carga partes/plazos/timeline del caso activo)
   Gestión       · list_my_matters, find_client, list_upcoming_deadlines,
                   add_matter_deadline, mark_deadline_done, add_matter_note,
@@ -483,6 +484,138 @@ def _tool_descriptors() -> list[dict]:
             "description": (
                 "Devuelve métricas del despacho: documentos verificados este mes, "
                 "voice commands semana/mes, horas ahorradas, casos activos, plazos próximos."
+            ),
+            "parameters": {"type": "object", "properties": {}},
+        },
+        # ─── F3 · Calculadoras adicionales ─────────────────────────────
+        {
+            "type": "function",
+            "name": "calc_prescripcion",
+            "description": (
+                "Calcula la fecha de prescripción de una acción legal en Colombia. "
+                "Soporta: civil_ordinaria (10 años), civil_ejecutiva (5 años), "
+                "comercial_ordinaria (10 años), comercial_ejecutiva (3 años), "
+                "laboral (3 años · CST 488), familiar_alimentos (5 años), "
+                "accion_revision (2 años · CGP 354), penal_querella (6 meses · CPP 73). "
+                "Si hay interrupción (notificación demanda, reconocimiento), "
+                "el plazo se re-cuenta desde esa fecha (CGP Art. 94)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tipo_accion": {
+                        "type": "string",
+                        "enum": ["civil_ordinaria", "civil_ejecutiva", "comercial_ordinaria",
+                                 "comercial_ejecutiva", "laboral", "familiar_alimentos",
+                                 "accion_revision", "penal_querella"],
+                    },
+                    "fecha_exigibilidad": {"type": "string", "format": "date"},
+                    "fecha_interrupcion": {"type": "string", "format": "date"},
+                    "fecha_calculo": {"type": "string", "format": "date"},
+                    "case_label": {"type": "string"},
+                },
+                "required": ["tipo_accion", "fecha_exigibilidad"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "calc_intereses",
+            "description": (
+                "Calcula intereses moratorios determinísticamente. Tipos: "
+                "comercial_moratorio (Decreto 519/2007 — 1.5× corriente, ~29.22% anual 2026), "
+                "civil_legal (CC Art. 1617 par. 2 — 6% supletivo), "
+                "convencional (tasa pactada, requiere `tasa_anual`). "
+                "Métodos: simple (lineal) o compuesto (1+r)^t. "
+                "Base 360 (comercial) o 365 (civil)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tipo_interes": {
+                        "type": "string",
+                        "enum": ["comercial_moratorio", "civil_legal", "convencional"],
+                    },
+                    "capital_cop": {"type": "number"},
+                    "fecha_inicio": {"type": "string", "format": "date"},
+                    "fecha_fin": {"type": "string", "format": "date"},
+                    "tasa_anual": {"type": "number", "description": "Sólo si tipo='convencional'"},
+                    "base_calculo": {"type": "integer", "enum": [360, 365], "default": 360},
+                    "metodo": {"type": "string", "enum": ["simple", "compuesto"], "default": "simple"},
+                    "case_label": {"type": "string"},
+                },
+                "required": ["tipo_interes", "capital_cop", "fecha_inicio"],
+            },
+        },
+        # ─── F1 · Análisis profundo IA del documento ───────────────────
+        {
+            "type": "function",
+            "name": "extract_document_entities",
+            "description": (
+                "Extrae entidades estructuradas (partes, fechas, obligaciones, "
+                "montos, inconsistencias, riesgos legales, vacíos probatorios) "
+                "de un documento del expediente. Llama OCR si es necesario. "
+                "Auto-puebla matter_parties faltantes con origen='ai_extracted'. "
+                "Si ya hay extracción reciente, devuelve la cacheada salvo que "
+                "regenerate=true."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "document_id": {"type": "string", "description": "uuid de matter_documents"},
+                    "regenerate": {"type": "boolean", "default": False},
+                },
+                "required": ["document_id"],
+            },
+        },
+        # ─── F2 · Judicial notifications ───────────────────────────────
+        {
+            "type": "function",
+            "name": "subscribe_to_expediente",
+            "description": (
+                "Suscribe el caso a polling automático de actuaciones en Rama "
+                "Judicial / DOF. Cada vez que el poller corre, detecta nuevas "
+                "actuaciones y las inserta en judicial_notifications. Si la "
+                "suscripción ya existe, la re-activa."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "expediente": {"type": "string", "description": "Número de radicado completo"},
+                    "matter_id": {"type": "string"},
+                    "fuente": {
+                        "type": "string",
+                        "enum": ["rama_judicial_demo", "rama_judicial_live", "dof_co_demo"],
+                        "default": "rama_judicial_demo",
+                    },
+                    "juzgado": {"type": "string"},
+                    "ciudad": {"type": "string"},
+                },
+                "required": ["expediente"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "list_judicial_notifications",
+            "description": (
+                "Lista notificaciones judiciales del despacho, ordenadas por "
+                "severidad. Por defecto sólo las no leídas."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "only_unread": {"type": "boolean", "default": True},
+                    "limit": {"type": "integer", "default": 10, "maximum": 25},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "name": "poll_judicial_now",
+            "description": (
+                "Forza el polling inmediato de todas las suscripciones activas "
+                "del despacho. Útil cuando el abogado pregunta '¿hay novedades "
+                "en mis casos?'. Devuelve cuántas notificaciones nuevas se "
+                "insertaron."
             ),
             "parameters": {"type": "object", "properties": {}},
         },

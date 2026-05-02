@@ -57,6 +57,51 @@ async def llm_generate(
     return response.choices[0].message.content.strip()
 
 
+async def llm_generate_json(
+    prompt: str,
+    model: str = "gpt-4o-mini",
+    system_prompt: Optional[str] = None,
+    temperature: float = 0.0,
+    max_tokens: int = 4000,
+    purpose: str = "",
+    session_id: str = "",
+) -> dict:
+    """LLM text generation with JSON-mode response. Returns parsed dict.
+
+    System prompt MUST instruct the model to output a JSON object
+    (per OpenAI requirements for response_format json_object).
+    """
+    import json as _json
+    client = get_openai_client()
+    messages = []
+    sys = (system_prompt or "") + (
+        "\n\nResponde EXCLUSIVAMENTE con un JSON válido siguiendo el esquema solicitado. "
+        "Sin texto explicativo. Sin markdown."
+    )
+    messages.append({"role": "system", "content": sys.strip()})
+    messages.append({"role": "user", "content": prompt})
+
+    response = await client.chat.completions.create(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        response_format={"type": "json_object"},
+    )
+
+    if response.usage:
+        tracker.record_chat(
+            model=model,
+            input_tokens=response.usage.prompt_tokens,
+            output_tokens=response.usage.completion_tokens,
+            purpose=purpose,
+            session_id=session_id,
+        )
+
+    raw = response.choices[0].message.content.strip()
+    return _json.loads(raw)
+
+
 async def llm_generate_embedding(
     text: str,
     model: str = "text-embedding-3-small",

@@ -111,7 +111,7 @@ async def lifespan(app: FastAPI):
             validate_citation_tool,
             validate_norm_vigencia_tool,
         )
-        from api.calc import calc_liquidacion_tool
+        from api.calc import calc_liquidacion_tool, calc_prescripcion_tool, calc_intereses_tool
         from api.matters import open_matter_context_tool
         from api.hitl import request_approval_tool
         from agent.tools.draft_pleading import draft_pleading_tool
@@ -147,7 +147,22 @@ async def lifespan(app: FastAPI):
         register_tool("summarize_document", summarize_document_tool)
         register_tool("list_pending_hitl", list_pending_hitl_tool)
         register_tool("get_firm_metrics", get_firm_metrics_tool)
-        logger.info("LexAI Realtime tools registered (17 total)")
+        # F3 calculadoras
+        register_tool("calc_prescripcion", calc_prescripcion_tool)
+        register_tool("calc_intereses", calc_intereses_tool)
+        # F1 análisis de documentos
+        from agent.tools.document_analysis import extract_document_entities_tool
+        register_tool("extract_document_entities", extract_document_entities_tool)
+        # F2 judicial notifications
+        from api.notifications import (
+            subscribe_to_expediente_tool,
+            list_judicial_notifications_tool,
+            poll_judicial_now_tool,
+        )
+        register_tool("subscribe_to_expediente", subscribe_to_expediente_tool)
+        register_tool("list_judicial_notifications", list_judicial_notifications_tool)
+        register_tool("poll_judicial_now", poll_judicial_now_tool)
+        logger.info("LexAI Realtime tools registered (23 total)")
     except Exception as e:
         logger.warning("LexAI tool registration failed (non-fatal): %s", e)
 
@@ -190,6 +205,8 @@ from api.citations import router as citations_router
 from api.hitl import router as hitl_router
 from api.matters import router as matters_router
 from api.clients import router as clients_router
+from api.matter_documents import router as matter_documents_router
+from api.notifications import router as notifications_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -206,6 +223,8 @@ app.include_router(citations_router)
 app.include_router(hitl_router)
 app.include_router(matters_router)
 app.include_router(clients_router)
+app.include_router(matter_documents_router)
+app.include_router(notifications_router)
 
 
 def main():

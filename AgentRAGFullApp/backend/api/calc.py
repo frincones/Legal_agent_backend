@@ -442,3 +442,474 @@ async def calc_liquidacion_tool(args: dict, ctx: dict) -> dict:
         "line_items": [i.model_dump() for i in result.line_items],
         "desglose_legible": result.desglose_legible,
     }
+
+
+# ════════════════════════════════════════════════════════════════════════
+# PRESCRIPCIÓN · cómputo de plazos (Código Civil + CGP + CST)
+# ════════════════════════════════════════════════════════════════════════
+#
+# Plazos por tipo de acción (Colombia 2026):
+#   civil_ordinaria       10 años · CC Art. 2536 mod. Ley 791/2002
+#   civil_ejecutiva       5 años  · CC Art. 2536 mod. Ley 791/2002
+#   comercial_ordinaria   10 años · C.Co. Art. 2535 (supletivo civil)
+#   comercial_ejecutiva   3 años  · C.Co. Art. 2536 (títulos valores Art. 789)
+#   laboral               3 años  · CST Art. 488 desde exigibilidad
+#   familiar_alimentos    5 años  · Ley 1098/2006 Art. 138
+#   accion_revision       2 años  · CGP Art. 354
+#   penal_querella        6 meses · CPP Art. 73
+#
+# Interrupción civil:
+#   - Notificación de la demanda (CGP Art. 94)
+#   - Reconocimiento expreso o tácito de la deuda (CC Art. 2539)
+#   - Pago parcial
+# La interrupción "borra el tiempo corrido" y reinicia el plazo desde la fecha
+# del acto interruptor.
+
+PRESCRIPCION_TABLA: dict[str, dict] = {
+    "civil_ordinaria":     {"anios": 10, "fundamento": "CC Art. 2536 mod. Ley 791/2002"},
+    "civil_ejecutiva":     {"anios": 5,  "fundamento": "CC Art. 2536 mod. Ley 791/2002"},
+    "comercial_ordinaria": {"anios": 10, "fundamento": "C.Co. Art. 2535 + CC Art. 2536"},
+    "comercial_ejecutiva": {"anios": 3,  "fundamento": "C.Co. Art. 789 (títulos valores)"},
+    "laboral":             {"anios": 3,  "fundamento": "CST Art. 488"},
+    "familiar_alimentos":  {"anios": 5,  "fundamento": "Ley 1098/2006 Art. 138"},
+    "accion_revision":     {"anios": 2,  "fundamento": "CGP Art. 354"},
+    "penal_querella":      {"meses": 6,  "fundamento": "CPP Art. 73"},
+}
+
+
+class PrescripcionRequest(BaseModel):
+    tipo_accion: str = Field(
+        pattern=r"^(civil_ordinaria|civil_ejecutiva|comercial_ordinaria|comercial_ejecutiva|laboral|familiar_alimentos|accion_revision|penal_querella)$"
+    )
+    fecha_exigibilidad: date
+    fecha_interrupcion: Optional[date] = None
+    fecha_calculo: date = Field(default_factory=lambda: date.today())
+    case_label: Optional[str] = None
+    matter_id: Optional[str] = None
+    persist: bool = True
+
+
+class PrescripcionResponse(BaseModel):
+    id: str
+    formulas_version: str
+    tipo_accion: str
+    fundamento: str
+    fecha_exigibilidad: date
+    fecha_interrupcion: Optional[date]
+    fecha_inicio_efectivo: date
+    fecha_prescripcion: date
+    fecha_calculo: date
+    dias_restantes: int
+    prescrita: bool
+    line_items: list[LineItem]
+    desglose_legible: str
+
+
+def _add_period(d: date, anios: int = 0, meses: int = 0) -> date:
+    """Suma años/meses respetando longitud variable de mes (sin uso de relativedelta)."""
+    total_months = d.month - 1 + meses + anios * 12
+    new_year = d.year + total_months // 12
+    new_month = total_months % 12 + 1
+    # Día capeado al último día del mes destino
+    import calendar
+    last_day = calendar.monthrange(new_year, new_month)[1]
+    new_day = min(d.day, last_day)
+    return date(new_year, new_month, new_day)
+
+
+def compute_prescripcion(req: PrescripcionRequest) -> PrescripcionResponse:
+    spec = PRESCRIPCION_TABLA[req.tipo_accion]
+    inicio = req.fecha_interrupcion or req.fecha_exigibilidad
+    if "anios" in spec:
+        fecha_pres = _add_period(inicio, anios=spec["anios"])
+        plazo_legible = f"{spec['anios']} años"
+    else:
+        fecha_pres = _add_period(inicio, meses=spec["meses"])
+        plazo_legible = f"{spec['meses']} meses"
+
+    dias_restantes = (fecha_pres - req.fecha_calculo).days
+    prescrita = dias_restantes < 0
+
+    items: list[LineItem] = []
+    items.append(LineItem(
+        concepto=f"Plazo de prescripción ({req.tipo_accion})",
+        formula=f"{plazo_legible} desde {inicio.isoformat()}",
+        base=0,
+        multiplicador=spec.get("anios") or spec.get("meses") or 0,
+        monto_cop=0,
+        fundamento=spec["fundamento"],
+        nota=(
+            f"Interrumpido el {req.fecha_interrupcion.isoformat()} (CGP Art. 94 / CC Art. 2539). "
+            "Plazo re-cuenta desde la interrupción."
+            if req.fecha_interrupcion
+            else "Sin acto interruptor registrado · plazo corre desde la exigibilidad."
+        ),
+    ))
+    items.append(LineItem(
+        concepto="Fecha de prescripción",
+        formula=f"{inicio.isoformat()} + {plazo_legible}",
+        base=0,
+        multiplicador=0,
+        monto_cop=0,
+        fundamento=spec["fundamento"],
+        nota=fecha_pres.isoformat(),
+    ))
+    items.append(LineItem(
+        concepto="Estado actual",
+        formula=f"hoy = {req.fecha_calculo.isoformat()}",
+        base=0,
+        multiplicador=dias_restantes,
+        monto_cop=0,
+        fundamento="Cómputo determinista",
+        nota=(
+            f"PRESCRITA hace {abs(dias_restantes)} días"
+            if prescrita
+            else f"Vigente · {dias_restantes} días restantes"
+        ),
+    ))
+
+    desglose = "\n".join(f"- {i.concepto}: {i.nota or ''}" for i in items)
+    return PrescripcionResponse(
+        id=str(uuid.uuid4()),
+        formulas_version="co-prescripcion-v1",
+        tipo_accion=req.tipo_accion,
+        fundamento=spec["fundamento"],
+        fecha_exigibilidad=req.fecha_exigibilidad,
+        fecha_interrupcion=req.fecha_interrupcion,
+        fecha_inicio_efectivo=inicio,
+        fecha_prescripcion=fecha_pres,
+        fecha_calculo=req.fecha_calculo,
+        dias_restantes=dias_restantes,
+        prescrita=prescrita,
+        line_items=items,
+        desglose_legible=desglose,
+    )
+
+
+@router.post("/prescripcion", response_model=PrescripcionResponse)
+async def calc_prescripcion_endpoint(
+    req: PrescripcionRequest,
+    principal: Principal = Depends(get_current_firm),
+):
+    result = compute_prescripcion(req)
+    if req.persist:
+        try:
+            from utils.db import get_storage
+            storage = await get_storage()
+            if hasattr(storage, "pool"):
+                async with storage.pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        insert into calc_prescripciones
+                          (id, firm_id, matter_id, user_id, case_label,
+                           tipo_accion, fecha_exigibilidad, fecha_interrupcion,
+                           fecha_calculo, variables, resultado,
+                           fecha_prescripcion, dias_restantes, prescrita,
+                           formulas_version)
+                        values
+                          ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5,
+                           $6, $7::date, $8::date,
+                           $9::date, $10::jsonb, $11::jsonb,
+                           $12::date, $13, $14,
+                           $15)
+                        """,
+                        result.id,
+                        principal.firm_id,
+                        req.matter_id,
+                        principal.user_id,
+                        req.case_label,
+                        req.tipo_accion,
+                        req.fecha_exigibilidad,
+                        req.fecha_interrupcion,
+                        req.fecha_calculo,
+                        json.dumps(req.model_dump(), default=str),
+                        json.dumps([i.model_dump() for i in result.line_items], default=str),
+                        result.fecha_prescripcion,
+                        result.dias_restantes,
+                        result.prescrita,
+                        result.formulas_version,
+                    )
+        except Exception as e:
+            logger.warning("prescripcion persist failed (non-fatal): %s", e)
+    return result
+
+
+async def calc_prescripcion_tool(args: dict, ctx: dict) -> dict:
+    try:
+        req = PrescripcionRequest(
+            tipo_accion=args["tipo_accion"],
+            fecha_exigibilidad=date.fromisoformat(args["fecha_exigibilidad"]),
+            fecha_interrupcion=date.fromisoformat(args["fecha_interrupcion"]) if args.get("fecha_interrupcion") else None,
+            fecha_calculo=date.fromisoformat(args["fecha_calculo"]) if args.get("fecha_calculo") else date.today(),
+            case_label=args.get("case_label"),
+            matter_id=ctx.get("matter_id"),
+            persist=True,
+        )
+    except Exception as e:
+        return {"error": f"invalid arguments: {e}"}
+    result = compute_prescripcion(req)
+    return {
+        "id": result.id,
+        "tipo_accion": result.tipo_accion,
+        "fundamento": result.fundamento,
+        "fecha_prescripcion": result.fecha_prescripcion.isoformat(),
+        "dias_restantes": result.dias_restantes,
+        "prescrita": result.prescrita,
+        "desglose_legible": result.desglose_legible,
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════
+# INTERESES MORATORIOS · cómputo determinista
+# ════════════════════════════════════════════════════════════════════════
+#
+# Tipos:
+#   comercial_moratorio: 1.5 × interés bancario corriente (Decreto 519/2007 Art. 5)
+#   civil_legal:         6% anual (CC Art. 1617 par. 2 — supletorio)
+#   convencional:        tasa pactada (no puede exceder 1.5× corriente)
+#   laboral_cesantias:   1 día de salario por cada día de mora (Ley 50/1990 Art. 99)
+#
+# Para MVP usamos cómputo simple lineal con tramo único; tramos por trimestre
+# (para refletar variación de DTF) puede agregarse iterando legal_constants.
+# Métodos: 'simple' (lineal) | 'compuesto' (1+r)^t.
+
+INTERESES_TABLA: dict[str, dict] = {
+    "comercial_moratorio": {
+        "tasa_key": "co.interes_moratorio_max.anual",
+        "fundamento": "Decreto 519/2007 Art. 5 (1.5× interés bancario corriente)",
+    },
+    "civil_legal": {
+        "tasa_key": "co.tasa_legal_civil.anual",
+        "fundamento": "CC Art. 1617 par. 2 (6% legal supletivo)",
+    },
+    "convencional": {
+        "tasa_key": None,  # tasa explícita por el usuario
+        "fundamento": "Tasa pactada en contrato — máximo 1.5× corriente (Decreto 519/2007)",
+    },
+}
+
+
+class InteresesRequest(BaseModel):
+    tipo_interes: str = Field(
+        pattern=r"^(comercial_moratorio|civil_legal|convencional)$"
+    )
+    capital_cop: float = Field(gt=0)
+    fecha_inicio: date
+    fecha_fin: date = Field(default_factory=lambda: date.today())
+    tasa_anual: Optional[float] = None  # requerido sólo si tipo='convencional'
+    base_calculo: int = Field(default=360)  # 360 (comercial) o 365 (civil)
+    metodo: str = Field(default="simple", pattern="^(simple|compuesto)$")
+    case_label: Optional[str] = None
+    matter_id: Optional[str] = None
+    persist: bool = True
+
+    @field_validator("fecha_fin")
+    @classmethod
+    def _fin_ge_inicio(cls, v: date, info):
+        ini = info.data.get("fecha_inicio")
+        if ini and v < ini:
+            raise ValueError("fecha_fin debe ser >= fecha_inicio")
+        return v
+
+
+class InteresesResponse(BaseModel):
+    id: str
+    formulas_version: str
+    tipo_interes: str
+    fundamento: str
+    capital_cop: float
+    tasa_anual_aplicada: float
+    base_calculo: int
+    metodo: str
+    dias_mora: int
+    monto_intereses_cop: float
+    monto_total_cop: float
+    line_items: list[LineItem]
+    desglose_legible: str
+
+
+async def _resolve_tasa_anual(
+    tipo_interes: str,
+    tasa_explicita: Optional[float],
+    fecha_referencia: date,
+) -> float:
+    spec = INTERESES_TABLA[tipo_interes]
+    if tipo_interes == "convencional":
+        if tasa_explicita is None or tasa_explicita <= 0:
+            raise HTTPException(422, "tipo='convencional' requiere `tasa_anual` > 0")
+        return float(tasa_explicita)
+
+    # Resolver desde legal_constants vía RPC
+    try:
+        from utils.db import get_storage
+        storage = await get_storage()
+        if hasattr(storage, "pool"):
+            async with storage.pool.acquire() as conn:
+                val = await conn.fetchval(
+                    "select lexai_legal_constant($1::text, $2::date)",
+                    spec["tasa_key"], fecha_referencia,
+                )
+                if val is not None:
+                    return float(val)
+    except Exception:
+        pass
+    # Fallback: hardcoded conservative defaults
+    return {
+        "co.interes_moratorio_max.anual": 0.2922,
+        "co.tasa_legal_civil.anual":       0.06,
+    }.get(spec["tasa_key"] or "", 0.06)
+
+
+def _days_actual(d1: date, d2: date) -> int:
+    return max(0, (d2 - d1).days)
+
+
+async def compute_intereses(req: InteresesRequest) -> InteresesResponse:
+    spec = INTERESES_TABLA[req.tipo_interes]
+    tasa = await _resolve_tasa_anual(req.tipo_interes, req.tasa_anual, req.fecha_fin)
+    dias = _days_actual(req.fecha_inicio, req.fecha_fin)
+    base = float(req.base_calculo)
+
+    if req.metodo == "simple":
+        # Interés simple: I = K × i × (t/base)
+        intereses = req.capital_cop * tasa * (dias / base)
+        formula = (
+            f"{req.capital_cop:,.0f} × {tasa:.4f} × ({dias}/{int(base)})"
+        )
+    else:
+        # Interés compuesto: M = K × (1 + i)^(t/base); I = M − K
+        factor = (1.0 + tasa) ** (dias / base)
+        monto_total = req.capital_cop * factor
+        intereses = monto_total - req.capital_cop
+        formula = (
+            f"{req.capital_cop:,.0f} × (1 + {tasa:.4f})^({dias}/{int(base)}) − {req.capital_cop:,.0f}"
+        )
+
+    monto_total = req.capital_cop + intereses
+    items = [
+        LineItem(
+            concepto=f"Intereses ({req.tipo_interes}, {req.metodo})",
+            formula=formula,
+            base=req.capital_cop,
+            multiplicador=round(tasa * (dias / base), 6),
+            monto_cop=_round0(intereses),
+            fundamento=spec["fundamento"],
+            nota=(
+                f"Tasa anual aplicada: {tasa*100:.2f}%. "
+                f"Mora de {dias} días sobre base {int(base)}."
+            ),
+        ),
+        LineItem(
+            concepto="Capital reclamable",
+            formula=f"{req.capital_cop:,.0f}",
+            base=req.capital_cop,
+            multiplicador=1,
+            monto_cop=_round0(req.capital_cop),
+            fundamento="Capital adeudado",
+        ),
+        LineItem(
+            concepto="Total reclamable",
+            formula="capital + intereses",
+            base=req.capital_cop,
+            multiplicador=1,
+            monto_cop=_round0(monto_total),
+            fundamento="Suma capital + intereses moratorios",
+        ),
+    ]
+    desglose = "\n".join(
+        f"- {i.concepto}: COP ${i.monto_cop:,.0f}  ({i.fundamento or ''})"
+        for i in items
+    )
+    desglose += f"\n\nTotal a reclamar: COP ${monto_total:,.0f}"
+    return InteresesResponse(
+        id=str(uuid.uuid4()),
+        formulas_version="co-intereses-v1",
+        tipo_interes=req.tipo_interes,
+        fundamento=spec["fundamento"],
+        capital_cop=req.capital_cop,
+        tasa_anual_aplicada=tasa,
+        base_calculo=req.base_calculo,
+        metodo=req.metodo,
+        dias_mora=dias,
+        monto_intereses_cop=_round0(intereses),
+        monto_total_cop=_round0(monto_total),
+        line_items=items,
+        desglose_legible=desglose,
+    )
+
+
+@router.post("/intereses", response_model=InteresesResponse)
+async def calc_intereses_endpoint(
+    req: InteresesRequest,
+    principal: Principal = Depends(get_current_firm),
+):
+    result = await compute_intereses(req)
+    if req.persist:
+        try:
+            from utils.db import get_storage
+            storage = await get_storage()
+            if hasattr(storage, "pool"):
+                async with storage.pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        insert into calc_intereses
+                          (id, firm_id, matter_id, user_id, case_label,
+                           tipo_interes, capital_cop, fecha_inicio, fecha_fin,
+                           tasa_anual_aplicada, base_calculo, metodo,
+                           variables, resultado, monto_total_cop, formulas_version)
+                        values
+                          ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5,
+                           $6, $7, $8::date, $9::date,
+                           $10, $11, $12,
+                           $13::jsonb, $14::jsonb, $15, $16)
+                        """,
+                        result.id,
+                        principal.firm_id,
+                        req.matter_id,
+                        principal.user_id,
+                        req.case_label,
+                        req.tipo_interes,
+                        req.capital_cop,
+                        req.fecha_inicio,
+                        req.fecha_fin,
+                        result.tasa_anual_aplicada,
+                        req.base_calculo,
+                        req.metodo,
+                        json.dumps(req.model_dump(), default=str),
+                        json.dumps([i.model_dump() for i in result.line_items], default=str),
+                        result.monto_total_cop,
+                        result.formulas_version,
+                    )
+        except Exception as e:
+            logger.warning("intereses persist failed (non-fatal): %s", e)
+    return result
+
+
+async def calc_intereses_tool(args: dict, ctx: dict) -> dict:
+    try:
+        req = InteresesRequest(
+            tipo_interes=args["tipo_interes"],
+            capital_cop=float(args["capital_cop"]),
+            fecha_inicio=date.fromisoformat(args["fecha_inicio"]),
+            fecha_fin=date.fromisoformat(args["fecha_fin"]) if args.get("fecha_fin") else date.today(),
+            tasa_anual=float(args["tasa_anual"]) if args.get("tasa_anual") is not None else None,
+            base_calculo=int(args.get("base_calculo", 360)),
+            metodo=args.get("metodo", "simple"),
+            case_label=args.get("case_label"),
+            matter_id=ctx.get("matter_id"),
+            persist=True,
+        )
+    except Exception as e:
+        return {"error": f"invalid arguments: {e}"}
+    result = await compute_intereses(req)
+    return {
+        "id": result.id,
+        "tipo_interes": result.tipo_interes,
+        "fundamento": result.fundamento,
+        "tasa_anual_aplicada": result.tasa_anual_aplicada,
+        "dias_mora": result.dias_mora,
+        "monto_intereses_cop": result.monto_intereses_cop,
+        "monto_total_cop": result.monto_total_cop,
+        "currency": "COP",
+        "desglose_legible": result.desglose_legible,
+    }
