@@ -863,6 +863,71 @@ def _tool_descriptors() -> list[dict]:
                 },
             },
         },
+        # ─── F5 · Memoria persistente ─────────────────────────────────
+        {
+            "type": "function",
+            "name": "remember",
+            "description": (
+                "Guarda una preferencia o dato persistente para recordar entre "
+                "sesiones. Scope='firm' (todo el despacho), 'user' (sólo este "
+                "usuario), 'matter' (vinculado a un caso). Útil cuando el "
+                "abogado dice 'recuerda que...', 'mi preferencia es...', "
+                "'no olvides X para este caso'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "value": {"description": "JSON serializable"},
+                    "scope": {"type": "string", "enum": ["firm", "user", "matter"], "default": "firm"},
+                    "ttl_days": {"type": "integer", "description": "Auto-borrar tras N días (null = permanente)"},
+                },
+                "required": ["key", "value"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "recall",
+            "description": "Recupera una memoria por key exacto.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "scope": {"type": "string", "enum": ["firm", "user", "matter"], "default": "firm"},
+                },
+                "required": ["key"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "recall_relevant",
+            "description": (
+                "Búsqueda semántica de memorias relevantes a un query. "
+                "Útil al inicio de una sesión: 'recall_relevant(query=titulo del "
+                "matter activo)' devuelve preferencias y notas pasadas relevantes."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    "top_n": {"type": "integer", "default": 3, "maximum": 10},
+                },
+                "required": ["query"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "forget",
+            "description": "Borra una memoria por key.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "key": {"type": "string"},
+                    "scope": {"type": "string", "enum": ["firm", "user", "matter"], "default": "firm"},
+                },
+                "required": ["key"],
+            },
+        },
         # ─── F3 · Sub-agent delegation ────────────────────────────────
         {
             "type": "function",
