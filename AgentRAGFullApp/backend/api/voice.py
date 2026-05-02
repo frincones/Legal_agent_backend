@@ -781,6 +781,70 @@ def _tool_descriptors() -> list[dict]:
                 "required": ["title", "body"],
             },
         },
+        # ─── F2 · External research (portales públicos) ──────────────
+        {
+            "type": "function",
+            "name": "search_suin_juriscol",
+            "description": (
+                "Consulta SUIN-Juriscol (Función Pública) para verificar "
+                "existencia y datos de una norma colombiana. Usar cuando "
+                "research_jurisprudence/validate_norm_vigencia no tienen el "
+                "dato y necesitas la fuente oficial. Cacheado 24h."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "tipo": {"type": "string", "enum": ["LEY", "DECRETO", "RESOLUCION", "CIRCULAR", "CODIGO"]},
+                    "numero": {"type": "integer"},
+                    "anio": {"type": "integer"},
+                },
+                "required": ["tipo", "numero", "anio"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "verify_rue_persona",
+            "description": (
+                "Verifica persona natural/jurídica en RUES (Cámaras de Comercio). "
+                "Útil para validar contraparte antes de demanda. Cacheado 12h."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "NIT (con o sin dígito verificación) o razón social"}},
+                "required": ["query"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "fetch_dof_co_publicacion",
+            "description": (
+                "Lista publicaciones recientes del Diario Oficial colombiano. "
+                "Filtra por keyword opcional. Útil para detectar normas nuevas "
+                "que afecten al despacho. Cacheado 6h."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keyword": {"type": "string"},
+                    "limit": {"type": "integer", "default": 10, "maximum": 25},
+                },
+            },
+        },
+        {
+            "type": "function",
+            "name": "fetch_banrep_dtf",
+            "description": (
+                "Consulta tasas Banrep (DTF, IBR, IPC, TRM). Para cálculos de "
+                "intereses moratorios o ajustes inflacionarios. Si no está "
+                "disponible, devuelve valor de fallback de legal_constants."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "serie": {"type": "string", "enum": ["DTF", "IBR_OVERNIGHT", "IPC", "TRM"], "default": "DTF"},
+                },
+            },
+        },
     ]
 
 

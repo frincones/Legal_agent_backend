@@ -176,7 +176,16 @@ async def lifespan(app: FastAPI):
         register_tool("ui_prefill_form", ui_prefill_form_tool)
         register_tool("ui_show_toast", ui_show_toast_tool)
         register_tool("ui_open_modal", ui_open_modal_tool)
-        logger.info("LexAI Realtime tools registered (31 total)")
+        # F2 · External research (httpx-only)
+        from agent.tools.external_research import (
+            search_suin_juriscol_tool, verify_rue_persona_tool,
+            fetch_dof_co_publicacion_tool, fetch_banrep_dtf_tool,
+        )
+        register_tool("search_suin_juriscol", search_suin_juriscol_tool)
+        register_tool("verify_rue_persona", verify_rue_persona_tool)
+        register_tool("fetch_dof_co_publicacion", fetch_dof_co_publicacion_tool)
+        register_tool("fetch_banrep_dtf", fetch_banrep_dtf_tool)
+        logger.info("LexAI Realtime tools registered (35 total)")
     except Exception as e:
         logger.warning("LexAI tool registration failed (non-fatal): %s", e)
 
