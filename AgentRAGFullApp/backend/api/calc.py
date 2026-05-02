@@ -155,6 +155,19 @@ def compute_liquidacion(req: LiquidacionRequest) -> LiquidacionResponse:
     salario_diario = _salario_diario(salario_mensual)
     full_years, days_total = _years_between(req.fecha_ingreso, req.fecha_terminacion)
 
+    # Validación temprana: salario integral por Ley 50/1990 Art. 18 exige
+    # salario nominal ≥ 10 SMLMV (en 2026 ~COP 18.235.000). Si no, el
+    # contrato no califica como "integral" y el cálculo cae al régimen ordinario.
+    if req.salario_integral and salario_mensual < CAP_INTEGRAL_SMLMV * req.smlmv_cop:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Salario integral requiere salario ≥ {CAP_INTEGRAL_SMLMV} SMMLV "
+                f"(COP {CAP_INTEGRAL_SMLMV * req.smlmv_cop:,.0f}). "
+                f"El salario informado de COP {salario_mensual:,.0f} no califica."
+            ),
+        )
+
     # Auxilio de transporte (sólo si salario < 2 SMMLV y aplica)
     aplica_aux_transp = (
         req.auxilio_transporte_aplica
@@ -234,43 +247,60 @@ def compute_liquidacion(req: LiquidacionRequest) -> LiquidacionResponse:
 
     # 5) Indemnización por despido sin justa causa (Ley 789/2002 Art. 28)
     if aplica_indemn:
+        # Bucket SMMLV: por Ley 50/1990 Art. 18 el salario integral exige ≥10 SMMLV
+        # por definición legal — el factor 0.70 reduce sólo la BASE diaria de la
+        # indemnización (factor prestacional), no la elegibilidad por tramo.
+        salario_smlmv = salario_mensual / req.smlmv_cop
         if req.salario_integral:
+            # Reducción legal de base: 70% del salario integral (Ley 50 Art. 18 par.)
             base_indemn = salario_mensual * 0.70
         else:
             base_indemn = salario_mensual
 
         salario_diario_indemn = base_indemn / 30.0
-        salario_smlmv = base_indemn / req.smlmv_cop
 
         if req.tipo_contrato == "indefinido":
+            # CST Art. 64 mod. Ley 789/2002 Art. 28 — "y proporcionalmente por
+            # fracción": tras el primer año se paga 20 (o 15) días por año
+            # adicional, computado proporcional a los días reales servidos.
             if salario_smlmv < 10:
-                # Salario < 10 SMMLV: 30 días primer año + 20 días por cada año adicional
-                if full_years <= 1:
-                    dias_indemn = 30
-                    formula_str = "30 días (primer año contrato indefinido <10 SMMLV)"
-                else:
-                    extra_anios = full_years - 1
-                    dias_indemn = 30 + (20 * extra_anios)
-                    formula_str = f"30 + 20×({full_years}-1) = {dias_indemn} días"
+                base_first = 30
+                extra_per_year = 20
+                bracket_label = "<10 SMMLV"
             else:
-                # Salario ≥ 10 SMMLV: 20 días primer año + 15 días por cada año adicional
-                if full_years <= 1:
-                    dias_indemn = 20
-                    formula_str = "20 días (primer año contrato indefinido ≥10 SMMLV)"
-                else:
-                    extra_anios = full_years - 1
-                    dias_indemn = 20 + (15 * extra_anios)
-                    formula_str = f"20 + 15×({full_years}-1) = {dias_indemn} días"
+                base_first = 20
+                extra_per_year = 15
+                bracket_label = "≥10 SMMLV"
+
+            if days_total <= 360:
+                # Mínimo legal del primer año (incluso si trabajó <1 año).
+                dias_indemn = base_first
+                formula_str = (
+                    f"{base_first} días (primer año contrato indefinido {bracket_label})"
+                )
+            else:
+                days_extra = days_total - 360
+                fraccion_extra = days_extra / 360.0  # años proporcionales
+                extra_dias = extra_per_year * fraccion_extra
+                dias_indemn = base_first + extra_dias
+                formula_str = (
+                    f"{base_first} + {extra_per_year}×({days_extra}/360) "
+                    f"= {dias_indemn:.2f} días ({bracket_label})"
+                )
             monto_indemn = dias_indemn * salario_diario_indemn
             items.append(LineItem(
                 concepto=f"Indemnización despido sin justa causa ({full_years} años)",
                 formula=f"{formula_str} × {salario_diario_indemn:,.0f}",
                 base=salario_diario_indemn,
-                multiplicador=dias_indemn,
+                multiplicador=round(dias_indemn, 2),
                 monto_cop=_round0(monto_indemn),
                 fundamento="CST Art. 64 modificado por Ley 789/2002 Art. 28",
-                nota=("Régimen contrato indefinido. "
-                      f"Salario en SMMLV: {salario_smlmv:.2f}."),
+                nota=(
+                    f"Régimen contrato indefinido. Salario base SMMLV: {salario_smlmv:.2f}. "
+                    + ("Salario integral · base = 70% (Ley 50 Art. 18). "
+                       if req.salario_integral else "")
+                    + "Fracción de año posterior al primero pagada proporcional."
+                ),
             ))
         elif req.tipo_contrato == "fijo":
             # Indemnización = salarios faltantes hasta vencimiento del contrato
