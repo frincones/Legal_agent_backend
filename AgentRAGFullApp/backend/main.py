@@ -114,7 +114,7 @@ async def lifespan(app: FastAPI):
         from api.calc import calc_liquidacion_tool, calc_prescripcion_tool, calc_intereses_tool
         from api.matters import open_matter_context_tool
         from api.hitl import request_approval_tool
-        from agent.tools.draft_pleading import draft_pleading_tool
+        from agent.tools.draft_pleading import draft_pleading_tool, list_legal_templates_tool
         from agent.tools.paralegal_tools import (
             list_my_matters_tool,
             find_client_tool,
@@ -136,6 +136,7 @@ async def lifespan(app: FastAPI):
         register_tool("open_matter_context", open_matter_context_tool)
         register_tool("request_human_approval", request_approval_tool)
         register_tool("draft_pleading", draft_pleading_tool)
+        register_tool("list_legal_templates", list_legal_templates_tool)
         # Paralegal-grade extensions (10)
         register_tool("list_my_matters", list_my_matters_tool)
         register_tool("find_client", find_client_tool)
@@ -253,6 +254,7 @@ from api.matters import router as matters_router
 from api.clients import router as clients_router
 from api.matter_documents import router as matter_documents_router
 from api.notifications import router as notifications_router
+from api.legal_templates_api import router as legal_templates_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -271,6 +273,7 @@ app.include_router(matters_router)
 app.include_router(clients_router)
 app.include_router(matter_documents_router)
 app.include_router(notifications_router)
+app.include_router(legal_templates_router)
 
 
 def main():

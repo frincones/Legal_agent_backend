@@ -377,8 +377,9 @@ TIER1_TOOLS = {
     "get_document_content",       # texto COMPLETO del doc (no resumen)
     "extract_document_entities",  # estructura: partes/fechas/obligaciones
     "summarize_document",         # resumen IA breve (1-3 oraciones)
-    # Drafting (escribe a Canvas)
+    # Drafting (escribe a Canvas) + plantillas
     "draft_pleading",
+    "list_legal_templates",
     # Canvas · co-edición agente↔abogado en TipTap editor
     "canvas_set_text",
     "canvas_append",
@@ -498,8 +499,14 @@ def _tool_descriptors() -> list[dict]:
             "type": "function",
             "name": "draft_pleading",
             "description": (
-                "Genera o actualiza el documento procesal en el Live Canvas. "
-                "Streamea el contenido al frontend para edición en vivo."
+                "Genera un escrito procesal con estructura legal colombiana "
+                "completa (encabezamiento, partes, hechos numerados, "
+                "pretensiones principales+subsidiarias, fundamentos de "
+                "derecho con citas, pruebas documentales/testimoniales/"
+                "interrogatorio/inspección, anexos, notificaciones, juramento "
+                "estimatorio CGP 206, firma con T.P.). Persiste en "
+                "matter_documents + matter_document_versions. Devuelve "
+                "markdown listo para canvas_set_text."
             ),
             "parameters": {
                 "type": "object",
@@ -512,17 +519,41 @@ def _tool_descriptors() -> list[dict]:
                             "tutela",
                             "contestacion",
                             "recurso_apelacion",
-                            "recurso_casacion",
-                            "escrito",
+                            "derecho_peticion",
                             "carta_requerimiento",
                             "contrato",
+                            "escrito",
                         ],
                     },
-                    "facts": {"type": "object"},
-                    "citations": {"type": "array", "items": {"type": "string"}},
+                    "facts": {
+                        "type": "object",
+                        "description": (
+                            "Datos del caso para rellenar la plantilla. Ej: "
+                            "{nombre_actor, cedula_actor, nombre_demandado, "
+                            "nit_demandado, fecha_ingreso, fecha_terminacion, "
+                            "salario_mensual, cargo, hechos_adicionales, ...}. "
+                            "Llamar open_matter_context primero para obtenerlos."
+                        ),
+                    },
+                    "citations": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "citation_refs verificados (ej. T-388/2019)",
+                    },
                 },
                 "required": ["matter_id", "kind", "facts"],
             },
+        },
+        {
+            "type": "function",
+            "name": "list_legal_templates",
+            "description": (
+                "Lista las plantillas legales disponibles para drafting con "
+                "su título, descripción y materia aplicable. Útil cuando el "
+                "abogado pregunta '¿qué plantillas tienes?' o el agente debe "
+                "decidir cuál usar antes de llamar draft_pleading."
+            ),
+            "parameters": {"type": "object", "properties": {}},
         },
         {
             "type": "function",
