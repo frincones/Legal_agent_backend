@@ -254,7 +254,10 @@ def build_session_update(matter_id: Optional[str] = None) -> dict:
                 "create_response": True,
                 "interrupt_response": True,
             },
-            "temperature": 0.4,
+            # OpenAI Realtime API exige temperature >= 0.6 (distinto a Chat
+            # Completions que acepta 0.0). Bajar de 0.6 hace que session.update
+            # sea rechazado y el agente entra sin instrucciones ni tools.
+            "temperature": 0.6,
             "max_response_output_tokens": 1500,
             "instructions": instructions,
             "tools": tier1,
