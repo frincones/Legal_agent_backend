@@ -86,37 +86,64 @@ async def voice_ticket(
 
 LEGAL_VOICE_INSTRUCTIONS = """Eres LexAI, paralegal de voz para abogados colombianos. Español de Colombia, formal, "usted".
 
+⚠️⚠️⚠️ REGLA #0 — TOOLS FIRST O FALLAS TU TRABAJO ⚠️⚠️⚠️
+
+Tu valor NO es conversar. Tu valor es ACTUAR llamando tools. Si el
+abogado pregunta CUALQUIER COSA que pueda resolverse con una tool,
+DEBES llamar la tool antes de responder. NUNCA respondas desde tu
+conocimiento general sin haber llamado una tool primero.
+
+Mapeo automático (memorízalo):
+
+  "qué casos tengo" / "mis casos"        → list_my_matters
+  "busca a [cliente]" / "el cliente X"   → find_client
+  "qué vence" / "plazos" / "audiencias"  → list_upcoming_deadlines
+  "agenda audiencia" / "agrega plazo"    → add_matter_deadline
+  "agrega nota al caso" / "anota..."     → add_matter_note
+  "liquida [trabajador]" / "liquidación" → calc_liquidacion
+  "prescripción" / "cuánto tengo"        → calc_prescripcion
+  "intereses moratorios"                 → calc_intereses
+  "busca jurisprudencia sobre X"         → research_jurisprudence
+  "redacta [tutela/demanda/contesta..]"  → draft_pleading
+  "ábreme [pantalla]"                    → ui_navigate
+  "ábreme el canvas de X"                → ui_open_matter_canvas
+  "muéstrame [pestaña] de X"             → ui_open_matter_tab
+  "llena el formulario con..."           → ui_prefill_form
+  "investiga a fondo / valida X"         → delegate_to('investigador', '...')
+  "redacta completo con jurisprudencia"  → delegate_to('redactor', '...')
+  "calcula varios escenarios"            → delegate_to('calculista', '...')
+
+Si NINGUNA tool encaja, llama delegate_to('investigador', tarea_completa)
+para que el especialista decida. Si ni el sub-agente sabe, sólo entonces
+responde "No tengo la herramienta para eso".
+
 ═══════════════════════════════════════════════════════════════════════
-REGLAS DE CONVERSACIÓN (las MÁS importantes)
+REGLAS DE CONVERSACIÓN
 ═══════════════════════════════════════════════════════════════════════
 
-1. ESCUCHA antes de hablar. El abogado puede estar dictando una idea
-   completa con pausas naturales. NO empieces a responder al primer
-   silencio. Espera a tener una intención clara y completa antes de
-   actuar.
+1. ESCUCHA pero ACTÚA. Espera que el abogado termine la frase. En
+   cuanto termine, llama la tool INMEDIATAMENTE — no conversaciones,
+   no expliques lo que vas a hacer, sólo hazlo.
 
-2. SI EL ABOGADO TE INTERRUMPE mientras hablas: DETENTE INMEDIATAMENTE.
-   No retomes la frase anterior. Escucha la nueva instrucción y responde
-   sólo a ella. NO digas "permítame terminar" ni "como le decía". Olvida
-   lo anterior y enfócate en lo nuevo.
+2. SI EL ABOGADO TE INTERRUMPE: detente al instante. No retomes la
+   frase anterior. Olvida lo anterior, enfócate en lo nuevo.
 
-3. RESPUESTAS BREVES: máximo 2 oraciones habladas por turno. Si tienes
-   info larga, llama tools que escriban a Canvas / Histórico / UI; tu
-   voz sólo confirma lo que hiciste con números o nombres concretos.
+3. RESPUESTAS BREVES: 1-2 oraciones máximo. La voz confirma con
+   números/nombres concretos lo que la tool ejecutó. Si tienes
+   detalle largo, llama draft_pleading para escribirlo a Canvas.
 
-4. SI NO ENTENDISTE: di "¿Puede repetir el último dato?" — no inventes.
+4. SI NO ENTENDISTE: "¿Puede repetir el último dato?" — no inventes.
 
-5. UNA INTENCIÓN A LA VEZ: si el abogado dicta dos cosas distintas
-   ("agenda audiencia el lunes Y redacta la tutela"), ejecuta la primera
-   y di "¿Sigo con la tutela?". NO encadenes 5 acciones a ciegas.
+5. UNA INTENCIÓN A LA VEZ: si dicta dos cosas, ejecuta la primera
+   con su tool y pregunta si sigues con la segunda.
 
 ═══════════════════════════════════════════════════════════════════════
 ROL Y CONTEXTO
 ═══════════════════════════════════════════════════════════════════════
 
-Tu rol es ejecutar el trabajo repetitivo de un paralegal con la urgencia
-de un secretario jurídico experto: investigación jurisprudencial,
-drafting, cálculos legales, gestión procesal y agenda.
+Tu rol es ejecutar el trabajo repetitivo de un paralegal: investigación
+jurisprudencial, drafting, cálculos legales, gestión procesal y agenda.
+SIEMPRE vía tools, NUNCA improvisando.
 
 ═══════════════════════════════════════════════════════════════════════
 CAPACIDADES (categorías; el schema tiene los nombres exactos)
@@ -205,6 +232,12 @@ def build_session_update(matter_id: Optional[str] = None) -> dict:
             f"con `open_matter_context` antes del primer dictado si no lo has hecho."
         )
 
+    # Filtrar tools al subset Tier-1 (~15 más usadas) para evitar abrumar al
+    # modelo Realtime con 40+ descriptores. El resto sigue accesible vía
+    # delegate_to → sub-agentes especialistas (cada uno con su subset).
+    all_tools = _tool_descriptors()
+    tier1 = [t for t in all_tools if t["name"] in TIER1_TOOLS]
+
     return {
         "type": "session.update",
         "session": {
@@ -214,12 +247,6 @@ def build_session_update(matter_id: Optional[str] = None) -> dict:
             "output_audio_format": "pcm16",
             "input_audio_transcription": {"model": "gpt-4o-transcribe"},
             "turn_detection": {
-                # VAD ajustado para conversación legal:
-                #   - threshold 0.6: más estricto, evita falsos positivos por
-                #     echo del propio agente (especialmente sin headphones)
-                #   - prefix_padding_ms 500: captura inicio de palabra completo
-                #   - silence_duration_ms 900: deja al abogado terminar frases
-                #     largas con pausas naturales (era 500ms y cortaba dictados)
                 "type": "server_vad",
                 "threshold": 0.6,
                 "prefix_padding_ms": 500,
@@ -227,16 +254,47 @@ def build_session_update(matter_id: Optional[str] = None) -> dict:
                 "create_response": True,
                 "interrupt_response": True,
             },
-            # Temperature 0.4 (era 0.7): legal exige precisión, no creatividad.
             "temperature": 0.4,
-            # Output cap: respuestas cortas. El detalle largo va a Canvas via
-            # draft_pleading; la voz sólo confirma con números/nombres.
             "max_response_output_tokens": 1500,
             "instructions": instructions,
-            "tools": _tool_descriptors(),
+            "tools": tier1,
             "tool_choice": "auto",
         },
     }
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Tier-1 tools: las que el orquestador (voz) ve directamente.
+# El resto (Tier-2) sólo se invocan vía delegate_to → sub-agentes,
+# que tienen su propio allowed_tools subset.
+# ─────────────────────────────────────────────────────────────────────
+TIER1_TOOLS = {
+    # Caso · contexto
+    "open_matter_context",
+    "list_my_matters",
+    "find_client",
+    # Calendario · gestión rápida
+    "list_upcoming_deadlines",
+    "add_matter_deadline",
+    "add_matter_note",
+    # Cálculos determinísticos (los 3)
+    "calc_liquidacion",
+    "calc_prescripcion",
+    "calc_intereses",
+    # Investigación legal directa
+    "research_jurisprudence",
+    # Drafting (escribe a Canvas)
+    "draft_pleading",
+    # UI bridge esenciales
+    "ui_navigate",
+    "ui_open_matter_canvas",
+    "ui_open_matter_tab",
+    "ui_prefill_form",
+    # Compliance gate
+    "request_human_approval",
+    # Delegación a especialistas para tareas complejas
+    "delegate_to",
+}
 
 
 def _tool_descriptors() -> list[dict]:
@@ -1169,7 +1227,34 @@ async def _pump_upstream_to_client(
             await _handle_function_call(evt, upstream, websocket, ctx)
             continue
 
-        # 3) Lightweight event mapping for the browser HUD
+        # 3) Persistir transcripción de turns (user + assistant) en agent_traces
+        # para poder diagnosticar conversaciones sin depender del browser.
+        if etype == "conversation.item.input_audio_transcription.completed":
+            user_text = (evt.get("transcript") or "").strip()
+            if user_text:
+                asyncio.create_task(_persist_trace(
+                    kind="llm_call", name="user_turn",
+                    firm_id=ctx.get("firm_id"),
+                    matter_id=ctx.get("matter_id"),
+                    session_id=ctx.get("session_id"),
+                    input_obj=None,
+                    output_obj={"text": user_text},
+                    duration_ms=None,
+                ))
+        elif etype == "response.audio_transcript.done":
+            assistant_text = (evt.get("transcript") or "").strip()
+            if assistant_text:
+                asyncio.create_task(_persist_trace(
+                    kind="llm_call", name="assistant_turn",
+                    firm_id=ctx.get("firm_id"),
+                    matter_id=ctx.get("matter_id"),
+                    session_id=ctx.get("session_id"),
+                    input_obj=None,
+                    output_obj={"text": assistant_text},
+                    duration_ms=None,
+                ))
+
+        # 4) Lightweight event mapping for the browser HUD
         client_evt = _translate_event_for_client(etype, evt)
         if client_evt is not None:
             try:
