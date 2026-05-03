@@ -93,6 +93,136 @@ async def canvas_save_version_tool(args: dict, ctx: dict) -> dict:
     }
 
 
+# ─────────────────────────────────────────────────────────────────────
+
+
+async def get_document_content_tool(args: dict, ctx: dict) -> dict:
+    """Devuelve el TEXTO COMPLETO de un documento del expediente.
+
+    Distinto a:
+      · summarize_document → resumen IA breve (1-3 oraciones)
+      · extract_document_entities → partes/fechas/obligaciones estructuradas
+      · canvas_get_current → sólo el canvas activo
+
+    Esta tool devuelve el CONTENIDO COMPLETO de un documento (la última
+    versión guardada). Fallback chain:
+      1. matter_document_versions (la versión más reciente)
+      2. matter_documents.resumen_ia (si no hay versions)
+      3. chunks (RAG ingest, si existe ingest_doc_id)
+
+    Casos de uso:
+      · "Léeme la demanda completa" → get_document_content + reporta
+      · "Carga este documento al canvas" → get_document_content + canvas_set_text
+      · "Analiza la demanda" → get_document_content + análisis sobre text
+    """
+    document_id = args.get("document_id")
+    if not document_id:
+        return {"error": "document_id requerido"}
+    firm_id = ctx.get("firm_id")
+    if not firm_id:
+        return {"error": "firm_id requerido"}
+
+    from utils.db import get_storage
+    storage = await get_storage()
+    if not hasattr(storage, "pool"):
+        return {"error": "storage no disponible"}
+
+    import json as _json
+
+    async with storage.pool.acquire() as conn:
+        # 1) Última versión del documento (canvas o draft persistido)
+        ver = await conn.fetchrow(
+            """
+            select v.version, v.diff_from_prev, v.created_at,
+                   d.titulo, d.kind, d.pages
+            from matter_document_versions v
+            join matter_documents d on d.id = v.matter_document_id
+            where v.matter_document_id = $1::uuid
+              and v.firm_id = $2::uuid
+            order by v.version desc
+            limit 1
+            """,
+            document_id, firm_id,
+        )
+        if ver:
+            diff = ver["diff_from_prev"] or {}
+            if isinstance(diff, str):
+                try:
+                    diff = _json.loads(diff)
+                except Exception:
+                    diff = {}
+            html = diff.get("html") if isinstance(diff, dict) else None
+            text = diff.get("text") if isinstance(diff, dict) else None
+            if html or text:
+                return {
+                    "document_id": str(document_id),
+                    "titulo": ver["titulo"],
+                    "kind": ver["kind"],
+                    "version": ver["version"],
+                    "pages": ver["pages"],
+                    "html": html,
+                    "text": (text or "")[:30_000],
+                    "source": "matter_document_versions",
+                }
+
+        # 2) Fallback: resumen_ia como contenido base si no hay version
+        doc = await conn.fetchrow(
+            """
+            select id, titulo, kind, pages, status, resumen_ia, ingest_doc_id
+            from matter_documents
+            where id = $1::uuid and firm_id = $2::uuid
+            """,
+            document_id, firm_id,
+        )
+        if not doc:
+            return {"error": "documento no encontrado"}
+
+        if doc["resumen_ia"] and len(doc["resumen_ia"]) > 100:
+            return {
+                "document_id": str(doc["id"]),
+                "titulo": doc["titulo"],
+                "kind": doc["kind"],
+                "pages": doc["pages"],
+                "version": 0,
+                "html": None,
+                "text": doc["resumen_ia"],
+                "source": "resumen_ia",
+                "warning": "El documento aún no tiene versión editable; usando resumen IA como base.",
+            }
+
+        # 3) Último fallback: chunks RAG ingestados
+        if doc["ingest_doc_id"]:
+            chunks = await conn.fetch(
+                "select content from chunks where document_id = $1::uuid "
+                "order by chunk_index limit 80",
+                doc["ingest_doc_id"],
+            )
+            if chunks:
+                text = "\n\n".join(c["content"] for c in chunks if c["content"])
+                if text:
+                    return {
+                        "document_id": str(doc["id"]),
+                        "titulo": doc["titulo"],
+                        "kind": doc["kind"],
+                        "pages": doc["pages"],
+                        "version": 0,
+                        "html": None,
+                        "text": text[:30_000],
+                        "source": "rag_chunks",
+                    }
+
+    return {
+        "document_id": str(document_id),
+        "titulo": doc["titulo"] if doc else None,
+        "html": None,
+        "text": None,
+        "warning": (
+            "Este documento no tiene contenido editable disponible. "
+            "Genera uno con draft_pleading + canvas_set_text."
+        ),
+    }
+
+
 async def canvas_get_current_tool(args: dict, ctx: dict) -> dict:
     """Lee el documento actual desde DB (matter_document_versions más reciente).
 

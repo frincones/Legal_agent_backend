@@ -95,27 +95,52 @@ conocimiento general sin haber llamado una tool primero.
 
 Mapeo automático (memorízalo):
 
-  "qué casos tengo" / "mis casos"        → list_my_matters
+  "qué casos tengo" / "mis casos" / "casos pendientes" / "qué tengo hoy"
+                                         → list_my_matters
+                                            (NO list_upcoming_deadlines —
+                                             "casos" ≠ "plazos")
+  "qué plazos / qué vence / audiencias"  → list_upcoming_deadlines
   "busca a [cliente]" / "el cliente X"   → find_client
-  "qué vence" / "plazos" / "audiencias"  → list_upcoming_deadlines
   "agenda audiencia" / "agrega plazo"    → add_matter_deadline
   "agrega nota al caso" / "anota..."     → add_matter_note
   "liquida [trabajador]" / "liquidación" → calc_liquidacion
   "prescripción" / "cuánto tengo"        → calc_prescripcion
   "intereses moratorios"                 → calc_intereses
   "busca jurisprudencia sobre X"         → research_jurisprudence
-  "redacta [tutela/demanda/contesta..]"  → draft_pleading
+  "redacta [tutela/demanda/contesta..]"  → draft_pleading + canvas_set_text
   "ábreme [pantalla]"                    → ui_navigate
   "ábreme el canvas de X"                → ui_open_matter_canvas
   "muéstrame [pestaña] de X"             → ui_open_matter_tab
   "llena el formulario con..."           → ui_prefill_form
+  "léeme la demanda" / "cárgame el doc"  → list_matter_documents +
+                                            get_document_content
+                                            (NO summarize_document)
+  "ponme el doc en el canvas"            → get_document_content +
+                                            canvas_set_text(text obtenido)
+  "dame un resumen del doc"              → summarize_document
+  "qué partes tiene el doc"              → extract_document_entities
   "investiga a fondo / valida X"         → delegate_to('investigador', '...')
   "redacta completo con jurisprudencia"  → delegate_to('redactor', '...')
   "calcula varios escenarios"            → delegate_to('calculista', '...')
 
+DIFERENCIA CRÍTICA entre tools de documento:
+  · summarize_document      = RESUMEN IA breve (1-3 oraciones). NO sirve
+                              para mostrar el doc completo.
+  · extract_document_entities = partes, fechas, obligaciones (estructura).
+                              NO devuelve el texto del doc.
+  · get_document_content    = TEXTO COMPLETO del doc. ÚSALO cuando el
+                              abogado quiere LEER o CARGAR el documento.
+
 Si NINGUNA tool encaja, llama delegate_to('investigador', tarea_completa)
 para que el especialista decida. Si ni el sub-agente sabe, sólo entonces
 responde "No tengo la herramienta para eso".
+
+⚠️ INPUT ESPURIO / ECHO: si el `transcript` que recibes tiene <8 caracteres,
+NO está claramente en español, o son sólo interjecciones ("ehh", "umm",
+"みたい", "okay" sin contexto), ASUME que es echo de tu propia voz capturado
+por el micrófono. NO respondas. Espera al siguiente turn real del abogado.
+NUNCA generes una respuesta basada en input que no sea claramente español
+con intención legal o conversacional clara.
 
 ═══════════════════════════════════════════════════════════════════════
 REGLAS DE CONVERSACIÓN
@@ -139,9 +164,26 @@ REGLAS DE CONVERSACIÓN
    "No encuentro 'Rodríguez vs Fonseca'. Tiene Rodríguez vs Comcel
    y Rodríguez vs Sanitas. ¿Cuál?"
 
-6. SI EL NOMBRE QUE DICTÓ NO EXISTE EXACTAMENTE: pide aclarar antes
-   de actuar. NO abras un caso parecido sin confirmar. NO digas
-   "abrí X" con un nombre distinto al que él dictó.
+6. ⚠️⚠️ REGLA ESTRICTA · MATCH AMBIGUO DE CLIENTE/CASO ⚠️⚠️
+
+   Si el abogado dicta un nombre que NO COINCIDE EXACTAMENTE con un
+   caso/cliente del firm:
+     · NO abras un caso parecido.
+     · NO digas "abrí X" con un nombre DISTINTO al dictado.
+     · PREGUNTA con las opciones reales del firm.
+
+   EJEMPLO REAL (cometer este error es FALLA GRAVE):
+
+   Abogado: "Ábreme el canvas de Rodríguez contra Concepción."
+   list_my_matters() devuelve: Rodríguez vs Comcel, Rodríguez vs Sanitas,
+                                Constructora del Valle, ... (NO hay "Concepción")
+   ❌ MAL:  ui_open_matter_canvas(matter_id=Comcel) + "Listo, abrí
+            Rodríguez contra Comcel"
+   ✅ BIEN: "No encuentro 'Rodríguez contra Concepción'. Tiene Rodríguez
+            contra Comcel y Rodríguez contra Sanitas. ¿Cuál?"
+
+   El "match aproximado silencioso" es la falla más grave que puedes
+   cometer porque te pones a trabajar sobre el caso EQUIVOCADO.
 
 ═══════════════════════════════════════════════════════════════════════
 ROL Y CONTEXTO
@@ -287,8 +329,12 @@ def build_session_update(matter_id: Optional[str] = None) -> dict:
             "output_audio_format": "pcm16",
             "input_audio_transcription": {"model": "gpt-4o-transcribe"},
             "turn_detection": {
+                # threshold 0.7 (era 0.6): más estricto para evitar que el
+                # echo del propio TTS active el VAD como user input. En la
+                # sesión 16:43 OpenAI transcribió "みたい" como user_turn,
+                # echo claro del audio del agente.
                 "type": "server_vad",
-                "threshold": 0.6,
+                "threshold": 0.7,
                 "prefix_padding_ms": 500,
                 "silence_duration_ms": 900,
                 "create_response": True,
@@ -328,8 +374,9 @@ TIER1_TOOLS = {
     "research_jurisprudence",
     # Documentos · necesarios para análisis "léeme la demanda"
     "list_matter_documents",
-    "extract_document_entities",
-    "summarize_document",
+    "get_document_content",       # texto COMPLETO del doc (no resumen)
+    "extract_document_entities",  # estructura: partes/fechas/obligaciones
+    "summarize_document",         # resumen IA breve (1-3 oraciones)
     # Drafting (escribe a Canvas)
     "draft_pleading",
     # Canvas · co-edición agente↔abogado en TipTap editor
@@ -1039,6 +1086,27 @@ def _tool_descriptors() -> list[dict]:
                 "required": ["key"],
             },
         },
+        # ─── Documento · contenido completo ───────────────────────────
+        {
+            "type": "function",
+            "name": "get_document_content",
+            "description": (
+                "Devuelve el TEXTO COMPLETO de un documento. Usar cuando "
+                "el abogado pide 'léeme', 'cárgame', 'analiza la demanda', "
+                "'ponme el documento en el canvas'. NO confundir con "
+                "summarize_document (que es resumen breve) ni con "
+                "extract_document_entities (que es estructura partes/fechas). "
+                "Esta tool devuelve el contenido crudo (text/html) de la "
+                "última versión guardada del documento."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "document_id": {"type": "string", "description": "uuid de matter_documents"},
+                },
+                "required": ["document_id"],
+            },
+        },
         # ─── F-Canvas · co-edición del documento ──────────────────────
         {
             "type": "function",
@@ -1352,14 +1420,23 @@ async def _pump_upstream_to_client(
         # para poder diagnosticar conversaciones sin depender del browser.
         if etype == "conversation.item.input_audio_transcription.completed":
             user_text = (evt.get("transcript") or "").strip()
+            # Filtro echo: turns muy cortos (<5 chars) o predominantemente
+            # no-latinos (japonés/chino) son casi siempre echo del propio
+            # agente capturado por el mic. Marcar como kind='echo' para
+            # poder filtrarlos en logs sin perder el rastro.
+            non_latin_chars = sum(1 for c in user_text if c and ord(c) > 0x3000)
+            looks_echo = (
+                len(user_text) < 5
+                or (len(user_text) > 0 and non_latin_chars / len(user_text) > 0.3)
+            )
             if user_text:
                 asyncio.create_task(_persist_trace(
-                    kind="llm_call", name="user_turn",
+                    kind="llm_call", name=("echo_turn" if looks_echo else "user_turn"),
                     firm_id=ctx.get("firm_id"),
                     matter_id=ctx.get("matter_id"),
                     session_id=ctx.get("session_id"),
                     input_obj=None,
-                    output_obj={"text": user_text},
+                    output_obj={"text": user_text, "looks_echo": looks_echo},
                     duration_ms=None,
                 ))
         elif etype == "response.audio_transcript.done":
