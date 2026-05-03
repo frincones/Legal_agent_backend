@@ -201,8 +201,21 @@ F. DRAFTING REAL (no plantilla genérica). Cuando el abogado pide redactar:
    PASO 2: research_jurisprudence(query relevante) → 2-3 sentencias
    PASO 3: draft_pleading con `facts` derivados del context Y `citations`
            con los `citation_ref` del paso 2.
+   PASO 4: canvas_set_text con el markdown del draft → aparece en el
+           Live Canvas para que el abogado lo edite.
    NUNCA llames draft_pleading sin facts; el output queda con
    placeholders [NOMBRE DEL ACTOR] y es inutilizable.
+
+   CO-EDICIÓN DEL CANVAS (cuando ya hay un documento en pantalla):
+   · "Agrega una sección de hechos" → canvas_append con el markdown
+   · "Corrige la sección de fundamentos" → canvas_replace_section(
+        heading="Fundamentos jurídicos", markdown=...)
+   · "Lee lo que está escrito y dime qué falta" → canvas_get_current
+        primero, luego analiza el text_preview y reporta
+   · "Guarda esta versión" → canvas_save_version
+   El abogado puede tipear manualmente al mismo tiempo: cuando él está
+   tipeando, tus ops se encolan automáticamente y se aplican cuando él
+   pause >2 segundos.
 
 G. ANÁLISIS DE DOCUMENTO ("léeme la demanda", "analiza el documento",
    "dime si está bien"):
@@ -319,6 +332,12 @@ TIER1_TOOLS = {
     "summarize_document",
     # Drafting (escribe a Canvas)
     "draft_pleading",
+    # Canvas · co-edición agente↔abogado en TipTap editor
+    "canvas_set_text",
+    "canvas_append",
+    "canvas_replace_section",
+    "canvas_save_version",
+    "canvas_get_current",
     # UI bridge esenciales
     "ui_navigate",
     "ui_open_matter_canvas",
@@ -1018,6 +1037,74 @@ def _tool_descriptors() -> list[dict]:
                     "scope": {"type": "string", "enum": ["firm", "user", "matter"], "default": "firm"},
                 },
                 "required": ["key"],
+            },
+        },
+        # ─── F-Canvas · co-edición del documento ──────────────────────
+        {
+            "type": "function",
+            "name": "canvas_set_text",
+            "description": (
+                "Reemplaza TODO el contenido del Live Canvas con un markdown. "
+                "Usar después de draft_pleading cuando quieres poner el draft "
+                "completo en pantalla. El editor mantiene autosave cada 3s."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"markdown": {"type": "string"}},
+                "required": ["markdown"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "canvas_append",
+            "description": (
+                "Añade un fragmento de markdown AL FINAL del documento del "
+                "Canvas. Útil para agregar una nueva sección sin tocar lo "
+                "existente. Soporta headings (#, ##, ###), listas, énfasis."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"markdown": {"type": "string"}},
+                "required": ["markdown"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "canvas_replace_section",
+            "description": (
+                "Reemplaza el contenido bajo un heading (h1/h2/h3) específico "
+                "con nuevo markdown. Match por substring case-insensitive del "
+                "título. Si no encuentra el heading, hace append al final."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "heading": {"type": "string", "description": "Nombre del heading a reemplazar"},
+                    "markdown": {"type": "string"},
+                },
+                "required": ["heading", "markdown"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "canvas_save_version",
+            "description": "Fuerza guardar versión del documento actual a matter_document_versions.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+        {
+            "type": "function",
+            "name": "canvas_get_current",
+            "description": (
+                "Lee el contenido actual del documento del Canvas (última "
+                "versión persistida en matter_document_versions). Útil cuando "
+                "el abogado pide 'analiza el documento' o 'corrige tal sección'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "matter_id": {"type": "string"},
+                    "document_id": {"type": "string"},
+                },
             },
         },
         # ─── F3 · Sub-agent delegation ────────────────────────────────

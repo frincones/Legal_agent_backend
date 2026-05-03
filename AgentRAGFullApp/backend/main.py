@@ -196,7 +196,18 @@ async def lifespan(app: FastAPI):
         register_tool("recall", recall_tool)
         register_tool("recall_relevant", recall_relevant_tool)
         register_tool("forget", forget_tool)
-        logger.info("LexAI Realtime tools registered (40 total · 3 sub-agentes · memoria)")
+        # F-Canvas · co-edicion del documento (5 tools)
+        from agent.tools.canvas_edit import (
+            canvas_set_text_tool, canvas_append_tool,
+            canvas_replace_section_tool, canvas_save_version_tool,
+            canvas_get_current_tool,
+        )
+        register_tool("canvas_set_text", canvas_set_text_tool)
+        register_tool("canvas_append", canvas_append_tool)
+        register_tool("canvas_replace_section", canvas_replace_section_tool)
+        register_tool("canvas_save_version", canvas_save_version_tool)
+        register_tool("canvas_get_current", canvas_get_current_tool)
+        logger.info("LexAI Realtime tools registered (45 total · 3 sub-agentes · memoria · canvas)")
     except Exception as e:
         logger.warning("LexAI tool registration failed (non-fatal): %s", e)
 
