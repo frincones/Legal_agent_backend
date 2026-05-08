@@ -260,6 +260,7 @@ from api.clients import router as clients_router
 from api.matter_documents import router as matter_documents_router
 from api.notifications import router as notifications_router
 from api.legal_templates_api import router as legal_templates_router
+from api.canvas_transform import router as canvas_transform_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -279,6 +280,7 @@ app.include_router(clients_router)
 app.include_router(matter_documents_router)
 app.include_router(notifications_router)
 app.include_router(legal_templates_router)
+app.include_router(canvas_transform_router)
 
 
 def main():
