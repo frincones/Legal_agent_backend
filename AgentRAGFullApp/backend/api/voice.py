@@ -249,9 +249,17 @@ F. DRAFTING REAL (no plantilla genérica). Cuando el abogado pide redactar:
    placeholders [NOMBRE DEL ACTOR] y es inutilizable.
 
    CO-EDICIÓN DEL CANVAS (cuando ya hay un documento en pantalla):
-   · "Agrega una sección de hechos" → canvas_append con el markdown
+   · "Agrega una sección de hechos al final" → canvas_append(markdown)
+   · "Inserta esta cláusula aquí donde tengo el cursor" →
+        canvas_insert_at_cursor(markdown)
    · "Corrige la sección de fundamentos" → canvas_replace_section(
         heading="Fundamentos jurídicos", markdown=...)
+   · "Agrega un párrafo en la sección de pretensiones" →
+        canvas_select_section(heading="Pretensiones") + luego
+        canvas_insert_at_cursor(markdown)
+   · "Cambia todas las menciones de X por Y" →
+        canvas_find_replace(needle="X", replacement="Y")
+        (case-sensitive, exacto, plain text)
    · "Lee lo que está escrito y dime qué falta" → canvas_get_current
         primero, luego analiza el text_preview y reporta
    · "Guarda esta versión" → canvas_save_version
@@ -380,10 +388,13 @@ TIER1_TOOLS = {
     # Drafting (escribe a Canvas) + plantillas
     "draft_pleading",
     "list_legal_templates",
-    # Canvas · co-edición agente↔abogado en TipTap editor
+    # Canvas · co-edición agente↔abogado en TipTap editor (v1 + v2 ProseMirror)
     "canvas_set_text",
     "canvas_append",
     "canvas_replace_section",
+    "canvas_insert_at_cursor",
+    "canvas_find_replace",
+    "canvas_select_section",
     "canvas_save_version",
     "canvas_get_current",
     # UI bridge esenciales
@@ -1173,7 +1184,9 @@ def _tool_descriptors() -> list[dict]:
             "description": (
                 "Reemplaza el contenido bajo un heading (h1/h2/h3) específico "
                 "con nuevo markdown. Match por substring case-insensitive del "
-                "título. Si no encuentra el heading, hace append al final."
+                "título. Si no encuentra el heading, hace append al final. "
+                "Versión ProseMirror-native: detecta el siguiente heading hermano "
+                "y reemplaza solo lo que está entre medias (no toca otras secciones)."
             ),
             "parameters": {
                 "type": "object",
@@ -1182,6 +1195,61 @@ def _tool_descriptors() -> list[dict]:
                     "markdown": {"type": "string"},
                 },
                 "required": ["heading", "markdown"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "canvas_insert_at_cursor",
+            "description": (
+                "Inserta un fragmento de markdown EN LA POSICIÓN EXACTA del caret "
+                "del usuario en el editor. Usar cuando el abogado dice 'agrega "
+                "aquí esta cláusula', 'inserta donde estoy', o cuando combinas con "
+                "canvas_select_section para añadir contenido en una sección "
+                "específica. Diferencia con canvas_append: append siempre va al "
+                "final del documento; insert_at_cursor respeta donde está el caret."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"markdown": {"type": "string"}},
+                "required": ["markdown"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "canvas_find_replace",
+            "description": (
+                "Busca todas las ocurrencias EXACTAS de `needle` (texto plano) en "
+                "el documento y las reemplaza por `replacement`. Match es "
+                "case-sensitive. Usar para correcciones masivas: 'cambia todas las "
+                "menciones de Pedro Pérez por Pedro José Pérez', 'reemplaza CDD "
+                "por Cédula de Ciudadanía'. NO usar para cambios de formato (eso "
+                "es canvas_replace_section)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "needle": {"type": "string", "description": "Texto exacto a buscar"},
+                    "replacement": {"type": "string", "description": "Texto que reemplaza al needle"},
+                },
+                "required": ["needle", "replacement"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "canvas_select_section",
+            "description": (
+                "Sitúa el caret JUSTO DESPUÉS de un heading específico, sin "
+                "modificar contenido. Combinar con canvas_insert_at_cursor para "
+                "insertar contenido en una sección concreta. Match por substring "
+                "case-insensitive del heading. Ejemplo: select_section('Pretensiones') "
+                "→ insert_at_cursor('Tercero. ...')."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "heading": {"type": "string", "description": "Nombre del heading a localizar"},
+                },
+                "required": ["heading"],
             },
         },
         {

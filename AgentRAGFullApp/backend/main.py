@@ -197,11 +197,13 @@ async def lifespan(app: FastAPI):
         register_tool("recall", recall_tool)
         register_tool("recall_relevant", recall_relevant_tool)
         register_tool("forget", forget_tool)
-        # F-Canvas · co-edicion del documento (6 tools)
+        # F-Canvas · co-edicion del documento (9 tools · v1 + v2 ProseMirror-native)
         from agent.tools.canvas_edit import (
             canvas_set_text_tool, canvas_append_tool,
             canvas_replace_section_tool, canvas_save_version_tool,
             canvas_get_current_tool, get_document_content_tool,
+            canvas_insert_at_cursor_tool, canvas_find_replace_tool,
+            canvas_select_section_tool,
         )
         register_tool("canvas_set_text", canvas_set_text_tool)
         register_tool("canvas_append", canvas_append_tool)
@@ -209,7 +211,10 @@ async def lifespan(app: FastAPI):
         register_tool("canvas_save_version", canvas_save_version_tool)
         register_tool("canvas_get_current", canvas_get_current_tool)
         register_tool("get_document_content", get_document_content_tool)
-        logger.info("LexAI Realtime tools registered (46 total · 3 sub-agentes · memoria · canvas)")
+        register_tool("canvas_insert_at_cursor", canvas_insert_at_cursor_tool)
+        register_tool("canvas_find_replace", canvas_find_replace_tool)
+        register_tool("canvas_select_section", canvas_select_section_tool)
+        logger.info("LexAI Realtime tools registered (50 total · 3 sub-agentes · memoria · canvas v2)")
     except Exception as e:
         logger.warning("LexAI tool registration failed (non-fatal): %s", e)
 

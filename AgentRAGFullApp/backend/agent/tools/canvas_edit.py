@@ -94,6 +94,75 @@ async def canvas_save_version_tool(args: dict, ctx: dict) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# F-Canvas v2 · ProseMirror-native ops (más precisas que las de v1)
+# ─────────────────────────────────────────────────────────────────────
+
+
+async def canvas_insert_at_cursor_tool(args: dict, ctx: dict) -> dict:
+    """Inserta un fragmento de markdown en la posición exacta del caret del usuario.
+
+    Usar cuando el abogado dice "agrega aquí …" o "inserta esta cláusula
+    donde tengo el cursor". Si el caret está al final, equivale a append;
+    pero si está dentro de un párrafo, inserta inline preservando el resto.
+    """
+    markdown = (args.get("markdown") or "").strip()
+    if not markdown:
+        return {"error": "markdown requerido"}
+    if len(markdown) > 50_000:
+        return {"error": "markdown excede 50k caracteres"}
+    return {
+        "summary": f"Inserté {len(markdown)} caracteres en la posición del cursor",
+        "_ui_command": _ui("canvas_insert_at_cursor", markdown=markdown),
+    }
+
+
+async def canvas_find_replace_tool(args: dict, ctx: dict) -> dict:
+    """Busca todas las ocurrencias de `needle` (texto plano) y las reemplaza.
+
+    Usar para correcciones masivas: "cambia todas las menciones de
+    'Pedro Pérez' por 'Pedro José Pérez Rojas'", "reemplaza CDD por
+    Cédula de Ciudadanía", etc. Match exacto (case-sensitive). Si no
+    hay match, no modifica nada.
+
+    Args:
+      needle: string a buscar (case-sensitive, plain text)
+      replacement: string que reemplaza al needle
+    """
+    needle = (args.get("needle") or "").strip()
+    replacement = args.get("replacement")
+    if not needle:
+        return {"error": "needle requerido"}
+    if replacement is None:
+        return {"error": "replacement requerido"}
+    if len(needle) > 1_000:
+        return {"error": "needle muy largo (>1000 chars)"}
+    return {
+        "summary": f"Reemplazando '{needle}' por '{replacement}' en el documento",
+        "_ui_command": _ui("canvas_find_replace", needle=needle, replacement=replacement),
+    }
+
+
+async def canvas_select_section_tool(args: dict, ctx: dict) -> dict:
+    """Sitúa el caret justo después de un heading específico.
+
+    Útil para que la siguiente operación (canvas_insert_at_cursor o
+    canvas_append) aplique dentro de esa sección. Match por substring
+    case-insensitive del heading. Ejemplo de uso:
+      1. canvas_select_section('Pretensiones')
+      2. canvas_insert_at_cursor('Tercero. ...')
+    """
+    heading = (args.get("heading") or "").strip()
+    if not heading:
+        return {"error": "heading requerido"}
+    if len(heading) > 200:
+        return {"error": "heading muy largo"}
+    return {
+        "summary": f"Cursor posicionado en sección '{heading}'",
+        "_ui_command": _ui("canvas_select_section", heading=heading),
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────
 
 
 async def get_document_content_tool(args: dict, ctx: dict) -> dict:
