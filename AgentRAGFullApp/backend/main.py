@@ -186,6 +186,13 @@ async def lifespan(app: FastAPI):
         register_tool("analyze_firm_performance", analyze_firm_performance_tool)
         register_tool("find_anything", find_anything_tool)
         register_tool("send_whatsapp", send_whatsapp_tool)
+        # Sprint 8 · billable hours + invoicing
+        from api.time_entries import track_time_tool
+        from api.expenses import log_expense_tool
+        from api.invoices import generate_invoice_tool
+        register_tool("track_time", track_time_tool)
+        register_tool("log_expense", log_expense_tool)
+        register_tool("generate_invoice", generate_invoice_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -304,6 +311,10 @@ from api.calendar_integrations import router as calendar_router
 from api.analytics import router as analytics_router
 from api.search import router as search_router
 from api.whatsapp import router as whatsapp_router
+from api.time_entries import router as time_entries_router
+from api.expenses import router as expenses_router
+from api.invoices import router as invoices_router
+from api.client_portal import router_admin as client_portal_admin_router, router_public as client_portal_public_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -344,6 +355,11 @@ app.include_router(calendar_router)
 app.include_router(analytics_router)
 app.include_router(search_router)
 app.include_router(whatsapp_router)
+app.include_router(time_entries_router)
+app.include_router(expenses_router)
+app.include_router(invoices_router)
+app.include_router(client_portal_admin_router)
+app.include_router(client_portal_public_router)
 
 
 def main():
