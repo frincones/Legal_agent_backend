@@ -177,6 +177,15 @@ async def lifespan(app: FastAPI):
         register_tool("sync_email_now", sync_email_now_tool)
         register_tool("query_audit_logs", query_audit_logs_tool)
         register_tool("check_quota", check_quota_tool)
+        # Sprint 7 · calendar + analytics + search + whatsapp
+        from agent.workers.calendar_sync import sync_calendar_tool
+        from api.analytics import analyze_firm_performance_tool
+        from api.search import find_anything_tool
+        from api.whatsapp import send_whatsapp_tool
+        register_tool("sync_calendar", sync_calendar_tool)
+        register_tool("analyze_firm_performance", analyze_firm_performance_tool)
+        register_tool("find_anything", find_anything_tool)
+        register_tool("send_whatsapp", send_whatsapp_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -291,6 +300,10 @@ from api.sla import router as sla_router
 from api.billing import router as billing_router
 from api.audit import router as audit_router
 from api.quotas import router as quotas_router
+from api.calendar_integrations import router as calendar_router
+from api.analytics import router as analytics_router
+from api.search import router as search_router
+from api.whatsapp import router as whatsapp_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -327,6 +340,10 @@ app.include_router(sla_router)
 app.include_router(billing_router)
 app.include_router(audit_router)
 app.include_router(quotas_router)
+app.include_router(calendar_router)
+app.include_router(analytics_router)
+app.include_router(search_router)
+app.include_router(whatsapp_router)
 
 
 def main():
