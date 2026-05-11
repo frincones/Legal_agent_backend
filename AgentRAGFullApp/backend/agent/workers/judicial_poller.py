@@ -16,6 +16,7 @@ orquestación temporal puede venir de:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import date, datetime
@@ -111,6 +112,46 @@ async def poll_subscription(subscription_id: str) -> dict:
                 inserted += 1
             except Exception as e:
                 logger.debug("insert notification skipped: %s", e)
+
+    # Snapshot · raw_hash sobre todas las notifs para detectar diffs novel.
+    try:
+        normalized = "|".join(sorted(n.hash_dedup() for n in notifs))
+        raw_hash = hashlib.sha256(normalized.encode()).hexdigest()
+        raw_body = json.dumps(
+            [
+                {
+                    "titulo": n.titulo,
+                    "fecha": n.fecha_publicacion.isoformat(),
+                    "tipo": n.tipo,
+                }
+                for n in notifs
+            ],
+            ensure_ascii=False,
+        )[:65000]
+        async with storage.pool.acquire() as conn:
+            prev = await conn.fetchrow(
+                """
+                select raw_hash from judicial_snapshots
+                 where subscription_id = $1::uuid
+                 order by fetched_at desc
+                 limit 1
+                """,
+                subscription_id,
+            )
+            changed = (not prev) or (prev["raw_hash"] != raw_hash)
+            await conn.execute(
+                """
+                insert into judicial_snapshots
+                  (firm_id, subscription_id, status_code, raw_hash,
+                   raw_body, parsed, diff_changed, notif_count)
+                values ($1::uuid, $2::uuid, $3, $4, $5, $6::jsonb, $7, $8)
+                """,
+                sub["firm_id"], subscription_id, 200, raw_hash, raw_body,
+                json.dumps({"count": len(notifs)}),
+                changed, len(notifs),
+            )
+    except Exception as e:
+        logger.debug("snapshot write skipped: %s", e)
 
     await _mark_polled(subscription_id, status="ok", error=None)
     return {"n_polled": len(notifs), "n_inserted": inserted}

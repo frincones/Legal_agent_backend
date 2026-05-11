@@ -163,6 +163,13 @@ async def lifespan(app: FastAPI):
         register_tool("subscribe_to_expediente", subscribe_to_expediente_tool)
         register_tool("list_judicial_notifications", list_judicial_notifications_tool)
         register_tool("poll_judicial_now", poll_judicial_now_tool)
+        # Sprint 5 · email parser + daily briefing + SLA
+        from agent.tools.parse_legal_email import parse_legal_email_tool
+        from agent.tools.daily_briefing import daily_briefing_tool
+        from agent.workers.sla_reminders import run_sla_reminders_tool
+        register_tool("parse_legal_email", parse_legal_email_tool)
+        register_tool("daily_briefing", daily_briefing_tool)
+        register_tool("run_sla_reminders", run_sla_reminders_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -261,6 +268,19 @@ from api.matter_documents import router as matter_documents_router
 from api.notifications import router as notifications_router
 from api.legal_templates_api import router as legal_templates_router
 from api.canvas_transform import router as canvas_transform_router
+from api.canvas_generate import router as canvas_generate_router
+from api.firm_teams import router as firm_teams_router
+from api.firm_users import router as firm_users_router
+from api.profile import router as profile_router
+from api.legal_alerts import router as legal_alerts_router
+from api.user_templates import router as user_templates_router
+from api.calc_plazos import router as calc_plazos_router
+from api.calc_pension import router as calc_pension_router
+from api.judicial import router as judicial_router
+from api.email_integrations import router as email_integrations_router
+from api.inbox import router as inbox_router
+from api.push import router as push_router
+from api.sla import router as sla_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -281,6 +301,19 @@ app.include_router(matter_documents_router)
 app.include_router(notifications_router)
 app.include_router(legal_templates_router)
 app.include_router(canvas_transform_router)
+app.include_router(canvas_generate_router)
+app.include_router(firm_teams_router)
+app.include_router(firm_users_router)
+app.include_router(profile_router)
+app.include_router(legal_alerts_router)
+app.include_router(user_templates_router)
+app.include_router(calc_plazos_router)
+app.include_router(calc_pension_router)
+app.include_router(judicial_router)
+app.include_router(email_integrations_router)
+app.include_router(inbox_router)
+app.include_router(push_router)
+app.include_router(sla_router)
 
 
 def main():

@@ -50,6 +50,13 @@ class MatterUpdate(BaseModel):
     cuantia: Optional[float] = None
     pendientes: Optional[int] = None
     metadata: Optional[dict] = None
+    # Sprint 2 · S2-02: granular procedural state
+    instance: Optional[str] = Field(
+        None,
+        pattern="^(inicial|administrativa|primera|apelacion|casacion|firme)$",
+    )
+    proceso_tipo: Optional[str] = None
+    current_term_due_at: Optional[datetime] = None
 
 
 class MatterRow(BaseModel):
@@ -70,6 +77,10 @@ class MatterRow(BaseModel):
     is_demo: bool
     created_at: datetime
     updated_at: datetime
+    # Sprint 2
+    instance: Optional[str] = None
+    proceso_tipo: Optional[str] = None
+    current_term_due_at: Optional[datetime] = None
 
 
 def _row_to_matter(r) -> MatterRow:
@@ -91,7 +102,19 @@ def _row_to_matter(r) -> MatterRow:
         is_demo=r["is_demo"],
         created_at=r["created_at"],
         updated_at=r["updated_at"],
+        instance=_safe_get(r, "instance"),
+        proceso_tipo=_safe_get(r, "proceso_tipo"),
+        current_term_due_at=_safe_get(r, "current_term_due_at"),
     )
+
+
+def _safe_get(r, key, default=None):
+    """Defensive accessor for asyncpg.Record-like rows that may or may
+    not include a column (older queries don't select the new fields)."""
+    try:
+        return r[key]
+    except (KeyError, IndexError):
+        return default
 
 
 def _next_display_id(year: int, seq: int) -> str:
@@ -210,10 +233,20 @@ async def update_matter(
     if not fields:
         raise HTTPException(400, "no fields to update")
 
+    # Whitelist of legal columns to avoid SQL injection via field names.
+    ALLOWED = {
+        "titulo", "etapa_procesal", "tribunal", "juzgado", "expediente",
+        "status", "priority", "proxima_fecha", "proxima_tipo", "cuantia",
+        "pendientes", "metadata", "materia",
+        # Sprint 2
+        "instance", "proceso_tipo", "current_term_due_at",
+    }
     sets = []
     args: list = []
     i = 1
     for k, v in fields.items():
+        if k not in ALLOWED:
+            continue  # silently drop unknown keys
         if k == "metadata":
             sets.append(f"metadata = ${i}::jsonb")
             args.append(json.dumps(v))
@@ -230,6 +263,8 @@ async def update_matter(
             sets.append(f"{k} = ${i}")
             args.append(v)
         i += 1
+    if not sets:
+        raise HTTPException(400, "no valid fields to update")
     args.append(matter_id)
     args.append(principal.firm_id)
 
@@ -278,6 +313,179 @@ async def get_timeline(
             "payload": r["payload"] or {},
         } for r in rows
     ]}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Sprint 2 · S2-01 · Citations / Risks per matter
+# ─────────────────────────────────────────────────────────────────────
+
+
+@router.get("/{matter_id}/citations")
+async def list_matter_citations(
+    matter_id: str,
+    principal: Principal = Depends(get_current_firm),
+    limit: int = Query(default=100, le=500),
+):
+    """Returns citations across all documents of the matter.
+    Joins document_citations → matter_documents to filter by matter_id."""
+    from utils.db import get_storage
+    storage = await get_storage()
+    async with storage.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select c.id, c.matter_document_id, c.citation_ref,
+                   c.rubro_inserted, c.estado, c.match_score,
+                   c.inserted_at, c.verified_at,
+                   d.titulo as document_titulo
+            from document_citations c
+            join matter_documents d on d.id = c.matter_document_id
+            where d.matter_id = $1::uuid and d.firm_id = $2::uuid
+            order by c.inserted_at desc
+            limit $3
+            """,
+            matter_id, principal.firm_id, limit,
+        )
+    return {"items": [
+        {
+            "id": str(r["id"]),
+            "matter_document_id": str(r["matter_document_id"]),
+            "document_titulo": r["document_titulo"],
+            "citation_ref": r["citation_ref"],
+            "rubro_inserted": r["rubro_inserted"],
+            "estado": r["estado"],
+            "match_score": float(r["match_score"]) if r["match_score"] is not None else None,
+            "inserted_at": r["inserted_at"].isoformat() if r["inserted_at"] else None,
+            "verified_at": r["verified_at"].isoformat() if r["verified_at"] else None,
+        } for r in rows
+    ]}
+
+
+@router.get("/{matter_id}/risks")
+async def list_matter_risks(
+    matter_id: str,
+    principal: Principal = Depends(get_current_firm),
+    include_resolved: bool = False,
+):
+    """Returns case_risks rows. M32 fully populates these via worker;
+    until then this list will be empty for new matters."""
+    from utils.db import get_storage
+    storage = await get_storage()
+    async with storage.pool.acquire() as conn:
+        if include_resolved:
+            rows = await conn.fetch(
+                """
+                select id, type, severity, title, description, evidence_url,
+                       mitigation, detected_by, detected_at, resolved_at
+                from case_risks
+                where matter_id = $1::uuid and firm_id = $2::uuid
+                order by detected_at desc
+                """,
+                matter_id, principal.firm_id,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                select id, type, severity, title, description, evidence_url,
+                       mitigation, detected_by, detected_at, resolved_at
+                from case_risks
+                where matter_id = $1::uuid and firm_id = $2::uuid
+                  and resolved_at is null
+                order by severity desc, detected_at desc
+                """,
+                matter_id, principal.firm_id,
+            )
+    return {"items": [
+        {
+            "id": str(r["id"]),
+            "type": r["type"],
+            "severity": int(r["severity"]),
+            "title": r["title"],
+            "description": r["description"],
+            "evidence_url": r["evidence_url"],
+            "mitigation": r["mitigation"],
+            "detected_by": r["detected_by"],
+            "detected_at": r["detected_at"].isoformat() if r["detected_at"] else None,
+            "resolved_at": r["resolved_at"].isoformat() if r["resolved_at"] else None,
+        } for r in rows
+    ]}
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Sprint 2 · S2-03 · Auto-rebuild timeline (LLM-extracted dates from docs)
+# ─────────────────────────────────────────────────────────────────────
+
+
+@router.post("/{matter_id}/timeline/auto-rebuild")
+async def rebuild_timeline(
+    matter_id: str,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Walks the matter's documents and inserts timeline events for
+    each one not yet represented. Heuristic-based (uses doc.created_at
+    + kind), so it's deterministic and cheap. A full LLM-extraction
+    pass that mines dates from doc.resumen_ia/contenido is queued in
+    Sprint 5 (court watcher integration).
+    """
+    from utils.db import get_storage
+    storage = await get_storage()
+    async with storage.pool.acquire() as conn:
+        # Verify matter belongs to firm.
+        matter = await conn.fetchrow(
+            "select id from matters where id = $1::uuid and firm_id = $2::uuid",
+            matter_id, principal.firm_id,
+        )
+        if not matter:
+            raise HTTPException(404, "matter not found")
+
+        docs = await conn.fetch(
+            """
+            select id, kind, titulo, status, created_at
+            from matter_documents
+            where matter_id = $1::uuid and firm_id = $2::uuid
+            order by created_at asc
+            """,
+            matter_id, principal.firm_id,
+        )
+
+        # Existing timeline doc-related events (we use payload.matter_document_id
+        # in metadata to avoid duplicates).
+        existing = await conn.fetch(
+            """
+            select payload->>'matter_document_id' as doc_id, kind
+            from matter_timeline
+            where matter_id = $1::uuid and kind = 'documento_recibido'
+            """,
+            matter_id,
+        )
+        seen = {(r["doc_id"], r["kind"]) for r in existing if r["doc_id"]}
+
+        inserted = 0
+        for d in docs:
+            key = (str(d["id"]), "documento_recibido")
+            if key in seen:
+                continue
+            await conn.execute(
+                """
+                insert into matter_timeline
+                  (firm_id, matter_id, ts, kind, actor_user_id, payload)
+                values
+                  ($1::uuid, $2::uuid, $3, 'documento_recibido', $4::uuid, $5::jsonb)
+                """,
+                principal.firm_id,
+                matter_id,
+                d["created_at"],
+                principal.user_id,
+                json.dumps({
+                    "descripcion": f"{d['kind'].title()}: {d['titulo']}",
+                    "matter_document_id": str(d["id"]),
+                    "doc_kind": d["kind"],
+                    "doc_status": d["status"],
+                    "auto_rebuilt": True,
+                }),
+            )
+            inserted += 1
+
+    return {"inserted": inserted, "scanned": len(docs)}
 
 
 # ─────────────────────────────────────────────────────────────────────

@@ -227,6 +227,122 @@ async def citation_verify(
     return results
 
 
+# ────────────────────────────────────────────────────────────────────
+# Sprint 3 · S3-05 · Suggest replacement for an outdated citation
+# ────────────────────────────────────────────────────────────────────
+
+
+class SuggestReplacementRequest(BaseModel):
+    citation_ref: str = Field(..., min_length=3, max_length=80)
+    rubro: Optional[str] = None  # current cited summary, helps the LLM
+    case_context: Optional[str] = Field(None, max_length=600)
+
+
+class SuggestReplacementResponse(BaseModel):
+    original_ref: str
+    replacement_ref: Optional[str]
+    replacement_rubro: Optional[str]
+    replacement_url: Optional[str]
+    reason: str
+    confidence: float = 0.0
+    found: bool
+
+
+@router.post("/suggest-replacement", response_model=SuggestReplacementResponse)
+async def suggest_replacement(
+    body: SuggestReplacementRequest,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Suggests a replacement when a cited norm/sentence is outdated.
+
+    Strategy (cheap-first, falls back on LLM):
+      1. If we have the citation in our `jurisprudencia` table with a
+         `superada_por` link → return that immediately (deterministic).
+      2. Else, do a RAG-style similarity search on `jurisprudencia` by
+         the rubro/case_context.
+      3. Otherwise, return found=false (no hallucinated suggestion).
+    """
+    from utils.db import get_storage
+    storage = await get_storage()
+    ref = body.citation_ref.strip()
+
+    async with storage.pool.acquire() as conn:
+        # 1. Direct successor in registry.
+        row = await conn.fetchrow(
+            """
+            select j.numero, j.tipo_sentencia, j.rubro, j.fuente_url, j.vigencia,
+                   succ.numero as succ_numero,
+                   succ.tipo_sentencia as succ_tipo,
+                   succ.rubro as succ_rubro,
+                   succ.fuente_url as succ_url
+            from jurisprudencia j
+            left join jurisprudencia succ on succ.id = j.superada_por
+            where j.numero = $1
+            limit 1
+            """,
+            ref,
+        )
+        if row and row["succ_numero"]:
+            return SuggestReplacementResponse(
+                original_ref=ref,
+                replacement_ref=row["succ_numero"],
+                replacement_rubro=row["succ_rubro"],
+                replacement_url=row["succ_url"],
+                reason="Sentencia superada según registro de jurisprudencia.",
+                confidence=0.95,
+                found=True,
+            )
+
+        # 2. Similarity search by rubro + context.
+        query_text = " ".join(filter(None, [body.rubro, body.case_context]))
+        if not query_text and row:
+            query_text = row["rubro"] or ""
+        if query_text and len(query_text) >= 8:
+            try:
+                emb = await llm_generate_embedding(query_text)
+                qvec = _vec_to_pg(emb)
+                hits = await conn.fetch(
+                    f"""
+                    select numero, tipo_sentencia, rubro, fuente_url, vigencia,
+                           1 - (embedding <=> '{qvec}'::vector) as score
+                    from jurisprudencia
+                    where vigencia in ('vigente','modulada')
+                      and numero <> $1
+                    order by embedding <=> '{qvec}'::vector
+                    limit 1
+                    """,
+                    ref,
+                )
+                if hits:
+                    h = hits[0]
+                    score = float(h["score"])
+                    if score >= 0.65:
+                        return SuggestReplacementResponse(
+                            original_ref=ref,
+                            replacement_ref=h["numero"],
+                            replacement_rubro=h["rubro"],
+                            replacement_url=h["fuente_url"],
+                            reason=(
+                                f"Mejor match semántico vigente (score {score:.2f})."
+                            ),
+                            confidence=score,
+                            found=True,
+                        )
+            except Exception as e:
+                logger.warning("suggest-replacement embedding failed: %s", e)
+
+    # 3. No suggestion found · don't hallucinate.
+    return SuggestReplacementResponse(
+        original_ref=ref,
+        replacement_ref=None,
+        replacement_rubro=None,
+        replacement_url=None,
+        reason="No encontramos una cita vigente equivalente. Revisa manualmente.",
+        confidence=0.0,
+        found=False,
+    )
+
+
 @router.get("/{citation_ref}", response_model=CitationVerifyResult)
 async def citation_get(
     citation_ref: str,

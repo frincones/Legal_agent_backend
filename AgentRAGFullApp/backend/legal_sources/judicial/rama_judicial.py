@@ -102,22 +102,42 @@ class RamaJudicialDemoSource(BaseJudicialSource):
 
 
 class RamaJudicialLiveSource(BaseJudicialSource):
-    """Scraper placeholder para el portal real de Rama Judicial.
+    """Scraper para la API pública de consulta de procesos de la Rama Judicial.
 
-    Implementación real requiere:
-      - cookies de sesión (la web es JavaScript-heavy)
-      - headless browser (Playwright) o reverse engineering del API GraphQL
-      - cumplimiento de robots.txt y rate limiting
+    Endpoint público (sin auth): /api/v2/Procesos/Consulta/NumeroRadicacion
+      query: {numero, SoloActivos, pagina, cantidadRegistros}
+    Detalle de actuaciones por idProceso:
+      /api/v2/Proceso/Actuaciones/{idProceso}
 
-    Este placeholder devuelve [] gracefulmente; en prod debe extenderse
-    con la lógica de scraping específica.
+    Tolerante a fallos: si el endpoint cambia o la red falla, devuelve [] y
+    el orquestador hace fallback al simulator.
     """
 
     name = "rama_judicial_live"
-    description = "Live scraper for consultaprocesos.ramajudicial.gov.co"
+    description = "Live scraper for consultaprocesos.ramajudicial.gov.co (API v2 público)"
     is_live = True
 
     BASE_URL = "https://consultaprocesos.ramajudicial.gov.co"
+    API_CONSULTA = BASE_URL + "/api/v2/Procesos/Consulta/NumeroRadicacion"
+    API_ACTUACIONES = BASE_URL + "/api/v2/Proceso/Actuaciones"
+    HEADERS = {
+        "User-Agent": "LexAI/1.0 (+https://lexai.co/about) httpx",
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "es-CO,es;q=0.9",
+    }
+    TIMEOUT = 10.0
+
+    SEVERIDAD_BY_TIPO = {
+        "auto admite demanda": "alta",
+        "auto fija fecha de audiencia": "critica",
+        "sentencia": "critica",
+        "auto resuelve recurso": "alta",
+        "notificación por aviso": "alta",
+        "edicto": "info",
+        "oficio": "info",
+        "auto corre traslado": "alta",
+        "auto decreta pruebas": "alta",
+    }
 
     async def poll(
         self,
@@ -125,9 +145,112 @@ class RamaJudicialLiveSource(BaseJudicialSource):
         last_polled_at: Optional[date] = None,
         **kwargs,
     ) -> list[JudicialNotification]:
-        # TODO: implementar scraping real con httpx + Playwright si está disponible
-        logger.info("RamaJudicialLiveSource.poll · %s · not implemented (returning [])", expediente)
-        return []
+        if not expediente:
+            return []
+        try:
+            import httpx
+            async with httpx.AsyncClient(
+                timeout=self.TIMEOUT, headers=self.HEADERS, follow_redirects=True
+            ) as client:
+                # 1) Resolver idProceso por número de radicación.
+                params = {
+                    "numero": expediente,
+                    "SoloActivos": "false",
+                    "pagina": 1,
+                    "cantidadRegistros": 1,
+                }
+                r = await client.get(self.API_CONSULTA, params=params)
+                if r.status_code != 200:
+                    logger.info("rama_judicial · consulta %s · HTTP %s", expediente, r.status_code)
+                    return []
+                data = r.json() or {}
+                procesos = data.get("procesos") or []
+                if not procesos:
+                    return []
+                proc = procesos[0]
+                id_proceso = proc.get("idProceso") or proc.get("IdProceso")
+                if not id_proceso:
+                    return []
+                juzgado = proc.get("despacho") or proc.get("Despacho") or ""
+                # 2) Obtener actuaciones.
+                r2 = await client.get(
+                    f"{self.API_ACTUACIONES}/{id_proceso}",
+                    params={"pagina": 1, "cantidadRegistros": 50},
+                )
+                if r2.status_code != 200:
+                    logger.info("rama_judicial · actuaciones %s · HTTP %s", id_proceso, r2.status_code)
+                    return []
+                act_data = r2.json() or {}
+                actuaciones = act_data.get("actuaciones") or []
+        except Exception as e:
+            logger.warning("rama_judicial scraper failed: %s", e)
+            return []
+
+        notifs: list[JudicialNotification] = []
+        for a in actuaciones:
+            try:
+                fecha_str = a.get("fechaActuacion") or a.get("fechaRegistro")
+                if not fecha_str:
+                    continue
+                fa = self._parse_date(fecha_str)
+                if not fa:
+                    continue
+                if last_polled_at and fa <= last_polled_at:
+                    continue
+                titulo = a.get("actuacion") or a.get("anotacion") or "Actuación"
+                tipo, severidad = self._classify(titulo)
+                resumen = a.get("anotacion") or titulo
+                notifs.append(
+                    JudicialNotification(
+                        fuente=self.name,
+                        titulo=str(titulo)[:280],
+                        fecha_publicacion=fa,
+                        fecha_actuacion=fa,
+                        expediente=expediente,
+                        juzgado=str(juzgado)[:200] if juzgado else None,
+                        tipo=tipo,
+                        severidad=severidad,
+                        resumen=str(resumen)[:1000] if resumen else None,
+                        url_oficial=(
+                            f"{self.BASE_URL}/Procesos/NumeroRadicacion?numero={expediente}"
+                        ),
+                        metadata={"idProceso": id_proceso, "raw": a},
+                    )
+                )
+            except Exception as e:
+                logger.debug("skip actuacion: %s", e)
+        return notifs
+
+    def _parse_date(self, s: str) -> Optional[date]:
+        s = (s or "").strip()
+        if not s:
+            return None
+        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%d", "%d/%m/%Y"):
+            try:
+                from datetime import datetime as _dt
+                return _dt.strptime(s.split("Z")[0], fmt).date()
+            except Exception:
+                continue
+        return None
+
+    def _classify(self, titulo: str) -> tuple[str, str]:
+        t = (titulo or "").lower()
+        sev = "info"
+        for k, v in self.SEVERIDAD_BY_TIPO.items():
+            if k in t:
+                sev = v
+                break
+        if "sentencia" in t:
+            return "sentencia", sev
+        if "edicto" in t:
+            return "edicto", sev
+        if "oficio" in t:
+            return "oficio", sev
+        if "notific" in t:
+            return "notificacion", sev
+        if "auto" in t:
+            return "auto", sev
+        return "otro", sev
 
     async def is_available(self) -> bool:
         try:
