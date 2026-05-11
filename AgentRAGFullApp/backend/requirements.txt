@@ -37,6 +37,9 @@ python-dotenv>=1.0.0
 # Sprint 5 · Web Push (VAPID)
 pywebpush>=1.14.0
 
+# Sprint 6 · Fernet symmetric encryption (OAuth tokens at rest)
+cryptography>=42.0.0
+
 # Note: psutil is intentionally NOT installed.
 # It is a transitive dependency of `accelerate` (HuggingFace) but is only used
 # at runtime for memory monitoring during model loading. Since we use OpenAI

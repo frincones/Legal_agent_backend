@@ -125,21 +125,31 @@ async def create_integration(
         if not (body.imap_host and body.imap_username and body.imap_password):
             raise HTTPException(400, "imap requiere host, username, password")
         initial_status = "connected"
+    # Sprint 6 · cifrar IMAP password at-rest (Fernet)
+    from utils.crypto import encrypt_or_passthrough
+    imap_pwd_enc, enc_version = encrypt_or_passthrough(body.imap_password)
+    imap_pwd_legacy = body.imap_password if enc_version == 0 else None
+
     async with storage.pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             insert into email_integrations
               (firm_id, user_id, provider, email_address, display_name,
                imap_host, imap_port, imap_username, imap_password_enc,
+               imap_password_enc_v2, encryption_version,
                watch_label, filter_query, status)
             values ($1::uuid, $2::uuid, $3, $4, $5,
-                    $6, $7, $8, $9, $10, $11, $12)
+                    $6, $7, $8, $9,
+                    $10, $11,
+                    $12, $13, $14)
             on conflict (user_id, provider, email_address) do update set
               display_name = excluded.display_name,
               imap_host = excluded.imap_host,
               imap_port = excluded.imap_port,
               imap_username = excluded.imap_username,
               imap_password_enc = excluded.imap_password_enc,
+              imap_password_enc_v2 = excluded.imap_password_enc_v2,
+              encryption_version = excluded.encryption_version,
               watch_label = excluded.watch_label,
               filter_query = excluded.filter_query,
               active = true,
@@ -149,7 +159,8 @@ async def create_integration(
             principal.firm_id, principal.user_id, body.provider,
             body.email_address.lower(), body.display_name,
             body.imap_host, body.imap_port, body.imap_username,
-            body.imap_password,  # NOTE: en Sprint 6 cifrar con KMS
+            imap_pwd_legacy,
+            imap_pwd_enc, enc_version,
             body.watch_label, body.filter_query, initial_status,
         )
     return {
@@ -219,6 +230,33 @@ async def delete_integration(
             integration_id, principal.firm_id,
         )
     return {"deleted": True, "rows": rows}
+
+
+@router.post("/integrations/{integration_id}/sync-now")
+async def sync_integration_now(
+    integration_id: str,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Force-sync de una integración. Requiere que pertenezca a la firma actual."""
+    from utils.db import get_storage
+    storage = await get_storage()
+    if not hasattr(storage, "pool"):
+        raise HTTPException(503, "storage unavailable")
+    async with storage.pool.acquire() as conn:
+        ok = await conn.fetchval(
+            "select 1 from email_integrations where id = $1::uuid and firm_id = $2::uuid",
+            integration_id, principal.firm_id,
+        )
+    if not ok:
+        raise HTTPException(404, "not found")
+    from agent.workers.email_ingest import sync_integration
+    return await sync_integration(integration_id)
+
+
+@router.post("/sync-all")
+async def sync_all(principal: Principal = Depends(get_current_firm)):
+    from agent.workers.email_ingest import sync_all_for_firm
+    return await sync_all_for_firm(principal.firm_id)
 
 
 @router.post("/integrations/{integration_id}/test")
@@ -340,16 +378,27 @@ async def oauth_callback(
     else:
         raise HTTPException(400, "provider no soportado")
 
+    # Sprint 6 · cifrar tokens at-rest si la encryption key está configurada
+    from utils.crypto import encrypt_or_passthrough
+    access_enc, ver_a = encrypt_or_passthrough(access_token)
+    refresh_enc, ver_r = encrypt_or_passthrough(refresh_token)
+    legacy_access = access_token if ver_a == 0 else None
+    legacy_refresh = refresh_token if ver_r == 0 else None
+    enc_version = max(ver_a, ver_r) if (access_enc or refresh_enc) else 0
+
     async with storage.pool.acquire() as conn:
         await conn.execute(
             """
             update email_integrations set
-              oauth_access_token = coalesce($2, oauth_access_token),
+              oauth_access_token  = coalesce($2, oauth_access_token),
               oauth_refresh_token = coalesce($3, oauth_refresh_token),
+              oauth_access_token_enc  = coalesce($4, oauth_access_token_enc),
+              oauth_refresh_token_enc = coalesce($5, oauth_refresh_token_enc),
+              encryption_version  = greatest(coalesce(encryption_version,0), $6),
               status = 'connected', updated_at = now()
              where id = $1::uuid
             """,
-            state, access_token, refresh_token,
+            state, legacy_access, legacy_refresh, access_enc, refresh_enc, enc_version,
         )
     return {"ok": True, "integration_id": state, "provider": provider, "exchanged": bool(access_token)}
 

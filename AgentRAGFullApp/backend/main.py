@@ -170,6 +170,13 @@ async def lifespan(app: FastAPI):
         register_tool("parse_legal_email", parse_legal_email_tool)
         register_tool("daily_briefing", daily_briefing_tool)
         register_tool("run_sla_reminders", run_sla_reminders_tool)
+        # Sprint 6 · billing/audit/quotas + email sync
+        from agent.workers.email_ingest import sync_email_now_tool
+        from api.audit import query_audit_logs_tool
+        from api.quotas import check_quota_tool
+        register_tool("sync_email_now", sync_email_now_tool)
+        register_tool("query_audit_logs", query_audit_logs_tool)
+        register_tool("check_quota", check_quota_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -281,6 +288,9 @@ from api.email_integrations import router as email_integrations_router
 from api.inbox import router as inbox_router
 from api.push import router as push_router
 from api.sla import router as sla_router
+from api.billing import router as billing_router
+from api.audit import router as audit_router
+from api.quotas import router as quotas_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -314,6 +324,9 @@ app.include_router(email_integrations_router)
 app.include_router(inbox_router)
 app.include_router(push_router)
 app.include_router(sla_router)
+app.include_router(billing_router)
+app.include_router(audit_router)
+app.include_router(quotas_router)
 
 
 def main():
