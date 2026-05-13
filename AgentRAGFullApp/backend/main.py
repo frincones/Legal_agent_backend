@@ -193,6 +193,13 @@ async def lifespan(app: FastAPI):
         register_tool("track_time", track_time_tool)
         register_tool("log_expense", log_expense_tool)
         register_tool("generate_invoice", generate_invoice_tool)
+        # Sprint 9 · CRM + insights + automation
+        from api.leads import capture_lead_tool
+        from api.ai_insights import generate_insights_tool
+        from api.automation import run_automation_tool
+        register_tool("capture_lead", capture_lead_tool)
+        register_tool("generate_insights", generate_insights_tool)
+        register_tool("run_automation", run_automation_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -315,6 +322,10 @@ from api.time_entries import router as time_entries_router
 from api.expenses import router as expenses_router
 from api.invoices import router as invoices_router
 from api.client_portal import router_admin as client_portal_admin_router, router_public as client_portal_public_router
+from api.leads import router as leads_router
+from api.lead_stages import router as lead_stages_router
+from api.ai_insights import router as ai_insights_router
+from api.automation import router as automation_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -360,6 +371,10 @@ app.include_router(expenses_router)
 app.include_router(invoices_router)
 app.include_router(client_portal_admin_router)
 app.include_router(client_portal_public_router)
+app.include_router(leads_router)
+app.include_router(lead_stages_router)
+app.include_router(ai_insights_router)
+app.include_router(automation_router)
 
 
 def main():
