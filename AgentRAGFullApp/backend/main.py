@@ -206,6 +206,13 @@ async def lifespan(app: FastAPI):
         register_tool("check_trust_balance", check_trust_balance_tool)
         register_tool("record_trust_deposit", record_trust_deposit_tool)
         register_tool("record_trust_payment", record_trust_payment_tool)
+        # Sprint 11 · Document AI v2
+        from api.contract_analyzer import analyze_contract_voice_tool
+        from api.doc_qa import ask_about_document_tool
+        from api.doc_compare import compare_documents_tool
+        register_tool("analyze_contract", analyze_contract_voice_tool)
+        register_tool("ask_about_document", ask_about_document_tool)
+        register_tool("compare_documents", compare_documents_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -335,6 +342,9 @@ from api.automation import router as automation_router
 from api.trust_accounts import router as trust_accounts_router
 from api.trust_transactions import router as trust_transactions_router
 from api.bank_reconciliation import router as bank_reconciliation_router
+from api.contract_analyzer import router as contract_analyzer_router
+from api.doc_qa import router as doc_qa_router
+from api.doc_compare import router as doc_compare_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -387,6 +397,9 @@ app.include_router(automation_router)
 app.include_router(trust_accounts_router)
 app.include_router(trust_transactions_router)
 app.include_router(bank_reconciliation_router)
+app.include_router(contract_analyzer_router)
+app.include_router(doc_qa_router)
+app.include_router(doc_compare_router)
 
 
 def main():
