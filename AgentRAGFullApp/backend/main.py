@@ -229,6 +229,15 @@ async def lifespan(app: FastAPI):
         register_tool("add_to_kb", add_to_kb_voice_tool)
         register_tool("search_lessons", search_lessons_voice_tool)
         register_tool("extract_lesson", extract_lesson_tool)
+        # Sprint 16 · Colaboración
+        from agent.tools.collab import (
+            add_comment_tool, resolve_comment_tool,
+            show_activity_tool, show_active_users_tool,
+        )
+        register_tool("add_comment", add_comment_tool)
+        register_tool("resolve_comment", resolve_comment_tool)
+        register_tool("show_activity", show_activity_tool)
+        register_tool("show_active_users", show_active_users_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -371,6 +380,10 @@ from api.marketplace import router as marketplace_router
 from api.knowledge_base import router as kb_router
 from api.case_lessons import router as case_lessons_router
 from api.kb_admin import router as kb_admin_router
+from api.comments import router as comments_router
+from api.presence import router as presence_router
+from api.activity import router as activity_router
+from api.mentions import router as mentions_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -436,6 +449,10 @@ app.include_router(marketplace_router)
 app.include_router(kb_router)
 app.include_router(case_lessons_router)
 app.include_router(kb_admin_router)
+app.include_router(comments_router)
+app.include_router(presence_router)
+app.include_router(activity_router)
+app.include_router(mentions_router)
 
 
 def main():
