@@ -41,16 +41,17 @@ class SubscribeRequest(BaseModel):
 
 @router.get("/vapid-key")
 async def vapid_key():
-    pub = os.getenv("VAPID_PUBLIC_KEY")
-    if not pub:
+    from utils.vapid import is_configured, get_public_key
+    if not is_configured():
         return {
             "configured": False,
             "instructions": (
-                "Genera VAPID keys con: web-push generate-vapid-keys (npm i -g web-push)."
-                " Luego setea VAPID_PUBLIC_KEY y VAPID_PRIVATE_KEY en Railway."
+                "Pide al admin que genere las keys desde Settings · Push (Sprint 12). "
+                "Internamente POST /v1/push/admin/generate-vapid produce el par y "
+                "te dice qué setear en Railway + Vercel."
             ),
         }
-    return {"configured": True, "public_key": pub}
+    return {"configured": True, "public_key": get_public_key()}
 
 
 @router.post("/subscribe")
@@ -165,6 +166,10 @@ async def dispatch_to_user(
         return {"sent": 0, "status": "library_missing"}
 
     for s in subs:
+        sub_id = s["id"]
+        http_status: Optional[int] = None
+        err: Optional[str] = None
+        ok = False
         try:
             webpush(
                 subscription_info={
@@ -177,21 +182,151 @@ async def dispatch_to_user(
                 ttl=60 * 60 * 24,
             )
             sent += 1
+            ok = True
+            http_status = 201
         except WebPushException as e:  # type: ignore
             failed += 1
-            logger.warning("push failed sub=%s: %s", s["id"], e)
-            # 410 Gone → desactivar sub
+            err = str(e)[:500]
             try:
-                if getattr(e, "response", None) is not None and e.response.status_code == 410:
+                http_status = e.response.status_code if getattr(e, "response", None) is not None else None
+            except Exception:
+                http_status = None
+            logger.warning("push failed sub=%s: %s", sub_id, e)
+            try:
+                if http_status == 410:
                     async with storage.pool.acquire() as conn:
                         await conn.execute(
                             "update push_subscriptions set active = false, last_status = 410, "
                             "last_error = 'gone' where id = $1::uuid",
-                            s["id"],
+                            sub_id,
                         )
             except Exception:
                 pass
         except Exception as e:
             failed += 1
+            err = str(e)[:500]
             logger.warning("push generic failed: %s", e)
+
+        # Audit log (Sprint 12)
+        try:
+            async with storage.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    insert into push_notifications_log
+                      (firm_id, user_id, subscription_id, title, body, url, kind,
+                       status, http_status, error)
+                    values ($1::uuid, $2::uuid, $3::uuid, $4, $5, $6, $7,
+                            $8, $9, $10)
+                    """,
+                    firm_id, user_id, sub_id, title, body, url,
+                    "dispatch", "sent" if ok else "failed", http_status, err,
+                )
+        except Exception:
+            pass
     return {"sent": sent, "failed": failed, "status": "ok"}
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Sprint 12 · Admin endpoints (VAPID generation + dispatch test + logs)
+# ──────────────────────────────────────────────────────────────────────
+
+
+@router.post("/admin/generate-vapid")
+async def admin_generate_vapid(principal: Principal = Depends(get_current_firm)):
+    """Genera un par VAPID. El admin lo copia a env vars de Railway/Vercel.
+    NO se persiste en DB — las keys viven en env vars del servidor."""
+    if principal.role not in ("admin", "socio_senior"):
+        raise HTTPException(403, "Solo admin / socio_senior")
+    from utils.vapid import generate_keys
+    try:
+        keys = generate_keys()
+        return {
+            "public_key": keys["public_key"],
+            "private_key": keys["private_key"],
+            "subject": keys["subject"],
+            "instructions": (
+                "Copia estas variables a Railway (backend) y Vercel (frontend):\n"
+                f"VAPID_PUBLIC_KEY={keys['public_key']}\n"
+                f"VAPID_PRIVATE_KEY={keys['private_key']}\n"
+                f"VAPID_SUBJECT={keys['subject']}\n\n"
+                "El frontend solo necesita VAPID_PUBLIC_KEY como NEXT_PUBLIC_VAPID_PUBLIC_KEY."
+            ),
+        }
+    except Exception as e:
+        raise HTTPException(500, f"generate failed: {e}")
+
+
+@router.get("/admin/status")
+async def admin_status(principal: Principal = Depends(get_current_firm)):
+    """Devuelve si VAPID está configurado + counts del firm."""
+    from utils.vapid import is_configured, get_public_key, get_subject
+    from utils.db import get_storage
+    storage = await get_storage()
+    counts = {"subscriptions": 0, "subscriptions_active": 0, "sent_24h": 0, "failed_24h": 0}
+    if hasattr(storage, "pool"):
+        async with storage.pool.acquire() as conn:
+            counts["subscriptions"] = await conn.fetchval(
+                "select count(*) from push_subscriptions where firm_id = $1::uuid",
+                principal.firm_id,
+            )
+            counts["subscriptions_active"] = await conn.fetchval(
+                "select count(*) from push_subscriptions where firm_id = $1::uuid and active = true",
+                principal.firm_id,
+            )
+            counts["sent_24h"] = await conn.fetchval(
+                """select count(*) from push_notifications_log
+                    where firm_id = $1::uuid and status = 'sent'
+                      and sent_at >= now() - interval '24 hours'""",
+                principal.firm_id,
+            )
+            counts["failed_24h"] = await conn.fetchval(
+                """select count(*) from push_notifications_log
+                    where firm_id = $1::uuid and status = 'failed'
+                      and sent_at >= now() - interval '24 hours'""",
+                principal.firm_id,
+            )
+    return {
+        "vapid_configured": is_configured(),
+        "vapid_public_key": get_public_key() if is_configured() else None,
+        "vapid_subject": get_subject(),
+        "counts": counts,
+    }
+
+
+@router.get("/admin/logs")
+async def admin_logs(
+    limit: int = 50,
+    principal: Principal = Depends(get_current_firm),
+):
+    if principal.role not in ("admin", "socio_senior", "socio_junior"):
+        raise HTTPException(403, "Solo socios/admin")
+    from utils.db import get_storage
+    storage = await get_storage()
+    if not hasattr(storage, "pool"):
+        raise HTTPException(503, "storage unavailable")
+    async with storage.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select id, user_id, subscription_id, title, body, url, kind,
+                   status, http_status, error, sent_at
+              from push_notifications_log
+             where firm_id = $1::uuid
+             order by sent_at desc
+             limit $2
+            """,
+            principal.firm_id, min(limit, 200),
+        )
+    return {
+        "count": len(rows),
+        "items": [
+            {
+                "id": str(r["id"]),
+                "user_id": str(r["user_id"]) if r["user_id"] else None,
+                "subscription_id": str(r["subscription_id"]) if r["subscription_id"] else None,
+                "title": r["title"], "body": r["body"], "url": r["url"], "kind": r["kind"],
+                "status": r["status"], "http_status": r["http_status"], "error": r["error"],
+                "sent_at": r["sent_at"].isoformat() if r["sent_at"] else None,
+            }
+            for r in rows
+        ],
+    }

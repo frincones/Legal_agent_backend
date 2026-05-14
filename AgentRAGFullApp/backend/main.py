@@ -345,6 +345,7 @@ from api.bank_reconciliation import router as bank_reconciliation_router
 from api.contract_analyzer import router as contract_analyzer_router
 from api.doc_qa import router as doc_qa_router
 from api.doc_compare import router as doc_compare_router
+from api.sync import router as sync_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -400,6 +401,7 @@ app.include_router(bank_reconciliation_router)
 app.include_router(contract_analyzer_router)
 app.include_router(doc_qa_router)
 app.include_router(doc_compare_router)
+app.include_router(sync_router)
 
 
 def main():
