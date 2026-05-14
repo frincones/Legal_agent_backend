@@ -282,6 +282,13 @@ async def lifespan(app: FastAPI):
         register_tool("validate_identity", validate_identity_tool)
         register_tool("check_doc_consistency", check_doc_consistency_tool)
         register_tool("score_evidence", score_evidence_tool)
+        # Sprint 22 · Client Portal B2C wizards (M34)
+        from agent.tools.wizard_voice import (
+            list_wizards_tool, start_wizard_tool, wizard_session_status_tool,
+        )
+        register_tool("list_wizards", list_wizards_tool)
+        register_tool("start_wizard", start_wizard_tool)
+        register_tool("wizard_session_status", wizard_session_status_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -442,6 +449,8 @@ from api.judges import router as judges_router
 from api.judge_simulator import router as judge_predictions_router
 from api.judges_admin import router as judges_admin_router
 from api.evidence import router as evidence_router
+from api.wizard_templates import router as wizard_templates_router, sessions_router as wizard_sessions_router
+from api.wizard_public import router as wizard_public_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -526,6 +535,9 @@ app.include_router(judges_router)
 app.include_router(judge_predictions_router)
 app.include_router(judges_admin_router)
 app.include_router(evidence_router)
+app.include_router(wizard_templates_router)
+app.include_router(wizard_sessions_router)
+app.include_router(wizard_public_router)
 
 
 def main():
