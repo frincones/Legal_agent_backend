@@ -27,7 +27,7 @@ async def list_wizards_tool(args: dict, ctx: dict) -> dict:
                 "name": r["name"],
                 "category": r["category"],
                 "description": r["description"],
-                "public_url_path": f"/wizard/{r['slug']}",
+                "public_url_path": f"/tramites/{r['slug']}",
             }
             for r in rows
         ],
@@ -63,7 +63,7 @@ async def start_wizard_tool(args: dict, ctx: dict) -> dict:
         "session_token": token,
         "wizard_slug": slug,
         "wizard_name": tpl["name"],
-        "public_url_path": f"/wizard/{slug}?token={token}",
+        "public_url_path": f"/tramites/{slug}?token={token}",
     }
 
 
