@@ -219,6 +219,16 @@ async def lifespan(app: FastAPI):
         register_tool("send_for_signature", send_for_signature_tool)
         register_tool("check_signature_status", check_signature_status_tool)
         register_tool("import_csv", import_csv_tool)
+        # Sprint 15 · Knowledge Base + Memoria del despacho
+        from agent.tools.kb_voice import (
+            search_kb_voice_tool, add_to_kb_voice_tool,
+            search_lessons_voice_tool,
+        )
+        from agent.tools.extract_lessons import extract_lesson_tool
+        register_tool("search_kb", search_kb_voice_tool)
+        register_tool("add_to_kb", add_to_kb_voice_tool)
+        register_tool("search_lessons", search_lessons_voice_tool)
+        register_tool("extract_lesson", extract_lesson_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -358,6 +368,9 @@ from api.api_keys import router as api_keys_router
 from api.public import router as public_router
 from api.webhooks_outbound import router as webhooks_outbound_router
 from api.marketplace import router as marketplace_router
+from api.knowledge_base import router as kb_router
+from api.case_lessons import router as case_lessons_router
+from api.kb_admin import router as kb_admin_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -420,6 +433,9 @@ app.include_router(api_keys_router)
 app.include_router(public_router)
 app.include_router(webhooks_outbound_router)
 app.include_router(marketplace_router)
+app.include_router(kb_router)
+app.include_router(case_lessons_router)
+app.include_router(kb_admin_router)
 
 
 def main():
