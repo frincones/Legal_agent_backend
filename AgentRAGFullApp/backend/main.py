@@ -238,6 +238,17 @@ async def lifespan(app: FastAPI):
         register_tool("resolve_comment", resolve_comment_tool)
         register_tool("show_activity", show_activity_tool)
         register_tool("show_active_users", show_active_users_tool)
+        # Sprint 17 · Predicciones + Tasks + My Day
+        from agent.tools.predict_outcome import predict_outcome_tool
+        from agent.tools.productivity import (
+            create_task_tool, complete_task_tool,
+            what_today_tool, what_is_my_priority_tool,
+        )
+        register_tool("predict_outcome", predict_outcome_tool)
+        register_tool("create_task", create_task_tool)
+        register_tool("complete_task", complete_task_tool)
+        register_tool("what_today", what_today_tool)
+        register_tool("what_is_my_priority", what_is_my_priority_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -384,6 +395,10 @@ from api.comments import router as comments_router
 from api.presence import router as presence_router
 from api.activity import router as activity_router
 from api.mentions import router as mentions_router
+from api.predictions import router as predictions_router
+from api.tasks import router as tasks_router
+from api.my_day import router as my_day_router
+from api.saved_filters import router as saved_filters_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -453,6 +468,10 @@ app.include_router(comments_router)
 app.include_router(presence_router)
 app.include_router(activity_router)
 app.include_router(mentions_router)
+app.include_router(predictions_router)
+app.include_router(tasks_router)
+app.include_router(my_day_router)
+app.include_router(saved_filters_router)
 
 
 def main():
