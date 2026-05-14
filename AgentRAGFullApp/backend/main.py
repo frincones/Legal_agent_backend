@@ -267,6 +267,14 @@ async def lifespan(app: FastAPI):
         register_tool("extract_variables_from_text", extract_variables_from_text_tool)
         register_tool("list_intake_forms", list_intake_forms_tool)
         register_tool("list_new_submissions", list_new_submissions_tool)
+        # Sprint 20 · Judge Perspective Simulator (M25)
+        from agent.tools.judge_voice import (
+            search_judge_tool, get_judge_stats_tool,
+        )
+        from agent.tools.judge_simulator import simulate_judge_view_tool
+        register_tool("search_judge", search_judge_tool)
+        register_tool("get_judge_stats", get_judge_stats_tool)
+        register_tool("simulate_judge_view", simulate_judge_view_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -423,6 +431,9 @@ from api.analytics_admin import router as analytics_admin_router
 from api.intake_forms import router as intake_forms_router, subm_router as intake_submissions_router
 from api.intake_public import router as intake_public_router
 from api.template_intelligence import router as template_ai_router
+from api.judges import router as judges_router
+from api.judge_simulator import router as judge_predictions_router
+from api.judges_admin import router as judges_admin_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -503,6 +514,9 @@ app.include_router(intake_forms_router)
 app.include_router(intake_submissions_router)
 app.include_router(intake_public_router)
 app.include_router(template_ai_router)
+app.include_router(judges_router)
+app.include_router(judge_predictions_router)
+app.include_router(judges_admin_router)
 
 
 def main():
