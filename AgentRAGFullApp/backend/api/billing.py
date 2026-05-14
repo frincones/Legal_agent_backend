@@ -336,3 +336,183 @@ async def paddle_webhook(
         return {"ok": False, "error": str(e)[:200]}
 
     return {"ok": True, "event_type": event_type}
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Sprint 23 · Quota status + start trial + portal (mock + Paddle)
+# ══════════════════════════════════════════════════════════════════════
+
+
+@router.get("/current-usage")
+async def current_usage(principal: Principal = Depends(get_current_firm)):
+    """Snapshot completo plan + cuotas + uso + flags (over_quota, near_80, near_95).
+
+    Pensado para QuotaBanner + dashboards. Más rico que /subscription
+    (que se mantiene por compat).
+    """
+    from utils.quota_tracker import status
+    return await status(principal.firm_id)
+
+
+@router.get("/quota-check")
+async def quota_check(
+    kind: str,
+    amount: int = 1,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Precheck ligero para una operación específica.
+
+    kind: 'llm_call' | 'voice_minute' | 'document_upload' | 'email_sync' | 'judicial_poll'
+    """
+    from utils.quota_tracker import precheck
+    return await precheck(principal.firm_id, kind, amount)
+
+
+class StartTrialRequest(BaseModel):
+    plan_code: str = Field(default="free", pattern="^(free|pro|firm)$")
+
+
+@router.post("/start-trial")
+async def start_trial(
+    body: StartTrialRequest,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Inicia trial de 14 días para el plan indicado (default free).
+
+    Si la firma ya tiene un plan distinto a 'free' o status no es 'trialing',
+    no hace nada (idempotente).
+    """
+    from utils.db import get_storage
+    storage = await get_storage()
+    if not hasattr(storage, "pool"):
+        raise HTTPException(503, "storage unavailable")
+    async with storage.pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "select plan_code, status, trial_ends_at from firm_subscriptions where firm_id = $1::uuid",
+            principal.firm_id,
+        )
+        if existing and existing["plan_code"] not in ("free",):
+            return {"ok": True, "already_subscribed": True, "plan": existing["plan_code"]}
+        await conn.execute(
+            """
+            insert into firm_subscriptions
+              (firm_id, plan_code, status, trial_ends_at,
+               current_period_start, current_period_end)
+            values
+              ($1::uuid, $2, 'trialing', now() + interval '14 days',
+               date_trunc('month', now()),
+               date_trunc('month', now()) + interval '1 month')
+            on conflict (firm_id) do update set
+              plan_code = excluded.plan_code,
+              status = 'trialing',
+              trial_ends_at = excluded.trial_ends_at,
+              updated_at = now()
+            """,
+            principal.firm_id, body.plan_code,
+        )
+    return {"ok": True, "plan_code": body.plan_code, "status": "trialing"}
+
+
+@router.post("/portal")
+async def customer_portal(principal: Principal = Depends(get_current_firm)):
+    """Devuelve URL del Paddle Customer Portal (o mock si no configurado)."""
+    if principal.role not in ("admin", "socio_senior"):
+        raise HTTPException(403, "Solo admin / socio_senior puede acceder al portal")
+    from utils.db import get_storage
+    storage = await get_storage()
+    async with storage.pool.acquire() as conn:
+        sub = await conn.fetchrow(
+            "select paddle_customer_id from firm_subscriptions where firm_id = $1::uuid",
+            principal.firm_id,
+        )
+    customer_id = sub["paddle_customer_id"] if sub else None
+    if not customer_id:
+        return {
+            "configured": False,
+            "url": None,
+            "message": "Aún no tienes un plan Pro/Firm activo. Comienza con un upgrade primero.",
+        }
+    from utils.paddle_client import get_paddle_client
+    client = get_paddle_client()
+    result = await client.create_customer_portal_url(customer_id)
+    return result
+
+
+@router.post("/checkout/v2")
+async def checkout_v2(
+    body: CheckoutRequest,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Checkout v2 · usa PaddleClient con fallback a mock.
+
+    Devuelve siempre checkout_url (mock o real) para que el frontend
+    siempre tenga un URL al que redirigir.
+    """
+    if principal.role not in ("admin", "socio_senior"):
+        raise HTTPException(403, "Solo admin / socio_senior puede contratar planes")
+    from utils.db import get_storage
+    storage = await get_storage()
+    async with storage.pool.acquire() as conn:
+        plan = await conn.fetchrow(
+            "select paddle_price_id, paddle_price_id_annual, name from subscription_plans where code = $1",
+            body.plan_code,
+        )
+    if not plan:
+        raise HTTPException(404, "plan no existe")
+    price_id = plan["paddle_price_id_annual"] if body.billing_period == "annual" else plan["paddle_price_id"]
+    # En mock, price_id puede ser null y aún funciona
+    from utils.paddle_client import get_paddle_client
+    client = get_paddle_client()
+    result = await client.create_checkout(
+        firm_id=principal.firm_id,
+        plan_code=body.plan_code,
+        price_id=price_id or f"mock_price_{body.plan_code}",
+        customer_email=principal.email,
+    )
+    return result
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Mock checkout success (para demo sin Paddle)
+# ══════════════════════════════════════════════════════════════════════
+
+
+@router.post("/mock-activate")
+async def mock_activate(
+    body: CheckoutRequest,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Activa el plan localmente sin pasar por Paddle.
+    Solo disponible cuando Paddle NO está configurado (modo demo)."""
+    if _paddle_configured():
+        raise HTTPException(400, "Paddle está configurado · usa /checkout en su lugar")
+    if principal.role not in ("admin", "socio_senior"):
+        raise HTTPException(403, "Solo admin / socio_senior puede activar planes")
+    from utils.db import get_storage
+    storage = await get_storage()
+    async with storage.pool.acquire() as conn:
+        await conn.execute(
+            """
+            insert into firm_subscriptions
+              (firm_id, plan_code, status, billing_period,
+               current_period_start, current_period_end,
+               paddle_customer_id, paddle_subscription_id)
+            values
+              ($1::uuid, $2, 'active', $3,
+               date_trunc('month', now()),
+               date_trunc('month', now()) + interval '1 month',
+               $4, $5)
+            on conflict (firm_id) do update set
+              plan_code = excluded.plan_code,
+              status = 'active',
+              billing_period = excluded.billing_period,
+              current_period_start = excluded.current_period_start,
+              current_period_end = excluded.current_period_end,
+              paddle_customer_id = excluded.paddle_customer_id,
+              paddle_subscription_id = excluded.paddle_subscription_id,
+              updated_at = now()
+            """,
+            principal.firm_id, body.plan_code, body.billing_period,
+            f"mock_cust_{principal.firm_id}", f"mock_sub_{principal.firm_id}",
+        )
+    return {"ok": True, "mock": True, "plan": body.plan_code, "billing_period": body.billing_period}

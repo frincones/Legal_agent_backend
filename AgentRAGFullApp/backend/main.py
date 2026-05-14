@@ -289,6 +289,13 @@ async def lifespan(app: FastAPI):
         register_tool("list_wizards", list_wizards_tool)
         register_tool("start_wizard", start_wizard_tool)
         register_tool("wizard_session_status", wizard_session_status_tool)
+        # Sprint 23 · Billing voice tools (M36)
+        from agent.tools.billing_voice import (
+            current_plan_status_tool, remaining_quota_tool, pricing_recommendation_tool,
+        )
+        register_tool("current_plan_status", current_plan_status_tool)
+        register_tool("remaining_quota", remaining_quota_tool)
+        register_tool("pricing_recommendation", pricing_recommendation_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -401,6 +408,7 @@ from api.inbox import router as inbox_router
 from api.push import router as push_router
 from api.sla import router as sla_router
 from api.billing import router as billing_router
+from api.billing_admin import router as billing_admin_router
 from api.audit import router as audit_router
 from api.quotas import router as quotas_router
 from api.calendar_integrations import router as calendar_router
@@ -485,6 +493,7 @@ app.include_router(inbox_router)
 app.include_router(push_router)
 app.include_router(sla_router)
 app.include_router(billing_router)
+app.include_router(billing_admin_router)
 app.include_router(audit_router)
 app.include_router(quotas_router)
 app.include_router(calendar_router)
