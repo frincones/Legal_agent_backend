@@ -296,6 +296,16 @@ async def lifespan(app: FastAPI):
         register_tool("current_plan_status", current_plan_status_tool)
         register_tool("remaining_quota", remaining_quota_tool)
         register_tool("pricing_recommendation", pricing_recommendation_tool)
+        # Sprint 24 · SaaS Admin voice tools
+        from agent.tools.admin_voice import (
+            saas_mrr_now_tool, saas_signups_mtd_tool, saas_churn_30d_tool,
+            search_firm_by_name_tool, firm_health_snapshot_tool,
+        )
+        register_tool("saas_mrr_now", saas_mrr_now_tool)
+        register_tool("saas_signups_mtd", saas_signups_mtd_tool)
+        register_tool("saas_churn_30d", saas_churn_30d_tool)
+        register_tool("search_firm_by_name", search_firm_by_name_tool)
+        register_tool("firm_health_snapshot", firm_health_snapshot_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -409,6 +419,13 @@ from api.push import router as push_router
 from api.sla import router as sla_router
 from api.billing import router as billing_router
 from api.billing_admin import router as billing_admin_router
+from api.admin_tenants import router as admin_tenants_router
+from api.admin_users import router as admin_users_router
+from api.admin_feature_flags import router as admin_flags_router
+from api.admin_cartera import router as admin_cartera_router
+from api.admin_metrics import router as admin_metrics_router
+from api.admin_support import router_admin as admin_support_router, router_client as support_client_router
+from api.admin_impersonate import router as admin_impersonate_router
 from api.audit import router as audit_router
 from api.quotas import router as quotas_router
 from api.calendar_integrations import router as calendar_router
@@ -494,6 +511,14 @@ app.include_router(push_router)
 app.include_router(sla_router)
 app.include_router(billing_router)
 app.include_router(billing_admin_router)
+app.include_router(admin_tenants_router)
+app.include_router(admin_users_router)
+app.include_router(admin_flags_router)
+app.include_router(admin_cartera_router)
+app.include_router(admin_metrics_router)
+app.include_router(admin_support_router)
+app.include_router(support_client_router)
+app.include_router(admin_impersonate_router)
 app.include_router(audit_router)
 app.include_router(quotas_router)
 app.include_router(calendar_router)
