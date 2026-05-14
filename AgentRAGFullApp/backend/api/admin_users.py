@@ -20,7 +20,7 @@ from typing import Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from utils.admin_guard import (
     AdminPrincipal, require_saas_admin, require_saas_admin_role, audit_admin_action,
@@ -180,7 +180,7 @@ async def list_admin_users(
 
 
 class AdminUserCreate(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=3, max_length=320, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     full_name: Optional[str] = None
     role: str = Field(default="admin", pattern="^(owner|admin|support|readonly)$")
     auth_user_id: Optional[str] = None  # opcional: si ya existe en Supabase auth
