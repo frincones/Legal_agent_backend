@@ -354,6 +354,10 @@ from api.doc_compare import router as doc_compare_router
 from api.sync import router as sync_router
 from api.signatures import router as signatures_router
 from api.imports import router as imports_router
+from api.api_keys import router as api_keys_router
+from api.public import router as public_router
+from api.webhooks_outbound import router as webhooks_outbound_router
+from api.marketplace import router as marketplace_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -412,6 +416,10 @@ app.include_router(doc_compare_router)
 app.include_router(sync_router)
 app.include_router(signatures_router)
 app.include_router(imports_router)
+app.include_router(api_keys_router)
+app.include_router(public_router)
+app.include_router(webhooks_outbound_router)
+app.include_router(marketplace_router)
 
 
 def main():
