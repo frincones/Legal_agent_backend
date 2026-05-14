@@ -249,6 +249,15 @@ async def lifespan(app: FastAPI):
         register_tool("complete_task", complete_task_tool)
         register_tool("what_today", what_today_tool)
         register_tool("what_is_my_priority", what_is_my_priority_tool)
+        # Sprint 18 · Analytics ejecutivos
+        from agent.tools.analytics_voice import (
+            firm_revenue_tool, lawyer_performance_tool,
+            prediction_accuracy_tool, executive_kpis_tool,
+        )
+        register_tool("firm_revenue", firm_revenue_tool)
+        register_tool("lawyer_performance", lawyer_performance_tool)
+        register_tool("prediction_accuracy", prediction_accuracy_tool)
+        register_tool("executive_kpis", executive_kpis_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -399,6 +408,9 @@ from api.predictions import router as predictions_router
 from api.tasks import router as tasks_router
 from api.my_day import router as my_day_router
 from api.saved_filters import router as saved_filters_router
+from api.analytics_v2 import router as analytics_v2_router
+from api.reports import router as reports_router
+from api.analytics_admin import router as analytics_admin_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -472,6 +484,9 @@ app.include_router(predictions_router)
 app.include_router(tasks_router)
 app.include_router(my_day_router)
 app.include_router(saved_filters_router)
+app.include_router(analytics_v2_router)
+app.include_router(reports_router)
+app.include_router(analytics_admin_router)
 
 
 def main():
