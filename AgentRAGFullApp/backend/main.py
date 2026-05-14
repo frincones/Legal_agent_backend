@@ -258,6 +258,15 @@ async def lifespan(app: FastAPI):
         register_tool("lawyer_performance", lawyer_performance_tool)
         register_tool("prediction_accuracy", prediction_accuracy_tool)
         register_tool("executive_kpis", executive_kpis_tool)
+        # Sprint 19 · Intake + Smart Doc Fill
+        from agent.tools.doc_smart_fill import (
+            autofill_template_tool, extract_variables_from_text_tool,
+            list_intake_forms_tool, list_new_submissions_tool,
+        )
+        register_tool("autofill_template", autofill_template_tool)
+        register_tool("extract_variables_from_text", extract_variables_from_text_tool)
+        register_tool("list_intake_forms", list_intake_forms_tool)
+        register_tool("list_new_submissions", list_new_submissions_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -411,6 +420,9 @@ from api.saved_filters import router as saved_filters_router
 from api.analytics_v2 import router as analytics_v2_router
 from api.reports import router as reports_router
 from api.analytics_admin import router as analytics_admin_router
+from api.intake_forms import router as intake_forms_router, subm_router as intake_submissions_router
+from api.intake_public import router as intake_public_router
+from api.template_intelligence import router as template_ai_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -487,6 +499,10 @@ app.include_router(saved_filters_router)
 app.include_router(analytics_v2_router)
 app.include_router(reports_router)
 app.include_router(analytics_admin_router)
+app.include_router(intake_forms_router)
+app.include_router(intake_submissions_router)
+app.include_router(intake_public_router)
+app.include_router(template_ai_router)
 
 
 def main():
