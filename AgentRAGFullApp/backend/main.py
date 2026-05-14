@@ -213,6 +213,12 @@ async def lifespan(app: FastAPI):
         register_tool("analyze_contract", analyze_contract_voice_tool)
         register_tool("ask_about_document", ask_about_document_tool)
         register_tool("compare_documents", compare_documents_tool)
+        # Sprint 13 · Signatures + Imports
+        from api.signatures import send_for_signature_tool, check_signature_status_tool
+        from api.imports import import_csv_tool
+        register_tool("send_for_signature", send_for_signature_tool)
+        register_tool("check_signature_status", check_signature_status_tool)
+        register_tool("import_csv", import_csv_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -346,6 +352,8 @@ from api.contract_analyzer import router as contract_analyzer_router
 from api.doc_qa import router as doc_qa_router
 from api.doc_compare import router as doc_compare_router
 from api.sync import router as sync_router
+from api.signatures import router as signatures_router
+from api.imports import router as imports_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -402,6 +410,8 @@ app.include_router(contract_analyzer_router)
 app.include_router(doc_qa_router)
 app.include_router(doc_compare_router)
 app.include_router(sync_router)
+app.include_router(signatures_router)
+app.include_router(imports_router)
 
 
 def main():
