@@ -275,6 +275,13 @@ async def lifespan(app: FastAPI):
         register_tool("search_judge", search_judge_tool)
         register_tool("get_judge_stats", get_judge_stats_tool)
         register_tool("simulate_judge_view", simulate_judge_view_tool)
+        # Sprint 21 · Evidence Authenticity Checker (M29)
+        from agent.tools.evidence_voice import (
+            validate_identity_tool, check_doc_consistency_tool, score_evidence_tool,
+        )
+        register_tool("validate_identity", validate_identity_tool)
+        register_tool("check_doc_consistency", check_doc_consistency_tool)
+        register_tool("score_evidence", score_evidence_tool)
         # F1 v2 · UI bridge
         from agent.tools.ui_bridge import (
             ui_navigate_tool, ui_open_matter_canvas_tool, ui_open_matter_tab_tool,
@@ -434,6 +441,7 @@ from api.template_intelligence import router as template_ai_router
 from api.judges import router as judges_router
 from api.judge_simulator import router as judge_predictions_router
 from api.judges_admin import router as judges_admin_router
+from api.evidence import router as evidence_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -517,6 +525,7 @@ app.include_router(template_ai_router)
 app.include_router(judges_router)
 app.include_router(judge_predictions_router)
 app.include_router(judges_admin_router)
+app.include_router(evidence_router)
 
 
 def main():
