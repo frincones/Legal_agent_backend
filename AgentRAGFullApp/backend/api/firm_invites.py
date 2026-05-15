@@ -122,6 +122,7 @@ async def join_firm(
     principal: Principal = Depends(get_current_user),  # NO get_current_firm · user puede no tener firm aún
 ):
     """Redime código de invitación · asigna firm_id + role al user actual."""
+    import json as _json
     from utils.db import get_storage
     storage = await get_storage()
     async with storage.pool.acquire() as conn:
@@ -129,6 +130,11 @@ async def join_firm(
             "select lexai_redeem_invite_code($1, $2::uuid)",
             body.code.strip().upper(), principal.user_id,
         )
+    if isinstance(result, str):
+        try:
+            result = _json.loads(result)
+        except Exception:
+            result = None
     if not result or not result.get('ok'):
         raise HTTPException(
             400,
@@ -165,6 +171,7 @@ async def create_firm(
     Los triggers Sprint 23 (auto plan free) y Sprint 26 (seed demo data)
     se disparan automáticamente al INSERT en firms.
     """
+    import json as _json
     from utils.db import get_storage
     storage = await get_storage()
     async with storage.pool.acquire() as conn:
@@ -173,6 +180,12 @@ async def create_firm(
             principal.user_id, body.razon_social, body.country, body.tax_id,
             body.modo_ejercicio, body.role,
         )
+    # asyncpg puede devolver jsonb como str · normalizar
+    if isinstance(result, str):
+        try:
+            result = _json.loads(result)
+        except Exception:
+            result = None
     if not result or not result.get('ok'):
-        raise HTTPException(400, "No se pudo crear la firma")
+        raise HTTPException(400, detail=result or "No se pudo crear la firma")
     return result
