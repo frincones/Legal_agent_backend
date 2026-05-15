@@ -437,6 +437,7 @@ from api.email_integrations import router as email_integrations_router
 from api.integrations import router as integrations_router  # sprint A · unified OAuth registry
 from api.calendar_events_create import router as calendar_events_create_router  # sprint B · POST /v1/calendar/events
 from api.admin_sync_tick import router as admin_sync_tick_router  # sprint B/C · pg_cron tick
+from api.cloud_documents import router as cloud_documents_router  # sprint C · Drive/OneDrive/Dropbox
 from api.inbox import router as inbox_router
 from api.push import router as push_router
 from api.sla import router as sla_router
@@ -551,6 +552,8 @@ app.include_router(integrations_router)
 app.include_router(calendar_events_create_router, dependencies=[_Depends_S25(_req_mod_S25("calendar_sync"))])
 # Sprint B/C · admin sync-tick para pg_cron
 app.include_router(admin_sync_tick_router)
+# Sprint C · documentos cloud (drive/onedrive/dropbox)
+app.include_router(cloud_documents_router)
 app.include_router(inbox_router)
 app.include_router(push_router)
 app.include_router(sla_router)
