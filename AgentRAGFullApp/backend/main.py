@@ -434,6 +434,7 @@ from api.calc_plazos import router as calc_plazos_router
 from api.calc_pension import router as calc_pension_router
 from api.judicial import router as judicial_router
 from api.email_integrations import router as email_integrations_router
+from api.integrations import router as integrations_router  # sprint A · unified OAuth registry
 from api.inbox import router as inbox_router
 from api.push import router as push_router
 from api.sla import router as sla_router
@@ -541,6 +542,9 @@ app.include_router(calc_plazos_router)
 app.include_router(calc_pension_router)
 app.include_router(judicial_router)
 app.include_router(email_integrations_router, dependencies=[_Depends_S25(_req_mod_S25("email_ingest"))])
+# Sprint A · integraciones unificadas (google_drive, onedrive, dropbox, docusign)
+# Sin entitlement gate de origen · cada feature gateada en sus routers específicos (sprints C/D)
+app.include_router(integrations_router)
 app.include_router(inbox_router)
 app.include_router(push_router)
 app.include_router(sla_router)
