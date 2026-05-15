@@ -83,6 +83,42 @@ async def sync_all_for_firm(firm_id: str) -> dict:
     return {"synced": synced, "inserted": total_inserted, "errors": errors}
 
 
+async def sync_all_active() -> dict:
+    """Sprint B · sync delta para TODAS las integraciones activas del sistema.
+
+    Invocado por pg_cron cada 15min via /v1/admin/sync-tick?type=calendar.
+    Idempotente · si una integración falla, las otras siguen.
+    """
+    from utils.db import get_storage
+    storage = await get_storage()
+    if not hasattr(storage, "pool"):
+        return {"error": "storage unavailable"}
+    async with storage.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select id from calendar_integrations
+             where active = true and status = 'connected'
+             order by coalesce(last_synced_at, '1970-01-01'::timestamptz) asc
+             limit 200
+            """,
+        )
+    total_inserted = 0
+    synced = 0
+    errors: list[str] = []
+    for r in rows:
+        try:
+            result = await sync_calendar_integration(str(r["id"]))
+            synced += 1
+            total_inserted += result.get("inserted", 0) or 0
+            if "error" in result:
+                errors.append(f"{r['id']}: {result['error']}")
+        except Exception as e:
+            logger.warning("sync_all_active item %s failed: %s", r["id"], e)
+            errors.append(f"{r['id']}: {str(e)[:120]}")
+    return {"synced": synced, "inserted": total_inserted,
+            "errors": errors[:10], "error_count": len(errors)}
+
+
 async def _mark(integration_id, status, error):
     from utils.db import get_storage
     storage = await get_storage()
