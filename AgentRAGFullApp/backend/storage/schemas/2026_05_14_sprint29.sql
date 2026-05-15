@@ -8,6 +8,12 @@
 -- ============================================================
 
 -- ------------------------------------------------------------
+-- 0. firm_id nullable · soporta OAuth signup pre-firm
+--    (el user existe en public.users antes de elegir/crear firm)
+-- ------------------------------------------------------------
+alter table public.users alter column firm_id drop not null;
+
+-- ------------------------------------------------------------
 -- 1. Auto-create public.users row when new auth.users is inserted
 -- ------------------------------------------------------------
 -- CRITICAL: sin este trigger, los usuarios que llegan vía Google OAuth
