@@ -40,8 +40,14 @@ from utils.auth import (
     issue_voice_ticket,
     verify_voice_ticket,
 )
+from utils.entitlements import requires_module
 
 logger = logging.getLogger(__name__)
+# El gate de entitlement se aplica al endpoint POST /ticket (no al router
+# completo) para evitar inyectar el dependency basado en Request en el
+# endpoint @router.websocket("/ws"), que recibe WebSocket en su lugar.
+# Sin ticket válido → no se puede abrir el WS, así que el gate del ticket
+# protege todo el flujo voice.
 router = APIRouter(prefix="/v1/voice", tags=["voice"])
 
 # ─────────────────────────────────────────────────────────────────────
@@ -67,7 +73,7 @@ def register_tool(name: str, fn: Callable[..., Awaitable[dict]]) -> None:
 # ─────────────────────────────────────────────────────────────────────
 
 
-@router.post("/ticket")
+@router.post("/ticket", dependencies=[Depends(requires_module("voice_agent"))])
 async def voice_ticket(
     matter_id: Optional[str] = None,
     principal: Principal = Depends(get_current_user),
