@@ -430,6 +430,8 @@ from api.admin_support import router_admin as admin_support_router, router_clien
 from api.admin_impersonate import router as admin_impersonate_router
 from api.admin_entitlements import router as admin_entitlements_router
 from api.entitlements_client import router as entitlements_client_router
+from api.onboarding import router as onboarding_router
+from api.admin_helper import router as admin_helper_router, welcome_router as admin_welcome_router
 from api.audit import router as audit_router
 from api.quotas import router as quotas_router
 from api.calendar_integrations import router as calendar_router
@@ -525,6 +527,9 @@ app.include_router(support_client_router)
 app.include_router(admin_impersonate_router)
 app.include_router(admin_entitlements_router)
 app.include_router(entitlements_client_router)
+app.include_router(onboarding_router)
+app.include_router(admin_helper_router)
+app.include_router(admin_welcome_router)
 app.include_router(audit_router)
 app.include_router(quotas_router)
 app.include_router(calendar_router, dependencies=[_Depends_S25(_req_mod_S25("calendar_sync"))])
