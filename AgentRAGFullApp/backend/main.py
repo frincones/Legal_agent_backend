@@ -460,6 +460,7 @@ from api.arco_requests import (
     admin_router as arco_admin_router,
 )
 from api.status_public import public_router as status_public_router, admin_router as status_admin_router
+from api.firm_invites import router as firm_invites_router
 from api.audit import router as audit_router
 from api.quotas import router as quotas_router
 from api.calendar_integrations import router as calendar_router
@@ -566,6 +567,7 @@ app.include_router(arco_public_router)
 app.include_router(arco_admin_router)
 app.include_router(status_public_router)
 app.include_router(status_admin_router)
+app.include_router(firm_invites_router)
 app.include_router(audit_router)
 app.include_router(quotas_router)
 app.include_router(calendar_router, dependencies=[_Depends_S25(_req_mod_S25("calendar_sync"))])
