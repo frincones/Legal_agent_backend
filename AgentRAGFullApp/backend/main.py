@@ -384,6 +384,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Sprint 28 · Security headers middleware
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Adds standard security headers to all responses."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(self), geolocation=()")
+        # HSTS only when https (Railway terminates TLS)
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # Register routers
 from api.health import router as health_router
 from api.chat import router as chat_router
@@ -434,6 +454,12 @@ from api.onboarding import router as onboarding_router
 from api.admin_helper import router as admin_helper_router, welcome_router as admin_welcome_router
 from api.public_landing import router as public_landing_router
 from api.admin_landing import changelog_router as admin_changelog_router, testimonials_router as admin_testimonials_router
+from api.arco_requests import (
+    client_router as arco_client_router,
+    public_router as arco_public_router,
+    admin_router as arco_admin_router,
+)
+from api.status_public import public_router as status_public_router, admin_router as status_admin_router
 from api.audit import router as audit_router
 from api.quotas import router as quotas_router
 from api.calendar_integrations import router as calendar_router
@@ -535,6 +561,11 @@ app.include_router(admin_welcome_router)
 app.include_router(public_landing_router)
 app.include_router(admin_changelog_router)
 app.include_router(admin_testimonials_router)
+app.include_router(arco_client_router)
+app.include_router(arco_public_router)
+app.include_router(arco_admin_router)
+app.include_router(status_public_router)
+app.include_router(status_admin_router)
 app.include_router(audit_router)
 app.include_router(quotas_router)
 app.include_router(calendar_router, dependencies=[_Depends_S25(_req_mod_S25("calendar_sync"))])
