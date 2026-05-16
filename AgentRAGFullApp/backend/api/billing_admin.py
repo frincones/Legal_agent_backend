@@ -199,16 +199,20 @@ async def set_firm_plan(
             firm_id,
         )
 
-    old_plan_code = current["plan_code"] if current else "free"
-    old_overrides = current.get("overrides") if current else {}
+    # Convert asyncpg.Record → dict (Records don't support .get())
+    current_d = dict(current) if current else {}
+    firm_d = dict(firm_row) if firm_row else {}
+
+    old_plan_code = current_d.get("plan_code") or "free"
+    old_overrides = current_d.get("overrides") or {}
     if isinstance(old_overrides, str):
         try:
             old_overrides = json.loads(old_overrides)
         except Exception:
             old_overrides = {}
-    paddle_sub_id = current.get("paddle_subscription_id") if current else None
-    firm_name = (firm_row.get("razon_social") if firm_row else None) or "(firma)"
-    admin_email = firm_row.get("admin_email") if firm_row else None
+    paddle_sub_id = current_d.get("paddle_subscription_id")
+    firm_name = firm_d.get("razon_social") or "(firma)"
+    admin_email = firm_d.get("admin_email")
 
     # 4) UPSERT firm_subscriptions with override flag
     new_overrides = dict(old_overrides or {})
