@@ -193,7 +193,7 @@ async def set_firm_plan(
         firm_row = await conn.fetchrow(
             """select razon_social,
                     (select email from users
-                      where firm_id = $1::uuid and role = 'admin' and active = true
+                      where firm_id = $1::uuid and role = 'admin'
                       order by created_at asc limit 1) as admin_email
                  from firms where id = $1::uuid""",
             firm_id,
