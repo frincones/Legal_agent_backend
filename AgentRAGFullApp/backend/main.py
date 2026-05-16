@@ -289,6 +289,15 @@ async def lifespan(app: FastAPI):
         register_tool("list_wizards", list_wizards_tool)
         register_tool("start_wizard", start_wizard_tool)
         register_tool("wizard_session_status", wizard_session_status_tool)
+        # Sprint E · Skills + Redlines voice tools
+        from agent.tools.skills_voice import (
+            execute_skill_tool, review_contract_tool,
+            apply_redline_tool, reject_redline_tool,
+        )
+        register_tool("execute_skill", execute_skill_tool)
+        register_tool("review_contract", review_contract_tool)
+        register_tool("apply_redline", apply_redline_tool)
+        register_tool("reject_redline", reject_redline_tool)
         # Sprint 23 · Billing voice tools (M36)
         from agent.tools.billing_voice import (
             current_plan_status_tool, remaining_quota_tool, pricing_recommendation_tool,
@@ -439,6 +448,12 @@ from api.calendar_events_create import router as calendar_events_create_router  
 from api.admin_sync_tick import router as admin_sync_tick_router  # sprint B/C · pg_cron tick
 from api.cloud_documents import router as cloud_documents_router  # sprint C · Drive/OneDrive/Dropbox
 from api.docusign import router as docusign_router  # sprint D · DocuSign envelopes
+# Sprint E · Drafting + Review (igualar Claude for Legal)
+from api.skills import router as skills_router
+from api.playbook import router as playbook_router
+from api.canvas_redlines import router as canvas_redlines_router
+from api.canvas_export import router as canvas_export_router
+from api.saas_skills_admin import router as saas_skills_admin_router
 from api.inbox import router as inbox_router
 from api.push import router as push_router
 from api.sla import router as sla_router
@@ -557,6 +572,12 @@ app.include_router(admin_sync_tick_router)
 app.include_router(cloud_documents_router)
 # Sprint D · DocuSign envelopes (gateado por entitlement signatures existente sprint 25)
 app.include_router(docusign_router, dependencies=[_Depends_S25(_req_mod_S25("signatures"))])
+# Sprint E · Skills + Playbook + Canvas Redlines + Export
+app.include_router(skills_router, dependencies=[_Depends_S25(_req_mod_S25("skill_drafting"))])
+app.include_router(playbook_router)
+app.include_router(canvas_redlines_router, dependencies=[_Depends_S25(_req_mod_S25("redline_studio"))])
+app.include_router(canvas_export_router)
+app.include_router(saas_skills_admin_router)
 app.include_router(inbox_router)
 app.include_router(push_router)
 app.include_router(sla_router)
