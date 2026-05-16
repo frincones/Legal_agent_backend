@@ -8,11 +8,12 @@ from typing import Any, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from utils.auth import Principal, get_current_firm
 from utils.skill_loader import list_active_skills
-from utils.skill_runner import run_skill
+from utils.skill_runner import run_skill, run_skill_stream
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
@@ -55,6 +56,53 @@ async def execute_skill(
             raise HTTPException(404, detail=result)
         raise HTTPException(502, detail=result)
     return result
+
+
+@router.post("/execute/stream")
+async def execute_skill_stream(
+    body: ExecuteSkillBody,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Streaming SSE de un skill · entrega tokens en tiempo real al Canvas.
+
+    Mismo payload que /execute pero retorna text/event-stream con eventos:
+      event: meta   · skill resuelto (execution_id, name)
+      event: delta  · chunks de texto a medida que OpenAI los emite
+      event: warning · advertencia de un post-hook
+      event: done   · metadata final (duration_ms, tokens, full_text)
+      event: error  · si OpenAI o un pre-hook fallan/bloquean
+
+    Frontend recomendado: EventSource o fetch streaming + ReadableStream.
+    """
+    from utils.db import get_storage
+    storage = await get_storage()
+
+    async def event_generator():
+        try:
+            async for evt in run_skill_stream(
+                storage.pool,
+                firm_id=principal.firm_id,
+                user_id=principal.user_id,
+                command=body.command,
+                input_data=body.input,
+                matter_id=str(body.matter_id) if body.matter_id else None,
+                document_id=str(body.document_id) if body.document_id else None,
+            ):
+                payload = json.dumps(evt["data"], ensure_ascii=False)
+                yield f"event: {evt['event']}\ndata: {payload}\n\n"
+        except Exception as e:
+            logger.exception("skill stream error")
+            yield f"event: error\ndata: {json.dumps({'error': 'stream_failed', 'detail': str(e)[:240]})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",  # nginx: disable buffering
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/executions")

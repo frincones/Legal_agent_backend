@@ -31,6 +31,164 @@ MAX_TOKENS_BUDGET = 16000
 DEFAULT_TIMEOUT = 60.0
 
 
+async def run_skill_stream(
+    pool,
+    *,
+    firm_id: str,
+    user_id: str,
+    command: str,
+    input_data: dict[str, Any],
+    matter_id: Optional[str] = None,
+    document_id: Optional[str] = None,
+) -> AsyncIterator[dict[str, Any]]:
+    """Versión streaming de run_skill · yield eventos para SSE.
+
+    Eventos emitidos:
+      {"event": "meta", "data": {execution_id, command, skill_id, is_custom}}
+      {"event": "blocked", "data": {hook, reason}}             # si pre-hook bloquea
+      {"event": "delta", "data": {"text": "...chunk..."}}      # tokens streaming
+      {"event": "warning", "data": {hook, level, reason}}      # post-hooks
+      {"event": "done", "data": {duration_ms, tokens, full_text, warnings}}
+      {"event": "error", "data": {error, detail}}              # si falla
+    """
+    started = time.time()
+    execution_id = str(uuid4())
+
+    skill = await resolve_skill(pool, firm_id, command)
+    if not skill:
+        yield {"event": "error", "data": {"error": "skill_not_found", "command": command}}
+        return
+
+    yield {
+        "event": "meta",
+        "data": {
+            "execution_id": execution_id,
+            "command": command,
+            "skill_id": str(skill.id) if skill.id else None,
+            "is_custom": skill.is_custom,
+            "name": skill.name,
+        },
+    }
+
+    playbook = await get_firm_playbook(pool, firm_id)
+    playbook_block = playbook_context_block(playbook)
+
+    pre_decisions, pre_hooks_fired = await run_hooks_for_skill(
+        pool, command, "pre_skill",
+        context={
+            "input": input_data, "playbook": playbook,
+            "firm_id": firm_id, "user_id": user_id, "matter_id": matter_id,
+        },
+    )
+    for d in pre_decisions:
+        if d.get("decision") == "block":
+            await _persist_execution(
+                pool, execution_id, firm_id, user_id, skill.id, command,
+                matter_id, document_id, input_data, {},
+                "blocked_by_hook", d.get("reason", "blocked"), pre_hooks_fired,
+                0, 0, 0, 0,
+            )
+            yield {
+                "event": "blocked",
+                "data": {"hook": d.get("hook_key"), "reason": d.get("reason")},
+            }
+            return
+
+    full_system_prompt = (
+        skill.system_prompt + "\n\n" + playbook_block + "\n\n" + (skill.references_md or "")
+    )
+    user_message = _format_user_message(skill, input_data)
+
+    full_text_parts: list[str] = []
+    tokens_in = 0
+    tokens_out = 0
+
+    try:
+        from openai import AsyncOpenAI
+        import os
+        client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+        kwargs: dict[str, Any] = {
+            "model": skill.model,
+            "messages": [
+                {"role": "system", "content": full_system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            "temperature": 0.3,
+            "max_tokens": MAX_TOKENS_BUDGET,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        # Streaming NO soporta structured json_schema response_format; si el skill
+        # lo requiere, el cliente debe llamar a /execute en su lugar. Aquí
+        # forzamos texto libre.
+
+        stream_resp = await client.chat.completions.create(**kwargs)
+        async for chunk in stream_resp:
+            if chunk.usage:
+                tokens_in = chunk.usage.prompt_tokens or 0
+                tokens_out = chunk.usage.completion_tokens or 0
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content
+            if delta:
+                full_text_parts.append(delta)
+                yield {"event": "delta", "data": {"text": delta}}
+    except Exception as e:
+        logger.warning("skill_runner stream OpenAI failed: %s", e)
+        await _persist_execution(
+            pool, execution_id, firm_id, user_id, skill.id, command,
+            matter_id, document_id, input_data, {},
+            "error", str(e)[:240], pre_hooks_fired,
+            int((time.time() - started) * 1000), 0, 0, 0,
+        )
+        yield {"event": "error", "data": {"error": "llm_failed", "detail": str(e)[:240]}}
+        return
+
+    content = "".join(full_text_parts)
+    parsed_output = {"text": content}
+
+    post_decisions, post_hooks_fired = await run_hooks_for_skill(
+        pool, command, "post_skill",
+        context={
+            "input": input_data, "output": parsed_output, "playbook": playbook,
+            "firm_id": firm_id, "user_id": user_id, "matter_id": matter_id,
+        },
+    )
+    warnings: list[dict[str, Any]] = []
+    for d in post_decisions:
+        if d.get("decision") in ("warn", "block"):
+            warning = {
+                "hook": d.get("hook_key"),
+                "level": d.get("decision"),
+                "reason": d.get("reason"),
+            }
+            warnings.append(warning)
+            yield {"event": "warning", "data": warning}
+
+    duration_ms = int((time.time() - started) * 1000)
+    await _persist_execution(
+        pool, execution_id, firm_id, user_id, skill.id, command,
+        matter_id, document_id,
+        {"keys": list(input_data.keys())},
+        {"keys": list(parsed_output.keys()), "warning_count": len(warnings)},
+        "success", None, pre_hooks_fired + post_hooks_fired,
+        duration_ms, tokens_in, tokens_out,
+        _estimate_cost_cents(tokens_in, tokens_out, skill.model),
+    )
+
+    yield {
+        "event": "done",
+        "data": {
+            "execution_id": execution_id,
+            "duration_ms": duration_ms,
+            "tokens": {"input": tokens_in, "output": tokens_out},
+            "full_text": content,
+            "warnings": warnings,
+        },
+    }
+
+
 async def run_skill(
     pool,
     *,
