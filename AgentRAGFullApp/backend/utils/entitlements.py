@@ -17,6 +17,7 @@ Diseño:
 from __future__ import annotations
 
 import functools
+import json
 import logging
 import os
 import time
@@ -28,6 +29,16 @@ from fastapi import Depends, HTTPException, Request, status
 from utils.auth import Principal, get_current_firm
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_dict(value: Any) -> Any:
+    """asyncpg sin codec jsonb devuelve dict como str — parseamos a dict."""
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return value
+    return value
 
 _MODE = os.getenv("LEXAI_ENTITLEMENT_MODE", "strict").lower()
 _CACHE_TTL = int(os.getenv("LEXAI_ENTITLEMENT_CACHE_TTL", "30"))
@@ -98,7 +109,7 @@ async def quota_for(firm_id: str | UUID, quota_key: str) -> dict[str, Any]:
             value = await conn.fetchval(
                 "select lexai_quota_for($1::uuid, $2)", fid, quota_key,
             )
-        result = value or {"limit": 0, "used": 0, "remaining": 0}
+        result = _ensure_dict(value) or {"limit": 0, "used": 0, "remaining": 0}
         _quota_cache[cache_key] = (result, now + _CACHE_TTL)
         return result
     except Exception as e:
@@ -119,7 +130,7 @@ async def entitlements(firm_id: str | UUID) -> dict[str, Any]:
         return {"plan": {"code": "free"}, "modules": {}, "quotas": {}}
     async with storage.pool.acquire() as conn:
         result = await conn.fetchval("select lexai_entitlements($1::uuid)", fid)
-    snapshot = result or {"plan": {"code": "free"}, "modules": {}, "quotas": {}}
+    snapshot = _ensure_dict(result) or {"plan": {"code": "free"}, "modules": {}, "quotas": {}}
     _entitlements_cache[fid] = (snapshot, now + _CACHE_TTL)
     return snapshot
 

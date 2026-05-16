@@ -21,6 +21,7 @@ Diseño:
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any, Optional
 from uuid import UUID
@@ -28,6 +29,16 @@ from uuid import UUID
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_dict(value: Any) -> Any:
+    """asyncpg sin codec jsonb devuelve dict como str — parseamos a dict."""
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except Exception:
+            return value
+    return value
 
 
 async def precheck(
@@ -52,7 +63,7 @@ async def precheck(
                 "select lexai_check_quota($1::uuid, $2, $3)",
                 str(firm_id), kind, amount,
             )
-        return result or {"ok": True, "reason": "null_result"}
+        return _ensure_dict(result) or {"ok": True, "reason": "null_result"}
     except Exception as e:
         logger.warning("quota precheck error firm=%s kind=%s: %s", firm_id, kind, e)
         # Fail-open: nunca bloquear por error de cuota
@@ -104,7 +115,7 @@ async def status(firm_id: str | UUID) -> dict[str, Any]:
             "select lexai_quota_status($1::uuid)",
             str(firm_id),
         )
-    return result or {"plan": {"code": "free"}, "quotas": {}, "usage": {}, "flags": {}}
+    return _ensure_dict(result) or {"plan": {"code": "free"}, "quotas": {}, "usage": {}, "flags": {}}
 
 
 async def enforce(
