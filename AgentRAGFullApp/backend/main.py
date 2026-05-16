@@ -434,6 +434,7 @@ from api.notifications import router as notifications_router
 from api.legal_templates_api import router as legal_templates_router
 from api.canvas_transform import router as canvas_transform_router
 from api.canvas_generate import router as canvas_generate_router
+from api.canvas_collab import router as canvas_collab_router
 from api.firm_teams import router as firm_teams_router
 from api.firm_users import router as firm_users_router
 from api.profile import router as profile_router
@@ -552,6 +553,9 @@ app.include_router(notifications_router)
 app.include_router(legal_templates_router)
 app.include_router(canvas_transform_router, dependencies=[_Depends_S25(_req_mod_S25("canvas"))])
 app.include_router(canvas_generate_router, dependencies=[_Depends_S25(_req_mod_S25("canvas"))])
+# Sprint J · WS de colaboración no se puede gateear por dependency (HTTP),
+# pero el ticket HMAC valida firm_id; el endpoint /ws-ticket POST sí está gateado.
+app.include_router(canvas_collab_router)
 app.include_router(firm_teams_router)
 app.include_router(firm_users_router)
 app.include_router(profile_router)
