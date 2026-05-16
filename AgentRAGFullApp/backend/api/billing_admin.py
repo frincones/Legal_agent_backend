@@ -349,8 +349,36 @@ async def set_firm_plan(
 async def list_subscription_plans(
     principal: Principal = Depends(get_current_firm),
 ):
-    """Lista planes disponibles para el selector del modal admin."""
-    _require_admin(principal)
+    """Lista planes disponibles para el selector del modal admin.
+
+    Sprint F · auth flexible: bootstrap admin > admin_users.active >
+    admin de firma. Esto permite que admin SaaS desde /saas/tenants/* lo lea
+    sin necesidad de ser admin de la firma específica que está mirando.
+    """
+    # Auth flexible · prefer SaaS admin · fallback admin firma
+    is_authorized = False
+    try:
+        from utils.admin_guard import _ensure_bootstrap_admin
+        await _ensure_bootstrap_admin(principal)
+        is_authorized = True
+    except Exception:
+        pass
+    if not is_authorized:
+        from utils.db import get_storage as _gs
+        storage = await _gs()
+        async with storage.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """select 1 from admin_users
+                    where auth_user_id = $1::uuid and active = true""",
+                principal.user_id,
+            )
+            if row:
+                is_authorized = True
+    if not is_authorized and principal.role == "admin":
+        is_authorized = True
+    if not is_authorized:
+        raise HTTPException(403, "Solo admin SaaS o admin de firma")
+
     from utils.db import get_storage
     storage = await get_storage()
     async with storage.pool.acquire() as conn:
