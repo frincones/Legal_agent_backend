@@ -291,25 +291,66 @@ async def paddle_webhook(
             customer_id = data.get("customer_id")
             current_period_start = (data.get("current_billing_period") or {}).get("starts_at")
             current_period_end = (data.get("current_billing_period") or {}).get("ends_at")
+            # Sprint F · respetar override manual del admin SaaS
+            # Si overrides.manual_plan_override=true, NO sobrescribir plan_code
+            # (admin lo cambió manualmente; webhook solo actualiza periodos/customer/status)
             async with storage.pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    insert into firm_subscriptions
-                      (firm_id, plan_code, status, paddle_customer_id, paddle_subscription_id,
-                       current_period_start, current_period_end)
-                    values ($1::uuid, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz)
-                    on conflict (firm_id) do update set
-                      plan_code = excluded.plan_code,
-                      status = excluded.status,
-                      paddle_customer_id = excluded.paddle_customer_id,
-                      paddle_subscription_id = excluded.paddle_subscription_id,
-                      current_period_start = excluded.current_period_start,
-                      current_period_end = excluded.current_period_end,
-                      updated_at = now()
-                    """,
-                    firm_id, plan_code, status, customer_id, sub_id,
-                    current_period_start, current_period_end,
+                existing = await conn.fetchrow(
+                    "select overrides from firm_subscriptions where firm_id = $1::uuid",
+                    firm_id,
                 )
+            has_manual_override = False
+            if existing and existing.get("overrides"):
+                ov = existing["overrides"]
+                if isinstance(ov, str):
+                    try:
+                        ov = json.loads(ov)
+                    except Exception:
+                        ov = {}
+                has_manual_override = bool((ov or {}).get("manual_plan_override"))
+
+            if has_manual_override:
+                # Webhook solo actualiza datos NO-críticos (periodos, customer_id, status)
+                # plan_code preservado por respeto al override admin
+                logger.info(
+                    "Paddle webhook skipped plan_code overwrite for firm %s · manual_plan_override=true",
+                    firm_id,
+                )
+                async with storage.pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        update firm_subscriptions set
+                          status = $2,
+                          paddle_customer_id = $3,
+                          paddle_subscription_id = $4,
+                          current_period_start = $5::timestamptz,
+                          current_period_end = $6::timestamptz,
+                          updated_at = now()
+                         where firm_id = $1::uuid
+                        """,
+                        firm_id, status, customer_id, sub_id,
+                        current_period_start, current_period_end,
+                    )
+            else:
+                async with storage.pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        insert into firm_subscriptions
+                          (firm_id, plan_code, status, paddle_customer_id, paddle_subscription_id,
+                           current_period_start, current_period_end)
+                        values ($1::uuid, $2, $3, $4, $5, $6::timestamptz, $7::timestamptz)
+                        on conflict (firm_id) do update set
+                          plan_code = excluded.plan_code,
+                          status = excluded.status,
+                          paddle_customer_id = excluded.paddle_customer_id,
+                          paddle_subscription_id = excluded.paddle_subscription_id,
+                          current_period_start = excluded.current_period_start,
+                          current_period_end = excluded.current_period_end,
+                          updated_at = now()
+                        """,
+                        firm_id, plan_code, status, customer_id, sub_id,
+                        current_period_start, current_period_end,
+                    )
         elif event_type in ("subscription.canceled", "subscription.paused"):
             async with storage.pool.acquire() as conn:
                 await conn.execute(

@@ -116,22 +116,33 @@ class PaddleClient:
         self,
         paddle_subscription_id: str,
         new_price_id: str,
+        *,
+        billing_mode: str = "full_immediately",
     ) -> dict[str, Any]:
+        """Cambia el plan de una suscripción Paddle.
+
+        billing_mode:
+          - 'full_immediately' (default LexAI): cobra el costo COMPLETO del
+            nuevo plan inmediatamente · reinicia ciclo desde hoy.
+          - 'prorated_immediately': cobra/acredita la diferencia prorrateada.
+          - 'do_not_bill': aplica cambio sin cobrar hasta próximo ciclo.
+        """
         if _is_mock():
-            return {"mock": True, "ok": True, "new_price_id": new_price_id}
+            return {"mock": True, "ok": True, "new_price_id": new_price_id, "billing_mode": billing_mode}
         async with httpx.AsyncClient(timeout=15) as c:
             r = await c.patch(
                 f"{_base_url()}/subscriptions/{paddle_subscription_id}",
                 headers=_headers(),
                 json={
                     "items": [{"price_id": new_price_id, "quantity": 1}],
-                    "proration_billing_mode": "prorated_immediately",
+                    "proration_billing_mode": billing_mode,
                 },
             )
             return {
                 "mock": False,
                 "ok": r.status_code in (200, 201),
                 "status": r.status_code,
+                "billing_mode": billing_mode,
                 "raw": r.json() if r.status_code in (200, 201) else r.text[:200],
             }
 
