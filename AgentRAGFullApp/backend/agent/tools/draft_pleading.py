@@ -103,14 +103,21 @@ async def draft_pleading_tool(args: dict, ctx: dict) -> dict:
                     content[:500],  # resumen breve para el listado
                 )
                 # Versión 1 con el contenido completo (canvas-ready)
+                # storage_path y sha256 son NOT NULL · inline path + hash real del contenido
+                import hashlib
+                sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                storage_path = f"inline://canvas/{doc_id}/v1.html"
                 await conn.execute(
                     """
                     insert into matter_document_versions
-                      (matter_document_id, firm_id, version, generated_by, diff_from_prev)
-                    values ($1::uuid, $2::uuid, 1, 'draft_pleading', $3::jsonb)
+                      (matter_document_id, firm_id, version,
+                       storage_path, sha256, generated_by, diff_from_prev)
+                    values ($1::uuid, $2::uuid, 1,
+                            $4, $5, 'draft_pleading', $3::jsonb)
                     """,
                     doc_id, firm_id,
                     json.dumps({"text": content, "byte_size": len(content)}),
+                    storage_path, sha,
                 )
     except Exception as e:
         logger.warning("draft_pleading persist failed: %s", e)
