@@ -52,7 +52,12 @@ class ParsedCitation:
 # Patrones específicos por tipo de cita
 _PATTERNS_JURIS = [
     # T-329/1997, T-329-1997, T-329/97 (acepta '/', '-', 'de')
-    re.compile(r"^\s*(?:sent\.?\s+|sentencia\s+)?([TCStcsu]{1,2})[\s-]*(\d{1,4})[\s/-]+(?:de\s+)?(\d{2,4})\s*$", re.IGNORECASE),
+    # Acepta hasta 5 dígitos en número (SL-15856-2019, SC-11593-2018)
+    # Tipos soportados: T, C, SU, A (Corte CC) · SC, SL, SP, STC, STL, STP (CSJ) · CE (Consejo Estado)
+    re.compile(
+        r"^\s*(?:sent\.?\s+|sentencia\s+)?(STC|STL|STP|SU|SC|SL|SP|CE|T|C|A)[\s-]*(\d{1,5})[\s/-]+(?:de\s+)?(\d{2,4})\s*$",
+        re.IGNORECASE,
+    ),
 ]
 
 _PATTERNS_LEY = [
@@ -173,11 +178,76 @@ _CORTE_BY_TIPO = {
     "C": "CORTE_CONSTITUCIONAL",
     "SU": "CORTE_CONSTITUCIONAL",
     "A": "CORTE_CONSTITUCIONAL",   # Autos
-    "SC": "CORTE_SUPREMA",
-    "SL": "CORTE_SUPREMA",
-    "SP": "CORTE_SUPREMA",
+    "SC": "CORTE_SUPREMA",         # Casación civil
+    "SL": "CORTE_SUPREMA",         # Casación laboral
+    "SP": "CORTE_SUPREMA",         # Casación penal
+    "STC": "CORTE_SUPREMA",        # Tutela civil
+    "STL": "CORTE_SUPREMA",        # Tutela laboral
+    "STP": "CORTE_SUPREMA",        # Tutela penal
     "CE": "CONSEJO_ESTADO",
 }
+
+# Dominios oficiales para verificación vía web search · cuando no hay scraper
+# URL-predictable (CSJ, Consejo de Estado, SUIN-Juriscol).
+_DOMAINS_BY_CORTE = {
+    "CORTE_SUPREMA": ["cortesuprema.gov.co", "ramajudicial.gov.co"],
+    "CONSEJO_ESTADO": ["consejodeestado.gov.co", "samai.consejodeestado.gov.co"],
+    "CORTE_CONSTITUCIONAL": ["corteconstitucional.gov.co"],
+}
+
+
+async def _verify_via_web_search(
+    parsed: ParsedCitation, corte: str
+) -> Optional[dict[str, Any]]:
+    """Fallback · usa DuckDuckGo restringido a dominios oficiales.
+
+    Para citas que no tienen scraper URL-predictable (CSJ, CE, SUIN),
+    hace una búsqueda web limitada al dominio oficial. Si encuentra
+    resultados, considera la cita verificada indirectamente.
+
+    Returns: dict con {titulo, fuente_url, snippet} si encuentra,
+             None si nada.
+    """
+    try:
+        from legal_sources.web_search import search_web
+    except Exception:
+        return None
+
+    domains = _DOMAINS_BY_CORTE.get(corte, [])
+    if not domains:
+        return None
+
+    # Construir queries: probar varias variantes del formato de la cita
+    queries = []
+    if parsed.kind == "jurisprudencia":
+        yy = str(parsed.anio)[-2:] if parsed.anio else ""
+        queries.append(f'"{parsed.tipo}-{parsed.numero}-{yy}"')
+        queries.append(f'"{parsed.tipo}{parsed.numero}-{yy}"')
+        queries.append(f'"{parsed.tipo}-{parsed.numero}/{parsed.anio}"')
+        queries.append(f'sentencia {parsed.tipo} {parsed.numero} {parsed.anio}')
+    else:
+        queries.append(f'"{parsed.normalized}"')
+
+    site_clause = " OR ".join(f"site:{d}" for d in domains)
+    for q in queries:
+        full_query = f"{q} ({site_clause})"
+        try:
+            results = await search_web(full_query, limit=3, site_filter=False)
+        except Exception as e:
+            logger.warning("web_search verify failed for %s: %s", parsed.normalized, e)
+            continue
+        if not results:
+            continue
+        # Filtrar solo resultados de dominios oficiales
+        for r in results:
+            url = r.get("url", "")
+            if any(d in url for d in domains):
+                return {
+                    "titulo": r.get("title", "")[:200],
+                    "fuente_url": url,
+                    "snippet": r.get("snippet", "")[:500],
+                }
+    return None
 
 
 async def _verify_jurisprudencia(
@@ -221,12 +291,48 @@ async def _verify_jurisprudencia(
         )
         return result
 
-    # Paso 2: BD miss → fetch live a Corte Constitucional
-    if corte != "CORTE_CONSTITUCIONAL":
-        # Solo CC tiene scraper · CSJ, CE no implementados (devolver sospechosa)
+    # Paso 2: BD miss · CSJ y Consejo de Estado NO tienen URL-predictable
+    # scraper. Para esas, intentar web search restricted a dominio oficial.
+    if corte in ("CORTE_SUPREMA", "CONSEJO_ESTADO"):
+        ws_result = await _verify_via_web_search(parsed, corte)
+        if not ws_result:
+            return VerifyResult(
+                citation_ref=parsed.raw, estado="sospechosa", parsed=parsed,
+                corte=corte, source="web_search_404",
+                duration_ms=int((time.time() - started) * 1000),
+            )
+        # Persistir como cache permanente
+        titulo = ws_result.get("titulo", parsed.normalized)
+        fuente_url = ws_result.get("fuente_url")
+        texto_preview = ws_result.get("snippet", "")[:500]
+        try:
+            async with pool.acquire() as conn:
+                new_id = await conn.fetchval(
+                    """
+                    insert into jurisprudencia
+                      (corte, numero, rubro, vigencia, fuente_url,
+                       texto_preview, source, verified_at, fetched_at)
+                    values
+                      ($1, $2, $3, 'vigente', $4, $5, 'web_search', now(), now())
+                    on conflict (corte, numero) do update set
+                      rubro = excluded.rubro,
+                      fuente_url = excluded.fuente_url,
+                      texto_preview = excluded.texto_preview,
+                      source = 'web_search',
+                      verified_at = now(),
+                      fetched_at = now()
+                    returning id
+                    """,
+                    corte, citation_ref, titulo, fuente_url, texto_preview,
+                )
+        except Exception as e:
+            logger.warning("citation_verifier · persist web_search failed: %s", e)
+            new_id = None
         return VerifyResult(
-            citation_ref=parsed.raw, estado="sospechosa", parsed=parsed,
-            corte=corte, source="bd_miss_no_scraper",
+            citation_ref=parsed.raw, estado="verificada", parsed=parsed,
+            juris_id=str(new_id) if new_id else None,
+            corte=corte, rubro=titulo, vigencia="vigente",
+            fuente_url=fuente_url, source="web_search_indirect",
             duration_ms=int((time.time() - started) * 1000),
         )
 

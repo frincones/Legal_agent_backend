@@ -35,12 +35,15 @@ TIMEOUT = httpx.Timeout(15.0, connect=8.0)
 # primary sources.
 LEGAL_DOMAINS = [
     "corteconstitucional.gov.co",
+    "cortesuprema.gov.co",          # CSJ · Sala Civil, Laboral, Penal
+    "consejodeestado.gov.co",       # Consejo de Estado
     "secretariasenado.gov.co",
     "funcionpublica.gov.co",
     "suin-juriscol.gov.co",
     "mintrabajo.gov.co",
     "minjusticia.gov.co",
     "ramajudicial.gov.co",
+    "samai.consejodeestado.gov.co", # SAMAI (CE relatorías)
     "datos.gov.co",
 ]
 
