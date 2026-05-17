@@ -187,6 +187,8 @@ async def _verify_jurisprudencia(
     started = time.time()
     citation_ref = parsed.normalized
     corte = _CORTE_BY_TIPO.get(parsed.tipo, "CORTE_CONSTITUCIONAL")
+    logger.info("verify_juris · ref=%s parsed=%s normalized=%s corte=%s",
+                parsed.raw, parsed, citation_ref, corte)
 
     # Paso 1: lookup en BD (incluye seed + verificaciones live previas)
     async with pool.acquire() as conn:

@@ -160,15 +160,23 @@ class CorteConstitucionalSource(BaseLegalSource):
         for url in urls:
             try:
                 response = await client.get(url)
+                # Diagnostic log · upgraded from debug to info so producción Railway logs lo guarden
+                logger.info(
+                    "Corte CC fetch %s status=%d bytes=%d content_type=%s",
+                    url, response.status_code, len(response.content),
+                    response.headers.get("content-type", "?"),
+                )
                 if response.status_code != 200:
-                    logger.debug(f"Corte CC: {url} -> {response.status_code}")
                     continue
 
                 html = response.text
+                title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+                title_preview = (title_match.group(1)[:80] if title_match else "(no title)")
+                logger.info("Corte CC %s html_len=%d title='%s'", url, len(html), title_preview.strip())
                 if not self._is_real_sentencia(html):
-                    logger.debug(
-                        "Corte CC: %s returned empty/homepage (%d bytes), trying next",
-                        url, len(html),
+                    logger.warning(
+                        "Corte CC: %s rejected as soft-404 (size=%d title='%s')",
+                        url, len(html), title_preview.strip(),
                     )
                     continue
 

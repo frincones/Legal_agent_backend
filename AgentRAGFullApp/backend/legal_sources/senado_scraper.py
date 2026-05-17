@@ -160,10 +160,25 @@ class SenadoSource(BaseLegalSource):
             try:
                 response = await client.get(url)
                 last_status = response.status_code
+                logger.info(
+                    "Senado fetch %s status=%d bytes=%d content_type=%s",
+                    url, response.status_code, len(response.content),
+                    response.headers.get("content-type", "?"),
+                )
                 if response.status_code != 200:
                     continue
 
-                parsed = parse_norm_html(response.text, source="senado")
+                try:
+                    parsed = parse_norm_html(response.text, source="senado")
+                    logger.info("Senado %s parsed titulo='%s' chars=%d arts=%d",
+                                url,
+                                (parsed.get("titulo") or "")[:80],
+                                len(parsed.get("texto_completo", "")),
+                                len(parsed.get("articulos", [])))
+                except Exception as parse_err:
+                    logger.error("Senado parse_norm_html failed for %s: %s", url, parse_err)
+                    parsed = {"titulo": "", "texto_completo": response.text[:500], "articulos": []}
+
                 return {
                     "tipo": tipo.upper(),
                     "numero": numero,
@@ -179,7 +194,9 @@ class SenadoSource(BaseLegalSource):
                     }
                 }
             except httpx.HTTPError as e:
-                logger.warning(f"Senado fetch failed for {url}: {e}")
+                logger.warning(f"Senado fetch failed for {url} (HTTPError): {e}")
+            except Exception as e:
+                logger.error(f"Senado fetch unexpected error for {url}: {type(e).__name__}: {e}")
 
         logger.info(f"Senado: {tipo} {numero}/{anio} not available (last status={last_status})")
         return None
