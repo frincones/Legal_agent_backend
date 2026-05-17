@@ -456,6 +456,9 @@ from api.playbook import router as playbook_router
 from api.canvas_redlines import router as canvas_redlines_router
 from api.canvas_export import router as canvas_export_router
 from api.saas_skills_admin import router as saas_skills_admin_router
+# Templates · system catalog search + multi-agent generator (Sprints 1-3 templates)
+from api.templates_search import router as templates_search_router
+from api.multi_agent_generate import router as multi_agent_generate_router
 from api.inbox import router as inbox_router
 from api.push import router as push_router
 from api.sla import router as sla_router
@@ -558,6 +561,10 @@ app.include_router(canvas_generate_router, dependencies=[_Depends_S25(_req_mod_S
 # Sprint J · WS de colaboración no se puede gateear por dependency (HTTP),
 # pero el ticket HMAC valida firm_id; el endpoint /ws-ticket POST sí está gateado.
 app.include_router(canvas_collab_router)
+# Templates · /v1/templates/* (search + by-id)
+app.include_router(templates_search_router)
+# Multi-agent document generator · /v1/multi-agent/*
+app.include_router(multi_agent_generate_router)
 app.include_router(firm_teams_router)
 app.include_router(firm_users_router)
 app.include_router(profile_router)
