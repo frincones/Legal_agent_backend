@@ -178,53 +178,50 @@ async def citation_verify(
     req: CitationVerifyRequest,
     principal: Principal = Depends(get_current_firm),
 ):
-    """Batch-verify a list of citation_refs against the registry."""
+    """Batch-verify citas con chain cache → BD → live fetch.
+
+    Sprint L · ahora soporta:
+      - Jurisprudencia: T-XXX/AAAA, C-XXX/AAAA, SU-XXX/AAAA
+      - Leyes: LEY NNN/AAAA · fetch live a Senado
+      - Decretos: DECRETO NNN/AAAA · fetch live a Senado
+      - Códigos: CST, C.C., C.CO., CGP
+
+    Si la cita no está en BD, hace fetch al sitio oficial (Corte
+    Constitucional o Secretaría del Senado) y persiste el resultado
+    como cache permanente. Soft-404 → estado 'sospechosa' (alucinación
+    posible). Cada intento se audita en verification_attempts.
+    """
     from utils.db import get_storage
+    from utils.citation_verifier import verify_citations_batch
     storage = await get_storage()
     if not hasattr(storage, "pool"):
         raise HTTPException(503, "storage not available")
 
-    async with storage.pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            select id, corte, numero as citation_ref, rubro, vigencia,
-                   superada_por, fuente_url
-            from jurisprudencia
-            where corte = any($1::text[])
-              and numero = any($2::text[])
-            """,
-            list(ALLOWED_CORTES_CO), req.citation_refs,
-        )
+    results = await verify_citations_batch(
+        storage.pool,
+        req.citation_refs,
+        firm_id=principal.firm_id,
+        user_id=principal.user_id,
+    )
 
-    by_ref = {r["citation_ref"]: r for r in rows}
-    results: list[CitationVerifyResult] = []
-    for ref in req.citation_refs:
-        row = by_ref.get(ref)
-        if not row:
-            results.append(CitationVerifyResult(
-                citation_ref=ref, estado="no_encontrada",
-            ))
-            continue
-        vigencia = row["vigencia"] or "vigente"
-        if vigencia in ("superada", "abandonada", "derogada", "modulada"):
-            results.append(CitationVerifyResult(
-                citation_ref=ref, estado="superada",
-                juris_id=str(row["id"]),
-                corte=row["corte"],
-                rubro=row["rubro"],
-                vigencia=vigencia,
-                url_oficial=row["fuente_url"],
-            ))
-        else:
-            results.append(CitationVerifyResult(
-                citation_ref=ref, estado="verificada",
-                juris_id=str(row["id"]),
-                corte=row["corte"],
-                rubro=row["rubro"],
-                vigencia=vigencia,
-                url_oficial=row["fuente_url"],
-            ))
-    return results
+    out: list[CitationVerifyResult] = []
+    for r in results:
+        # Mapear el estado interno al schema del response model.
+        # 'sospechosa' es nuevo (alucinación detectada en live fetch).
+        # 'error' (fuente caída) → no_encontrada para no asustar al usuario.
+        estado_api = r.estado
+        if estado_api == "error":
+            estado_api = "no_encontrada"
+        out.append(CitationVerifyResult(
+            citation_ref=r.citation_ref,
+            estado=estado_api,
+            juris_id=r.juris_id,
+            corte=r.corte,
+            rubro=r.rubro or r.titulo,
+            vigencia=r.vigencia,
+            url_oficial=r.fuente_url,
+        ))
+    return out
 
 
 # ────────────────────────────────────────────────────────────────────
