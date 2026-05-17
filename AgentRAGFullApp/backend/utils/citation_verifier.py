@@ -309,7 +309,7 @@ async def _verify_ley_o_decreto(
         row = await conn.fetchrow(
             """
             select id, tipo, numero, anio, titulo, vigencia,
-                   fuente_url, verified_at, source, texto_preview
+                   fuente_url, verified_at, fuente, texto_preview
               from leyes_normas
              where citation_ref = $1
              limit 1
