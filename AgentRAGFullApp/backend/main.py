@@ -426,6 +426,7 @@ from api.legal import router as legal_router
 from api.voice import router as voice_router
 from api.calc import router as calc_router
 from api.citations import router as citations_router
+from api.catastro_conciliacion import router as catastro_conciliacion_router
 from api.hitl import router as hitl_router
 from api.matters import router as matters_router
 from api.clients import router as clients_router
@@ -545,6 +546,7 @@ app.include_router(legal_router)  # Already has /api/legal prefix
 app.include_router(voice_router)
 app.include_router(calc_router)
 app.include_router(citations_router)
+app.include_router(catastro_conciliacion_router)
 app.include_router(hitl_router)
 app.include_router(matters_router)
 app.include_router(clients_router)
