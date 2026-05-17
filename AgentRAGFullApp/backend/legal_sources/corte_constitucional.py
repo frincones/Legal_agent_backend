@@ -88,16 +88,33 @@ class CorteConstitucionalSource(BaseLegalSource):
         return urls[0] if urls else ""
 
     def _is_real_sentencia(self, html: str) -> bool:
-        """Reject soft-404 homepage responses (200 with ~8.6KB generic page)."""
-        if len(html) <= self._EMPTY_RESPONSE_MAX_BYTES:
+        """Reject soft-404 homepage responses (200 with ~8.6KB generic page).
+
+        Strategy:
+          1. Homepage genérica pesa ~8-15KB. Rejecting size <= 15KB descarta esos.
+          2. Sentencias reales pesan típicamente 50KB-3MB. Si size >= 50KB,
+             aceptarla aunque el title no diga "sentencia" (algunas sentencias
+             antiguas tienen title='***' u otros marcadores).
+          3. Entre 15KB y 50KB: requerir 'sentencia' en el title O en el body
+             como heurística de fallback.
+        """
+        size = len(html)
+        if size <= self._EMPTY_RESPONSE_MAX_BYTES:
             return False
-        # Real sentencia pages have "Sentencia" in <title>; homepage has just
-        # "CORTE CONSTITUCIONAL DE COLOMBIA". We still size-gate first since
-        # some mirrors omit <title>.
+        # Páginas grandes (>50KB) son siempre sentencias reales — la homepage
+        # mide ~8KB y nunca crece a ese tamaño.
+        if size >= 50_000:
+            return True
+        # Tamaño intermedio · verificar marcadores en el contenido
         title_match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
-        if title_match and "sentencia" not in title_match.group(1).lower():
-            return False
-        return True
+        title_text = (title_match.group(1).lower() if title_match else "")
+        if "sentencia" in title_text:
+            return True
+        # Fallback · buscar el header de sentencia en el body
+        body_lower = html[:5000].lower()
+        if "sentencia" in body_lower and ("magistrado" in body_lower or "ponente" in body_lower):
+            return True
+        return False
 
     async def search(self, query: str, limit: int = 10, **kwargs) -> list[LiveSourceResult]:
         """

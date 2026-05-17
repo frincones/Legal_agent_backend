@@ -362,7 +362,7 @@ async def _verify_ley_o_decreto(
                 """
                 insert into leyes_normas
                   (tipo, numero, anio, citation_ref, titulo, vigencia,
-                   fuente_url, texto_preview, html_hash, source,
+                   fuente_url, texto_preview, html_hash, fuente,
                    verified_at, fetched_at)
                 values
                   ($1, $2, $3, $4, $5, 'vigente', $6, $7, $8, 'senado',
@@ -372,7 +372,7 @@ async def _verify_ley_o_decreto(
                   fuente_url = excluded.fuente_url,
                   texto_preview = excluded.texto_preview,
                   html_hash = excluded.html_hash,
-                  source = 'senado',
+                  fuente = 'senado',
                   verified_at = now(),
                   fetched_at = now()
                 returning id
