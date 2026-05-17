@@ -457,23 +457,41 @@ async def verify_citation(
     """Punto de entrada del verifier.
 
     Devuelve VerifyResult con estado + metadata. Persiste audit y cache.
+    Cualquier excepción interna se captura y devuelve estado='error' para
+    no propagar 500 al frontend (degradación graciosa).
     """
+    started = time.time()
     parsed = parse_citation_ref(citation_ref)
     if not parsed:
         return VerifyResult(citation_ref=citation_ref, estado="no_encontrada",
                             source="unparseable")
 
-    if parsed.kind == "jurisprudencia":
-        result = await _verify_jurisprudencia(pool, parsed, firm_id, user_id)
-    elif parsed.kind == "ley" or parsed.kind == "decreto":
-        result = await _verify_ley_o_decreto(pool, parsed, firm_id, user_id)
-    elif parsed.kind == "codigo":
-        result = await _verify_codigo(pool, parsed, firm_id, user_id)
-    else:
-        result = VerifyResult(citation_ref=citation_ref, estado="no_encontrada",
-                              parsed=parsed, source="unknown_kind")
+    try:
+        if parsed.kind == "jurisprudencia":
+            result = await _verify_jurisprudencia(pool, parsed, firm_id, user_id)
+        elif parsed.kind == "ley" or parsed.kind == "decreto":
+            result = await _verify_ley_o_decreto(pool, parsed, firm_id, user_id)
+        elif parsed.kind == "codigo":
+            result = await _verify_codigo(pool, parsed, firm_id, user_id)
+        else:
+            result = VerifyResult(citation_ref=citation_ref, estado="no_encontrada",
+                                  parsed=parsed, source="unknown_kind")
+    except Exception as e:
+        import traceback
+        logger.error(
+            "citation_verifier · unhandled error verifying %s (%s): %s\n%s",
+            citation_ref, parsed.kind, e, traceback.format_exc()[:500],
+        )
+        result = VerifyResult(
+            citation_ref=citation_ref, estado="error", parsed=parsed,
+            source=f"{parsed.kind}_uncaught",
+            duration_ms=int((time.time() - started) * 1000),
+        )
 
-    await _audit_attempt(pool, firm_id, user_id, result)
+    try:
+        await _audit_attempt(pool, firm_id, user_id, result)
+    except Exception:
+        pass
     return result
 
 
