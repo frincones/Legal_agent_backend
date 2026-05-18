@@ -112,8 +112,25 @@ async def run_rule(rule_id: str, payload: dict, firm_id: str, trigger_event: Opt
     if not rule["active"]:
         skip_reason = "rule_inactive"
 
+    # asyncpg may return JSONB as a string (codec-dependent) · normalize.
+    conditions = rule["conditions"]
+    if isinstance(conditions, str):
+        try:
+            conditions = json.loads(conditions)
+        except Exception:
+            conditions = []
+    conditions = conditions or []
+
+    actions = rule["actions"]
+    if isinstance(actions, str):
+        try:
+            actions = json.loads(actions)
+        except Exception:
+            actions = []
+    actions = actions or []
+
     if not skip_reason:
-        passed, reasons = _evaluate_conditions(rule["conditions"] or [], payload)
+        passed, reasons = _evaluate_conditions(conditions, payload)
         if not passed:
             skip_reason = "conditions_failed: " + "; ".join(reasons[-3:])
 
@@ -121,7 +138,7 @@ async def run_rule(rule_id: str, payload: dict, firm_id: str, trigger_event: Opt
         await _log_run(firm_id, rule_id, trigger_event, payload, [], "skipped", skip_reason, 0)
         return {"status": "skipped", "reason": skip_reason}
 
-    for action in (rule["actions"] or []):
+    for action in actions:
         try:
             result = await _execute_action(firm_id, action, payload)
             actions_executed.append({"kind": action.get("kind"), "result": result, "ok": True})

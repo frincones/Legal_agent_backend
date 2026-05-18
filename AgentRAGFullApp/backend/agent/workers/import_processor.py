@@ -210,8 +210,15 @@ async def process_job(job_id: str, commit: bool = False) -> dict:
             job_id, "committing" if commit else "validating",
         )
 
-        # Cargar mapping (manual o heurístico desde primera fila)
-        mapping = dict(job["column_mapping"] or {})
+        # Cargar mapping (manual o heurístico desde primera fila) ·
+        # asyncpg puede devolver JSONB como string · normalizar.
+        cm_raw = job["column_mapping"]
+        if isinstance(cm_raw, str):
+            try:
+                cm_raw = json.loads(cm_raw)
+            except Exception:
+                cm_raw = {}
+        mapping = dict(cm_raw or {})
         rows = await conn.fetch(
             """
             select id, line_number, raw_payload from import_rows
@@ -228,7 +235,13 @@ async def process_job(job_id: str, commit: bool = False) -> dict:
             return {"ok": True, "rows_processed": 0}
 
         if not mapping:
-            headers = list((rows[0]["raw_payload"] or {}).keys())
+            raw_payload = rows[0]["raw_payload"]
+            if isinstance(raw_payload, str):
+                try:
+                    raw_payload = json.loads(raw_payload)
+                except Exception:
+                    raw_payload = {}
+            headers = list((raw_payload or {}).keys())
             mapping = heuristic_column_mapping(headers, target_fields)
             await conn.execute(
                 "update import_jobs set column_mapping = $2::jsonb where id = $1::uuid",
