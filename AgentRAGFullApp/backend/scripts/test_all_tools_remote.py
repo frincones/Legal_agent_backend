@@ -102,7 +102,23 @@ TOOL_ARG_OVERRIDES: dict[str, dict[str, Any]] = {
                              "fecha": "2026-12-31", "tipo": "audiencia"},
     "mark_deadline_done": {"deadline_id": "da37c7e1-ee36-4005-8fb1-4e4934cbaa0d"},
     "create_task": {"title": "test task"},
-    "complete_task": {"task_id": "00000000-0000-0000-0000-000000000000"},
+    "complete_task": {"task_id": "e20d7d7e-44f7-4012-b54e-c42e9189d88b"},
+    "resolve_comment": {"comment_id": "ef0f4970-6441-4abe-9234-34fd0c7edd64"},
+    # Judges + simulations
+    "get_judge_stats": {"judge_id": "84ce650c-3602-4d54-8fdf-6953aadba984"},
+    "simulate_judge_view": {"matter_id": "{matter_id}", "judge_id": "84ce650c-3602-4d54-8fdf-6953aadba984"},
+    # Trust + automation + signatures + import + redline · with real IDs
+    "record_trust_deposit": {"trust_account_id": "3dab9e79-5440-4233-af1e-738b53712848",
+                              "amount_cop": 50000, "description": "test"},
+    "record_trust_payment": {"trust_account_id": "3dab9e79-5440-4233-af1e-738b53712848",
+                              "amount_cop": 50000, "description": "test"},
+    "run_automation": {"rule_id": "b46cd027-96ef-4dc4-bccf-f29af71fb76e"},
+    "check_signature_status": {"envelope_id": "e03af8b9-0b1e-44f7-a604-ddf5900997dd"},
+    "import_csv": {"job_id": "489a99fc-8a58-4c4d-b510-ec3684d4edd9"},
+    "wizard_session_status": {"session_token": "00000000-0000-0000-0000-000000000000"},
+    # Documents · ensure doc text is >100 chars for check_doc_consistency
+    "analyze_contract": {"document_id": "{document_id}",
+                          "document_text": "Contrato de prueba con cláusulas extensas para superar el umbral mínimo del validador. " * 3},
     # Search / external
     "search_suin_juriscol": {"tipo": "Ley", "numero": "1564", "anio": 2012},
     "verify_rue_persona": {"query": "Juan Perez"},
