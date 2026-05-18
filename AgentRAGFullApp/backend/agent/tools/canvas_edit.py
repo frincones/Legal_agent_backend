@@ -77,12 +77,50 @@ async def canvas_set_text_tool(args: dict, ctx: dict) -> dict:
 
 
 async def canvas_append_tool(args: dict, ctx: dict) -> dict:
-    """Añade un fragmento de markdown al final del documento."""
+    """Añade un fragmento de markdown al final del documento.
+
+    Heurística defensiva: si el markdown tiene señales fuertes de "nota del
+    caso" (pasos pendientes, recordatorio, observación) Y el usuario está
+    en una pestaña distinta de canvas, la tool rechaza y sugiere
+    `add_matter_note`. Evita el antipatrón reportado donde el LLM inyecta
+    notas dentro del documento legal en redacción.
+    """
     markdown = (args.get("markdown") or "").strip()
     if not markdown:
         return {"error": "markdown requerido"}
     if len(markdown) > 50_000:
         return {"error": "markdown excede 50k caracteres"}
+
+    # Detecta intent "nota del caso" — solo aplica si el usuario NO está
+    # explícitamente en canvas. Si está en /casos/<id>/canvas, el LLM puede
+    # haber acertado y queremos respetar (el abogado podría estar
+    # anotando pasos DENTRO del borrador).
+    active_tab = (ctx.get("active_tab") or "").lower()
+    if active_tab not in ("canvas", "documentos"):
+        low = markdown.lower()
+        note_signals = (
+            "pasos pendientes", "paso pendiente", "pendientes:",
+            "recordatorio", "observación:", "observacion:",
+            "nota:", "notas:", "anotación", "anotacion",
+            "tareas pendientes", "checklist",
+        )
+        bypass = bool(args.get("confirm_canvas") or False)
+        if any(sig in low for sig in note_signals) and not bypass:
+            return {
+                "ok": False,
+                "error": (
+                    "Este contenido parece una NOTA del caso, no contenido del "
+                    "documento legal en redacción. Usa add_matter_note(matter_id, "
+                    "body) para que aparezca en la pestaña Notas del caso. Si "
+                    "REALMENTE quieres inyectarlo dentro del documento del canvas, "
+                    "vuelve a llamar canvas_append con confirm_canvas=true."
+                ),
+                "suggested_tool": "add_matter_note",
+                "suggested_args": {
+                    "matter_id": ctx.get("matter_id"),
+                    "body": markdown,
+                },
+            }
     return {
         "summary": f"Añadí {len(markdown)} caracteres al final del documento",
         "_ui_command": _ui("canvas_append", markdown=markdown),
