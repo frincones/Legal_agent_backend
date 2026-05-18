@@ -709,38 +709,98 @@ def _detect_forced_tool(
     DEBE ejecutar en el primer round. Solo dispara cuando la señal es muy
     clara y la tool está en `available`. Devuelve None si no aplica.
 
-    Esto vence la indecisión del LLM cuando el set de tools es grande
-    (75+ tools en /ask). Sin esto, gpt-4o gasta rounds llamando
-    open_matter_context o tag_matter aunque el prompt diga 'agrega una
-    nota' explícitamente.
+    Cubre 16 escenarios (uno por pestaña del caso) · cuando el LLM tiene 75+
+    tools disponibles se confunde y elige tools de lookup en vez de la write
+    tool correcta. Este detector vence ese problema cuando el prompt tiene
+    señales claras.
+
+    Orden de evaluación importa · si el prompt menciona "documento/canvas"
+    no fuerza tools de write-back; deja que el LLM elija canvas_*.
     """
     if not prompt:
         return None
     low = prompt.lower()
-    canvas_words = (
-        "documento", "demanda", "contestación", "contestacion",
-        "contrato", "borrador", "redacta", "redactar", "escrito",
-        "cláusula", "clausula", "al doc ", "al documento",
-    )
-    if any(w in low for w in canvas_words):
-        return None  # canvas-intent · deja que el LLM elija canvas_*
-    if active_tab == "canvas":
-        return None  # usuario está editando el doc · no fuerces nota
 
-    note_triggers = (
-        "agrega una nota", "agrega nota", "agregar una nota", "agregar nota",
-        "crea una nota", "crea nota", "crear una nota", "crear nota",
-        "crea unas notas", "crear notas", "agrega notas", "añade notas",
-        "añade una nota", "anade una nota", "añade nota",
-        "anota ", "anotar ", "anotación", "anotacion",
-        "pasos pendientes", "recordatorio:", "recordatorio ",
-        "observación:", "observacion:",
-        "dentro del caso", "al expediente", "en el expediente",
-        "agrega esto al caso", "agregar al caso",
+    # Anti-canvas guard: si el user habla del documento, no fuerces nada.
+    canvas_words = (
+        "agrega.*al documento", "al documento", "en el documento",
+        "del documento", "redacta el documento", "borrador del documento",
     )
-    if any(t in low for t in note_triggers):
-        if "add_matter_note" in available:
-            return "add_matter_note"
+    import re
+    for pat in canvas_words:
+        if re.search(pat, low):
+            return None
+    if active_tab == "canvas":
+        return None  # usuario está editando · respeta su intención
+
+    # Lista ordenada por especificidad · primer match gana.
+    # (substring or regex, forced_tool_name)
+    intents: list[tuple[str, str]] = [
+        # --- Tareas (specific) · "tarea:" es señal fuerte
+        (r"\b(crea|crear|agrega|agregar|nueva)\s+(una\s+)?tarea\b", "create_task"),
+        (r"\btarea:\s", "create_task"),
+        (r"\bpreparar\b.*\bpara el\b", "create_task"),
+        (r"\bnueva\s+tarea\b", "create_task"),
+        # --- Plazos / calendario (specific)
+        (r"\bagend(a|ar)\b", "add_matter_deadline"),
+        (r"\bagenda\s+audiencia\b", "add_matter_deadline"),
+        (r"\baudiencia\s+(el|para)\b", "add_matter_deadline"),
+        (r"\b(agrega|crea)\s+(un\s+)?plazo\b", "add_matter_deadline"),
+        (r"\b(agrega|crea)\s+(un\s+)?evento\b", "add_matter_deadline"),
+        (r"\b(crear|añadir).*deadline\b", "add_matter_deadline"),
+        # --- Horas/gastos
+        (r"\bregistra\b.*\b(minutos|horas|hrs|min)\b", "track_time"),
+        (r"\btrackea\b.*\bhoras\b", "track_time"),
+        (r"\b(registra|anota|agrega)\s+gasto\b", "log_expense"),
+        (r"\b(genera|crea)\s+factura\b", "generate_invoice"),
+        # --- Predicción / riesgos
+        (r"\bpredice\b", "predict_outcome"),
+        (r"\bpredicción\b", "predict_outcome"),
+        (r"\bidentifica\s+(los\s+)?riesgos\b", "predict_outcome"),
+        (r"\briesgos\s+principales\b", "predict_outcome"),
+        # --- Lecciones
+        (r"\bextrae\s+lecciones\b", "extract_lesson"),
+        (r"\blecciones\s+aprendidas\b", "extract_lesson"),
+        # --- Análisis / documentos
+        (r"\bextrae\s+(las\s+)?partes\b", "extract_document_entities"),
+        (r"\bextrae\s+entidades\b", "extract_document_entities"),
+        (r"\banaliza\s+(este\s+)?contrato\b", "analyze_contract"),
+        (r"\banaliza\s+(este\s+)?documento\b", "extract_document_entities"),
+        # --- Evidencia
+        (r"\bverifica\s+(la\s+)?identidad\b", "validate_identity"),
+        (r"\bvalida\s+(la\s+)?cédula\b", "validate_identity"),
+        (r"\bvalida\s+(la\s+)?identidad\b", "validate_identity"),
+        (r"\bvalida\s+nit\b", "validate_identity"),
+        (r"\bverifica\s+consistencia\b", "check_doc_consistency"),
+        # --- Juez
+        (r"\bestadísticas\s+del\s+juez\b", "get_judge_stats"),
+        (r"\bperfil\s+del\s+juez\b", "search_judge"),
+        # --- Citas / normas
+        (r"\bverifica\s+(las\s+)?citas?\b", "validate_citation"),
+        (r"\bvalida\s+(las\s+)?citas?\b", "validate_citation"),
+        (r"\b(está\s+)?derogada\b", "validate_norm_vigencia"),
+        # --- Comentarios
+        (r"\b(agrega|añade|crea)\s+(un\s+)?comentario\b", "add_comment"),
+        (r"\bcomentario:\s", "add_comment"),
+        # --- Drafting
+        (r"\bredacta\s+(una|la)\s+(contestación|demanda|tutela|escrito)\b", "draft_pleading"),
+        (r"\bborrador\s+de\s+(contestación|demanda)\b", "draft_pleading"),
+        # --- Notas (último para que tareas/comentarios ganen si son más específicos)
+        (r"\b(agrega|crea|añade|anade)\s+(una\s+)?nota\b", "add_matter_note"),
+        (r"\b(agrega|crea|añade)\s+(unas\s+)?notas\b", "add_matter_note"),
+        (r"\banota\s+", "add_matter_note"),
+        (r"\banotar\s+", "add_matter_note"),
+        (r"\banotación\b", "add_matter_note"),
+        (r"\bpasos\s+pendientes\b", "add_matter_note"),
+        (r"\brecordatorio:\s", "add_matter_note"),
+        (r"\bobservación:\s", "add_matter_note"),
+        (r"\bdentro\s+del\s+caso\b", "add_matter_note"),
+        (r"\bal\s+expediente\b", "add_matter_note"),
+    ]
+    for pattern, tool in intents:
+        if re.search(pattern, low):
+            if tool in available:
+                return tool
     return None
 
 
