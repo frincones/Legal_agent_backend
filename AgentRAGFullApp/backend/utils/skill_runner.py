@@ -721,13 +721,21 @@ def _detect_forced_tool(
         return None
     low = prompt.lower()
 
-    # Anti-canvas guard: si el user habla del documento, no fuerces nada.
-    canvas_words = (
-        "agrega.*al documento", "al documento", "en el documento",
-        "del documento", "redacta el documento", "borrador del documento",
-    )
+    # Anti-canvas guard: solo bloquea cuando la intención es claramente
+    # ESCRIBIR al documento del canvas. Frases como "extrae las partes DEL
+    # documento" o "analiza DEL documento" NO son intent de canvas, son
+    # intent de análisis · no deben bloquear.
     import re
-    for pat in canvas_words:
+    canvas_write_patterns = (
+        r"\bagrega.*al documento\b",
+        r"\bañade\s+al\s+documento\b",
+        r"\binserta\s+(en|al)\s+(el\s+)?documento\b",
+        r"\bredacta\s+el\s+documento\b",
+        r"\bescribe\s+en\s+(el\s+)?documento\b",
+        r"\breemplaza\s+(el\s+)?documento\b",
+        r"\bborrador\s+del\s+documento\b",
+    )
+    for pat in canvas_write_patterns:
         if re.search(pat, low):
             return None
     if active_tab == "canvas":
