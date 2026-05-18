@@ -720,6 +720,9 @@ def _detect_forced_tool(
     if not prompt:
         return None
     low = prompt.lower()
+    # DEBUG · versión del detector (bump cuando edites para verificar deploy).
+    logger.info("_detect_forced_tool v2026-05-18-r3 · prompt_lower=%r tab=%r",
+                low[:80], active_tab)
 
     # Anti-canvas guard: solo bloquea cuando la intención es claramente
     # ESCRIBIR al documento del canvas. Frases como "extrae las partes DEL
@@ -807,6 +810,8 @@ def _detect_forced_tool(
     ]
     for pattern, tool in intents:
         if re.search(pattern, low):
+            logger.info("_detect_forced_tool MATCH pattern=%r tool=%r in_avail=%s",
+                        pattern, tool, tool in available)
             if tool in available:
                 return tool
     return None
