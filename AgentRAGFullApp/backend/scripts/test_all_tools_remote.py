@@ -41,14 +41,96 @@ CATALOG_PATH = HERE / "tools_catalog.json"
 RESULTS_DIR = HERE.parent / "test-results"
 
 
+# Per-tool argument overrides · learned from real tool error messages.
+# When a tool needs args that don't match generic mock names, list them here.
+# Empty dict {} means "send no args" · the tool will error gracefully.
+TOOL_ARG_OVERRIDES: dict[str, dict[str, Any]] = {
+    # Calculators · Pydantic schemas demand exact field names + valid enums
+    "calc_liquidacion": {
+        "fecha_ingreso": "2024-01-15", "fecha_terminacion": "2026-03-20",
+        "salario_mensual_cop": 2000000, "causa": "injustificado",
+        "tipo_contrato": "indefinido",
+    },
+    "calc_prescripcion": {
+        "fecha_exigibilidad": "2024-01-15", "tipo_accion": "civil_ordinaria",
+    },
+    "calc_intereses": {
+        "capital_cop": 5000000, "fecha_inicio": "2024-01-15",
+        "fecha_fin": "2026-05-17", "tipo_interes": "moratorio_comercial",
+        "metodo": "simple",
+    },
+    # Norms / citations
+    "validate_norm_vigencia": {"tipo": "Ley", "numero": "1564", "anio": 2012},
+    "validate_citation": {"citation_ref": "Ley 1564 de 2012 art. 82"},
+    "research_jurisprudence": {"query": "despido injustificado"},
+    # Documents
+    "summarize_document": {"document_id": "{document_id}"},  # placeholder replaced below
+    "extract_document_entities": {"document_id": "{document_id}"},
+    "ask_about_document": {"document_id": "{document_id}", "question": "¿partes y cuantía?"},
+    "analyze_contract": {"document_id": "{document_id}"},
+    "check_doc_consistency": {"document_id": "{document_id}", "document_text": "..."},
+    "score_evidence": {"document_id": "{document_id}", "document_text": "..."},
+    "review_contract": {"document_id": "{document_id}"},
+    "get_document_content": {"document_id": "{document_id}"},
+    "compare_documents": {"doc_a_id": "{document_id}", "doc_b_id": "{document_id}"},
+    # Time / expenses / billing
+    "track_time": {"matter_id": "{matter_id}", "minutes": 60, "description": "test"},
+    "log_expense": {"matter_id": "{matter_id}", "amount_cop": 50000, "description": "test"},
+    "generate_invoice": {"matter_id": "{matter_id}", "period_start": "2026-05-01", "period_end": "2026-05-31"},
+    # Trust
+    "record_trust_deposit": {"trust_account_id": "00000000-0000-0000-0000-000000000000",
+                              "amount_cop": 100000, "description": "test deposit"},
+    "record_trust_payment": {"trust_account_id": "00000000-0000-0000-0000-000000000000",
+                              "amount_cop": 50000, "description": "test payment"},
+    # Drafts
+    "draft_pleading": {"kind": "tutela", "facts": {"accionante": "Test", "accionado": "EPS"}, "matter_id": "{matter_id}"},
+    "autofill_template": {"template_body": "Hola {{nombre}}", "matter_id": "{matter_id}"},
+    "extract_variables_from_text": {"text": "Juan Pérez 12345", "variables": [{"name": "nombre", "kind": "text"}]},
+    # Notes / deadlines / tasks
+    "add_matter_note": {"matter_id": "{matter_id}", "body": "test note"},
+    "add_matter_deadline": {"matter_id": "{matter_id}", "titulo": "test plazo",
+                             "fecha": "2026-12-31", "tipo": "audiencia"},
+    "mark_deadline_done": {"deadline_id": "da37c7e1-ee36-4005-8fb1-4e4934cbaa0d"},
+    "create_task": {"title": "test task"},
+    "complete_task": {"task_id": "00000000-0000-0000-0000-000000000000"},
+    # Search / external
+    "search_suin_juriscol": {"tipo": "Ley", "numero": "1564", "anio": 2012},
+    "verify_rue_persona": {"query": "Juan Perez"},
+    "fetch_dof_co_publicacion": {"query": "decreto 2024"},
+    "delegate_to": {"subagent": "investigador", "task": "test"},
+    # Memory
+    "remember": {"key": "test_key", "value": "test_value", "scope": "user"},
+    # Wizards
+    "list_wizards": {},
+    "start_wizard": {"slug": "tutela_salud"},
+    # Audit
+    "query_audit_logs": {"query": "matter", "limit": 5},
+}
+
+
 def build_mock_args(
     required: list[str],
     *,
     matter_id: Optional[str],
     document_id: Optional[str],
+    tool_name: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Same mock builder as test_all_tools.py · kept in sync manually."""
-    out: dict[str, Any] = {}
+    """Build mock args · tool-specific override has priority over generic mock."""
+    # If we have a tool-specific override, use it.
+    if tool_name and tool_name in TOOL_ARG_OVERRIDES:
+        override = TOOL_ARG_OVERRIDES[tool_name]
+        out: dict[str, Any] = {}
+        for k, v in override.items():
+            # Substitute {matter_id} / {document_id} placeholders.
+            if isinstance(v, str) and v == "{matter_id}":
+                out[k] = matter_id or "00000000-0000-0000-0000-000000000000"
+            elif isinstance(v, str) and v == "{document_id}":
+                out[k] = document_id or "00000000-0000-0000-0000-000000000000"
+            else:
+                out[k] = v
+        return out
+    # Fallback to generic mocks from required_args list.
+    out = {}
     for arg in required:
         out[arg] = _mock_for(arg, matter_id=matter_id, document_id=document_id)
     return out
@@ -177,6 +259,7 @@ def main() -> int:
         mock_args = build_mock_args(
             spec["required_args"],
             matter_id=args.matter_id, document_id=args.document_id,
+            tool_name=spec["name"],
         )
         started = time.time()
         resp = call_endpoint(

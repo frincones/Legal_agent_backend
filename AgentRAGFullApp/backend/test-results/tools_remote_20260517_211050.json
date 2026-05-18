@@ -1,0 +1,1855 @@
+[
+  {
+    "name": "research_jurisprudence",
+    "module": "api.citations",
+    "description": "Busca jurisprudencia colombiana con puntuación de relevancia",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 892,
+    "body_sample": "{\"ok\": true, \"tool\": \"research_jurisprudence\", \"duration_ms\": 481, \"result\": {\"hits\": [{\"juris_id\": \"ae7a8e6a-8d1c-4f93-af22-3f573496a98a\", \"corte\": \"CORTE_CONSTITUCIONAL\", \"citation_ref\": \"C-200/1995"
+  },
+  {
+    "name": "validate_citation",
+    "module": "api.citations",
+    "description": "Valida existencia y estado de una citación jurídica",
+    "required_args": [
+      "citation_ref"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 421,
+    "body_sample": "{\"ok\": true, \"tool\": \"validate_citation\", \"duration_ms\": 60, \"result\": {\"estado\": \"no_encontrada\", \"citation_ref\": \"test_value\"}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "validate_norm_vigencia",
+    "module": "api.citations",
+    "description": "Verifica vigencia de normas y detecta derogaciones",
+    "required_args": [
+      "norm_reference"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] invalid arguments: 'tipo'",
+    "http_status": 200,
+    "duration_ms": 377,
+    "body_sample": "{\"ok\": false, \"tool\": \"validate_norm_vigencia\", \"duration_ms\": 0, \"result\": {\"error\": \"invalid arguments: 'tipo'\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"invalid arguments: 'tipo'\"}"
+  },
+  {
+    "name": "calc_liquidacion",
+    "module": "api.calc",
+    "description": "Calcula liquidación laboral (cesantías, prima, indemnización)",
+    "required_args": [
+      "fecha_ingreso",
+      "fecha_terminacion",
+      "salario_mensual_cop",
+      "causa"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] invalid arguments: 1 validation error for LiquidacionRequest\ncausa\n  String should match pattern '^(injustificado|justa_causa|renuncia|mutuo_acuerdo|terminacion_contrato|fin_obra)$' [type=string_pattern_mismatch, input_value='test_value', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.13/v/string_pattern_mismatch",
+    "http_status": 200,
+    "duration_ms": 384,
+    "body_sample": "{\"ok\": false, \"tool\": \"calc_liquidacion\", \"duration_ms\": 0, \"result\": {\"error\": \"invalid arguments: 1 validation error for LiquidacionRequest\\ncausa\\n  String should match pattern '^(injustificado|jus"
+  },
+  {
+    "name": "calc_prescripcion",
+    "module": "api.calc",
+    "description": "Calcula plazos de prescripción de acciones",
+    "required_args": [
+      "fecha_evento",
+      "tipo_accion"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] invalid arguments: 'fecha_exigibilidad'",
+    "http_status": 200,
+    "duration_ms": 483,
+    "body_sample": "{\"ok\": false, \"tool\": \"calc_prescripcion\", \"duration_ms\": 0, \"result\": {\"error\": \"invalid arguments: 'fecha_exigibilidad'\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"invalid arguments: 'fecha"
+  },
+  {
+    "name": "calc_intereses",
+    "module": "api.calc",
+    "description": "Calcula intereses moratorios y convencionales",
+    "required_args": [
+      "monto_base",
+      "fecha_inicio",
+      "tasa_anual"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] invalid arguments: 'tipo_interes'",
+    "http_status": 200,
+    "duration_ms": 374,
+    "body_sample": "{\"ok\": false, \"tool\": \"calc_intereses\", \"duration_ms\": 0, \"result\": {\"error\": \"invalid arguments: 'tipo_interes'\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"invalid arguments: 'tipo_interes'\""
+  },
+  {
+    "name": "open_matter_context",
+    "module": "api.matters",
+    "description": "Abre contexto del caso (partes, hechos, documentos)",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] matter not found",
+    "http_status": 200,
+    "duration_ms": 527,
+    "body_sample": "{\"ok\": false, \"tool\": \"open_matter_context\", \"duration_ms\": 165, \"result\": {\"error\": \"matter not found\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"matter not found\"}"
+  },
+  {
+    "name": "request_human_approval",
+    "module": "api.hitl",
+    "description": "Solicita aprobación humana para una acción del agente",
+    "required_args": [
+      "kind",
+      "preview"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 524,
+    "body_sample": "{\"ok\": true, \"tool\": \"request_human_approval\", \"duration_ms\": 145, \"result\": {\"pending\": true, \"interrupt_id\": \"8b08d119-d3be-4948-94b1-15db867690b9\"}, \"error\": null, \"error_type\": null, \"soft_error\":"
+  },
+  {
+    "name": "draft_pleading",
+    "module": "agent.tools.draft_pleading",
+    "description": "Genera escrito procesal desde hechos verificados",
+    "required_args": [
+      "kind",
+      "facts"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[ValueError] dictionary update sequence element #0 has length 1; 2 is required",
+    "http_status": 200,
+    "duration_ms": 370,
+    "body_sample": "{\"ok\": false, \"tool\": \"draft_pleading\", \"duration_ms\": 0, \"result\": null, \"error\": \"dictionary update sequence element #0 has length 1; 2 is required\", \"error_type\": \"ValueError\", \"soft_error\": null}"
+  },
+  {
+    "name": "list_legal_templates",
+    "module": "agent.tools.draft_pleading",
+    "description": "Enumera plantillas de escritos disponibles",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 396,
+    "body_sample": "{\"ok\": true, \"tool\": \"list_legal_templates\", \"duration_ms\": 0, \"result\": {\"count\": 8, \"templates\": [{\"kind\": \"demanda_ordinaria_laboral\", \"title\": \"Demanda Ordinaria Laboral\", \"description\": \"Demanda "
+  },
+  {
+    "name": "list_my_matters",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Lista casos activos del usuario (filtrable por materia)",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 431,
+    "body_sample": "{\"ok\": true, \"tool\": \"list_my_matters\", \"duration_ms\": 60, \"result\": {\"count\": 2, \"matters\": [{\"id\": \"6f26747c-fcc0-4313-8812-52d942a30a2c\", \"display_id\": \"DEMO-001\", \"titulo\": \"Liquidación laboral · "
+  },
+  {
+    "name": "find_client",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Busca cliente por nombre, NIT o cédula",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 431,
+    "body_sample": "{\"ok\": true, \"tool\": \"find_client\", \"duration_ms\": 69, \"result\": {\"count\": 0, \"clients\": []}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "list_upcoming_deadlines",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Plazos próximos en ventana de N días",
+    "required_args": [
+      "days"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 431,
+    "body_sample": "{\"ok\": true, \"tool\": \"list_upcoming_deadlines\", \"duration_ms\": 65, \"result\": {\"count\": 0, \"window_days\": 30, \"deadlines\": []}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "add_matter_deadline",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Crea plazo para audiencia / acto procesal",
+    "required_args": [
+      "matter_id",
+      "titulo",
+      "fecha",
+      "tipo"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[ForeignKeyViolationError] insert or update on table \"matter_deadlines\" violates foreign key constraint \"matter_deadlines_matter_id_fkey\"\nDETAIL:  Key (matter_id)=(00000000-0000-0000-0000-000000000000) is not present in table \"matters\".",
+    "http_status": 200,
+    "duration_ms": 419,
+    "body_sample": "{\"ok\": false, \"tool\": \"add_matter_deadline\", \"duration_ms\": 78, \"result\": null, \"error\": \"insert or update on table \\\"matter_deadlines\\\" violates foreign key constraint \\\"matter_deadlines_matter_id_fk"
+  },
+  {
+    "name": "mark_deadline_done",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Marca plazo como completado",
+    "required_args": [
+      "deadline_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] deadline not found",
+    "http_status": 200,
+    "duration_ms": 432,
+    "body_sample": "{\"ok\": false, \"tool\": \"mark_deadline_done\", \"duration_ms\": 59, \"result\": {\"error\": \"deadline not found\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"deadline not found\"}"
+  },
+  {
+    "name": "add_matter_note",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Agrega nota narrativa al caso",
+    "required_args": [
+      "matter_id",
+      "body"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[ForeignKeyViolationError] insert or update on table \"matter_notes\" violates foreign key constraint \"matter_notes_matter_id_fkey\"\nDETAIL:  Key (matter_id)=(00000000-0000-0000-0000-000000000000) is not present in table \"matters\".",
+    "http_status": 200,
+    "duration_ms": 370,
+    "body_sample": "{\"ok\": false, \"tool\": \"add_matter_note\", \"duration_ms\": 68, \"result\": null, \"error\": \"insert or update on table \\\"matter_notes\\\" violates foreign key constraint \\\"matter_notes_matter_id_fkey\\\"\\nDETAIL"
+  },
+  {
+    "name": "list_matter_documents",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Lista documentos del caso",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 465,
+    "body_sample": "{\"ok\": true, \"tool\": \"list_matter_documents\", \"duration_ms\": 148, \"result\": {\"count\": 0, \"documents\": []}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "summarize_document",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Genera resumen IA de un documento",
+    "required_args": [
+      "matter_document_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "FAIL",
+    "reason": "[soft] document_id required",
+    "http_status": 200,
+    "duration_ms": 376,
+    "body_sample": "{\"ok\": false, \"tool\": \"summarize_document\", \"duration_ms\": 0, \"result\": {\"error\": \"document_id required\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"document_id required\"}"
+  },
+  {
+    "name": "list_pending_hitl",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Muestra aprobaciones HITL pendientes",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 421,
+    "body_sample": "{\"ok\": true, \"tool\": \"list_pending_hitl\", \"duration_ms\": 62, \"result\": {\"count\": 0, \"interrupts\": []}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "get_firm_metrics",
+    "module": "agent.tools.paralegal_tools",
+    "description": "KPIs del despacho (este mes)",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 448,
+    "body_sample": "{\"ok\": true, \"tool\": \"get_firm_metrics\", \"duration_ms\": 67, \"result\": {\"documentos_mes\": 0, \"voice_commands_mes\": 0, \"voice_commands_semana\": 0, \"horas_ahorradas_mes\": 0.0, \"matters_activos\": 2, \"clie"
+  },
+  {
+    "name": "extract_document_entities",
+    "module": "agent.tools.document_analysis",
+    "description": "Extrae partes, fechas, obligaciones del documento",
+    "required_args": [
+      "matter_document_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "FAIL",
+    "reason": "[soft] document_id requerido",
+    "http_status": 200,
+    "duration_ms": 388,
+    "body_sample": "{\"ok\": false, \"tool\": \"extract_document_entities\", \"duration_ms\": 0, \"result\": {\"error\": \"document_id requerido\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"document_id requerido\"}"
+  },
+  {
+    "name": "subscribe_to_expediente",
+    "module": "api.notifications",
+    "description": "Suscribe a notificaciones judiciales del expediente",
+    "required_args": [
+      "expediente",
+      "fuente"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 394,
+    "body_sample": "{\"ok\": true, \"tool\": \"subscribe_to_expediente\", \"duration_ms\": 70, \"result\": {\"id\": \"383b6b40-1d31-4302-9c69-a22a7a74749b\", \"fuente\": \"rama_judicial\", \"expediente\": \"1234567890\", \"matter_id\": null}, \""
+  },
+  {
+    "name": "list_judicial_notifications",
+    "module": "api.notifications",
+    "description": "Lista notificaciones judiciales sin leer",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 416,
+    "body_sample": "{\"ok\": true, \"tool\": \"list_judicial_notifications\", \"duration_ms\": 67, \"result\": {\"count\": 0, \"items\": []}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "poll_judicial_now",
+    "module": "api.notifications",
+    "description": "Fuerza polling inmediato de suscripciones judiciales",
+    "required_args": [],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 494,
+    "body_sample": "{\"ok\": true, \"tool\": \"poll_judicial_now\", \"duration_ms\": 119, \"result\": {\"polled\": 1, \"inserted\": 0, \"errors\": [\"unknown judicial source: rama_judicial\"]}, \"error\": null, \"error_type\": null, \"soft_err"
+  },
+  {
+    "name": "parse_legal_email",
+    "module": "agent.tools.parse_legal_email",
+    "description": "Clasifica correo legal (auto, sentencia, citación)",
+    "required_args": [
+      "subject",
+      "body"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 3244,
+    "body_sample": "{\"ok\": true, \"tool\": \"parse_legal_email\", \"duration_ms\": 2850, \"result\": {\"is_legal\": false, \"legal_kind\": \"otro\", \"matched_expediente\": null, \"matched_juzgado\": null, \"matched_fecha\": null, \"severida"
+  },
+  {
+    "name": "daily_briefing",
+    "module": "agent.tools.daily_briefing",
+    "description": "Briefing matutino con urgencias y recomendaciones",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 2015,
+    "body_sample": "{\"ok\": true, \"tool\": \"daily_briefing\", \"duration_ms\": 1640, \"result\": {\"fecha\": \"2026-05-18\", \"plazos_proximos\": [], \"plazos_criticos_count\": 0, \"judicial_unread\": [], \"emails_unread\": [], \"alertas_no"
+  },
+  {
+    "name": "run_sla_reminders",
+    "module": "agent.workers.sla_reminders",
+    "description": "Envía notificaciones de plazos próximos < 48h",
+    "required_args": [],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 432,
+    "body_sample": "{\"ok\": true, \"tool\": \"run_sla_reminders\", \"duration_ms\": 59, \"result\": {\"checked\": 0, \"pushed\": 0, \"skipped_recent\": 0}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "sync_email_now",
+    "module": "agent.workers.email_ingest",
+    "description": "Fuerza polling de correo (Gmail/Outlook/IMAP)",
+    "required_args": [],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 371,
+    "body_sample": "{\"ok\": true, \"tool\": \"sync_email_now\", \"duration_ms\": 66, \"result\": {\"synced\": 0, \"inserted\": 0}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "query_audit_logs",
+    "module": "api.audit",
+    "description": "Consulta logs de auditoría del firm",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] solo socios/admin pueden consultar auditoría",
+    "http_status": 200,
+    "duration_ms": 361,
+    "body_sample": "{\"ok\": false, \"tool\": \"query_audit_logs\", \"duration_ms\": 0, \"result\": {\"error\": \"solo socios/admin pueden consultar auditoría\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"solo socios/admin pue"
+  },
+  {
+    "name": "check_quota",
+    "module": "api.quotas",
+    "description": "Verifica cuota disponible (llm, voice, docs)",
+    "required_args": [
+      "kind"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 464,
+    "body_sample": "{\"ok\": true, \"tool\": \"check_quota\", \"duration_ms\": 81, \"result\": \"{\\\"plan\\\": {\\\"code\\\": \\\"free\\\", \\\"name\\\": \\\"Free Trial\\\", \\\"status\\\": \\\"trialing\\\", \\\"annual_cop\\\": 0, \\\"period_end\\\": \\\"2026-06-01T00"
+  },
+  {
+    "name": "sync_calendar",
+    "module": "agent.workers.calendar_sync",
+    "description": "Sincroniza Google/Outlook calendar",
+    "required_args": [],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 417,
+    "body_sample": "{\"ok\": true, \"tool\": \"sync_calendar\", \"duration_ms\": 58, \"result\": {\"synced\": 0, \"inserted\": 0, \"errors\": []}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "analyze_firm_performance",
+    "module": "api.analytics",
+    "description": "Análisis de performance del despacho con gráficas",
+    "required_args": [
+      "months",
+      "metric"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 434,
+    "body_sample": "{\"ok\": true, \"tool\": \"analyze_firm_performance\", \"duration_ms\": 109, \"result\": {\"kpis\": \"{\\\"by_owner\\\": {}, \\\"by_status\\\": {\\\"activo\\\": 2}, \\\"by_materia\\\": {\\\"laboral\\\": 1, \\\"comercial\\\": 1}, \\\"client"
+  },
+  {
+    "name": "find_anything",
+    "module": "api.search",
+    "description": "Búsqueda híbrida (FTS+vector) global",
+    "required_args": [
+      "q"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 461,
+    "body_sample": "{\"ok\": true, \"tool\": \"find_anything\", \"duration_ms\": 70, \"result\": {\"count\": 0, \"items\": []}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "send_whatsapp",
+    "module": "api.whatsapp",
+    "description": "Envía mensaje vía WhatsApp Business Cloud",
+    "required_args": [
+      "to_phone",
+      "body"
+    ],
+    "safety_class": "EXTERNAL_SEND",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class EXTERNAL_SEND skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "track_time",
+    "module": "api.time_entries",
+    "description": "Registra hora facturable",
+    "required_args": [
+      "matter_id",
+      "hours",
+      "description"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] firm_id, user_id, matter_id, minutes>0 requeridos",
+    "http_status": 200,
+    "duration_ms": 372,
+    "body_sample": "{\"ok\": false, \"tool\": \"track_time\", \"duration_ms\": 0, \"result\": {\"error\": \"firm_id, user_id, matter_id, minutes>0 requeridos\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"firm_id, user_id, matt"
+  },
+  {
+    "name": "log_expense",
+    "module": "api.expenses",
+    "description": "Registra gasto del caso",
+    "required_args": [
+      "matter_id",
+      "amount",
+      "description"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] firm_id, matter_id, amount_cop>0 requeridos",
+    "http_status": 200,
+    "duration_ms": 372,
+    "body_sample": "{\"ok\": false, \"tool\": \"log_expense\", \"duration_ms\": 0, \"result\": {\"error\": \"firm_id, matter_id, amount_cop>0 requeridos\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"firm_id, matter_id, amount_"
+  },
+  {
+    "name": "generate_invoice",
+    "module": "api.invoices",
+    "description": "Genera factura del período",
+    "required_args": [
+      "matter_id",
+      "period_start",
+      "period_end"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[AttributeError] 'str' object has no attribute 'get'",
+    "http_status": 200,
+    "duration_ms": 386,
+    "body_sample": "{\"ok\": false, \"tool\": \"generate_invoice\", \"duration_ms\": 78, \"result\": null, \"error\": \"'str' object has no attribute 'get'\", \"error_type\": \"AttributeError\", \"soft_error\": null}"
+  },
+  {
+    "name": "capture_lead",
+    "module": "api.leads",
+    "description": "Captura prospecto nuevo en CRM",
+    "required_args": [
+      "nombre",
+      "email",
+      "materia"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 498,
+    "body_sample": "{\"ok\": true, \"tool\": \"capture_lead\", \"duration_ms\": 119, \"result\": {\"id\": \"0bd1d852-2642-47f0-b541-31310b316bbc\", \"nombre\": \"Test Nombre\"}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "generate_insights",
+    "module": "api.ai_insights",
+    "description": "Genera insights proactivos del despacho",
+    "required_args": [
+      "kind",
+      "target_type"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 588,
+    "body_sample": "{\"ok\": true, \"tool\": \"generate_insights\", \"duration_ms\": 282, \"result\": {\"ok\": true, \"inserted\": 0, \"checks\": {\"deadline_unprep\": 0, \"matter_at_risk\": 0, \"billing_opportunity\": 0, \"lead_followup_overd"
+  },
+  {
+    "name": "run_automation",
+    "module": "api.automation",
+    "description": "Ejecuta regla de automatización",
+    "required_args": [
+      "rule_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] rule not found",
+    "http_status": 200,
+    "duration_ms": 371,
+    "body_sample": "{\"ok\": false, \"tool\": \"run_automation\", \"duration_ms\": 64, \"result\": {\"error\": \"rule not found\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"rule not found\"}"
+  },
+  {
+    "name": "check_trust_balance",
+    "module": "api.trust_accounts",
+    "description": "Consulta saldo cuenta fiduciaria",
+    "required_args": [
+      "trust_account_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 446,
+    "body_sample": "{\"ok\": true, \"tool\": \"check_trust_balance\", \"duration_ms\": 79, \"result\": \"{\\\"total_in_cop\\\": 0, \\\"total_out_cop\\\": 0, \\\"accounts_count\\\": 0, \\\"by_matter_balance\\\": {}, \\\"opening_total_cop\\\": 0, \\\"unre"
+  },
+  {
+    "name": "record_trust_deposit",
+    "module": "api.trust_transactions",
+    "description": "Registra depósito en cuenta fiduciaria",
+    "required_args": [
+      "trust_account_id",
+      "amount",
+      "description"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] amount_cop > 0 requerido",
+    "http_status": 200,
+    "duration_ms": 370,
+    "body_sample": "{\"ok\": false, \"tool\": \"record_trust_deposit\", \"duration_ms\": 0, \"result\": {\"error\": \"amount_cop > 0 requerido\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"amount_cop > 0 requerido\"}"
+  },
+  {
+    "name": "record_trust_payment",
+    "module": "api.trust_transactions",
+    "description": "Registra pago desde cuenta fiduciaria",
+    "required_args": [
+      "trust_account_id",
+      "amount",
+      "description"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] matter_id y amount_cop > 0 requeridos",
+    "http_status": 200,
+    "duration_ms": 364,
+    "body_sample": "{\"ok\": false, \"tool\": \"record_trust_payment\", \"duration_ms\": 0, \"result\": {\"error\": \"matter_id y amount_cop > 0 requeridos\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"matter_id y amount_cop >"
+  },
+  {
+    "name": "analyze_contract",
+    "module": "api.contract_analyzer",
+    "description": "Análisis profundo de contrato (riesgos, cláusulas)",
+    "required_args": [
+      "matter_document_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "FAIL",
+    "reason": "[soft] texto_insuficiente",
+    "http_status": 200,
+    "duration_ms": 367,
+    "body_sample": "{\"ok\": false, \"tool\": \"analyze_contract\", \"duration_ms\": 61, \"result\": {\"error\": \"texto_insuficiente\", \"detail\": \"El documento no tiene texto procesable (sube nuevamente con OCR).\"}, \"error\": null, \"e"
+  },
+  {
+    "name": "ask_about_document",
+    "module": "api.doc_qa",
+    "description": "Pregunta sobre contenido de documento (Q&A)",
+    "required_args": [
+      "matter_document_id",
+      "question"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "FAIL",
+    "reason": "[soft] document_id o matter_id requerido",
+    "http_status": 200,
+    "duration_ms": 330,
+    "body_sample": "{\"ok\": false, \"tool\": \"ask_about_document\", \"duration_ms\": 0, \"result\": {\"error\": \"document_id o matter_id requerido\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"document_id o matter_id requer"
+  },
+  {
+    "name": "compare_documents",
+    "module": "api.doc_compare",
+    "description": "Compara dos documentos · diff semántico",
+    "required_args": [
+      "document_a_id",
+      "document_b_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "FAIL",
+    "reason": "[NameError] name 'firm_id' is not defined",
+    "http_status": 200,
+    "duration_ms": 385,
+    "body_sample": "{\"ok\": false, \"tool\": \"compare_documents\", \"duration_ms\": 0, \"result\": null, \"error\": \"name 'firm_id' is not defined\", \"error_type\": \"NameError\", \"soft_error\": null}"
+  },
+  {
+    "name": "send_for_signature",
+    "module": "api.signatures",
+    "description": "Envía documento para firma digital",
+    "required_args": [
+      "matter_id",
+      "signers",
+      "document"
+    ],
+    "safety_class": "EXTERNAL_SEND",
+    "needs_matter": true,
+    "needs_doc": true,
+    "status": "SKIP",
+    "reason": "safety_class EXTERNAL_SEND skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "check_signature_status",
+    "module": "api.signatures",
+    "description": "Estado de firma digital del sobre",
+    "required_args": [
+      "envelope_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[NameError] name 'firm_id' is not defined",
+    "http_status": 200,
+    "duration_ms": 378,
+    "body_sample": "{\"ok\": false, \"tool\": \"check_signature_status\", \"duration_ms\": 0, \"result\": null, \"error\": \"name 'firm_id' is not defined\", \"error_type\": \"NameError\", \"soft_error\": null}"
+  },
+  {
+    "name": "import_csv",
+    "module": "api.imports",
+    "description": "Importa masivo desde CSV",
+    "required_args": [
+      "file",
+      "kind"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] firm_id y job_id requeridos",
+    "http_status": 200,
+    "duration_ms": 387,
+    "body_sample": "{\"ok\": false, \"tool\": \"import_csv\", \"duration_ms\": 0, \"result\": {\"error\": \"firm_id y job_id requeridos\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"firm_id y job_id requeridos\"}"
+  },
+  {
+    "name": "search_kb",
+    "module": "agent.tools.kb_voice",
+    "description": "Busca en knowledge base del despacho",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 620,
+    "body_sample": "{\"ok\": true, \"tool\": \"search_kb\", \"duration_ms\": 248, \"result\": {\"matches\": [], \"count\": 0, \"vector_used\": true}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "add_to_kb",
+    "module": "agent.tools.kb_voice",
+    "description": "Agrega entrada a KB",
+    "required_args": [
+      "title",
+      "body"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 746,
+    "body_sample": "{\"ok\": true, \"tool\": \"add_to_kb\", \"duration_ms\": 430, \"result\": {\"ok\": true, \"id\": \"e64e608c-ed00-4b81-bbff-7d89281424e8\", \"title\": \"test_value\", \"kind\": \"note\", \"embedded\": true, \"message\": \"Guardado"
+  },
+  {
+    "name": "search_lessons",
+    "module": "agent.tools.kb_voice",
+    "description": "Busca lecciones aprendidas",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 815,
+    "body_sample": "{\"ok\": true, \"tool\": \"search_lessons\", \"duration_ms\": 425, \"result\": {\"matches\": [], \"count\": 0}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "extract_lesson",
+    "module": "agent.tools.extract_lessons",
+    "description": "Extrae lecciones aprendidas del caso",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] Caso no encontrado",
+    "http_status": 200,
+    "duration_ms": 535,
+    "body_sample": "{\"ok\": false, \"tool\": \"extract_lesson\", \"duration_ms\": 147, \"result\": {\"error\": \"Caso no encontrado\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"Caso no encontrado\"}"
+  },
+  {
+    "name": "add_comment",
+    "module": "agent.tools.collab",
+    "description": "Crea comentario en caso/documento",
+    "required_args": [
+      "body",
+      "matter_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[ForeignKeyViolationError] insert or update on table \"comments\" violates foreign key constraint \"comments_matter_id_fkey\"\nDETAIL:  Key (matter_id)=(00000000-0000-0000-0000-000000000000) is not present in table \"matters\".",
+    "http_status": 200,
+    "duration_ms": 467,
+    "body_sample": "{\"ok\": false, \"tool\": \"add_comment\", \"duration_ms\": 167, \"result\": null, \"error\": \"insert or update on table \\\"comments\\\" violates foreign key constraint \\\"comments_matter_id_fkey\\\"\\nDETAIL:  Key (mat"
+  },
+  {
+    "name": "resolve_comment",
+    "module": "agent.tools.collab",
+    "description": "Marca comentario como resuelto",
+    "required_args": [
+      "comment_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] Comentario no encontrado",
+    "http_status": 200,
+    "duration_ms": 414,
+    "body_sample": "{\"ok\": false, \"tool\": \"resolve_comment\", \"duration_ms\": 59, \"result\": {\"error\": \"Comentario no encontrado\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"Comentario no encontrado\"}"
+  },
+  {
+    "name": "show_activity",
+    "module": "agent.tools.collab",
+    "description": "Timeline de actividad del caso",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 429,
+    "body_sample": "{\"ok\": true, \"tool\": \"show_activity\", \"duration_ms\": 70, \"result\": {\"items\": [], \"count\": 0}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "show_active_users",
+    "module": "agent.tools.collab",
+    "description": "Usuarios conectados en caso",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 444,
+    "body_sample": "{\"ok\": true, \"tool\": \"show_active_users\", \"duration_ms\": 64, \"result\": {\"items\": [], \"count\": 0}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "predict_outcome",
+    "module": "agent.tools.predict_outcome",
+    "description": "Predice outcome del caso (won/lost/settled)",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] Caso no encontrado",
+    "http_status": 200,
+    "duration_ms": 444,
+    "body_sample": "{\"ok\": false, \"tool\": \"predict_outcome\", \"duration_ms\": 59, \"result\": {\"error\": \"Caso no encontrado\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"Caso no encontrado\"}"
+  },
+  {
+    "name": "create_task",
+    "module": "agent.tools.productivity",
+    "description": "Crea tarea con prioridad y due date",
+    "required_args": [
+      "title"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 456,
+    "body_sample": "{\"ok\": true, \"tool\": \"create_task\", \"duration_ms\": 76, \"result\": {\"ok\": true, \"id\": \"e76b1440-fef4-4826-b164-66a7b96182eb\", \"title\": \"test_value\", \"due_at\": null, \"message\": \"Tarea creada · test_value"
+  },
+  {
+    "name": "complete_task",
+    "module": "agent.tools.productivity",
+    "description": "Marca tarea como completada",
+    "required_args": [
+      "task_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] Tarea no encontrada",
+    "http_status": 200,
+    "duration_ms": 422,
+    "body_sample": "{\"ok\": false, \"tool\": \"complete_task\", \"duration_ms\": 59, \"result\": {\"error\": \"Tarea no encontrada\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"Tarea no encontrada\"}"
+  },
+  {
+    "name": "what_today",
+    "module": "agent.tools.productivity",
+    "description": "Agenda del día (tareas + deadlines + eventos)",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 438,
+    "body_sample": "{\"ok\": true, \"tool\": \"what_today\", \"duration_ms\": 67, \"result\": {\"tasks_open_count\": 1, \"mentions_unread_count\": 0, \"deadlines_count\": 0, \"top_tasks\": [{\"title\": \"test_value\", \"priority\": \"normal\", \"d"
+  },
+  {
+    "name": "what_is_my_priority",
+    "module": "agent.tools.productivity",
+    "description": "Prioridad top-1 recomendada para hoy",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 488,
+    "body_sample": "{\"ok\": true, \"tool\": \"what_is_my_priority\", \"duration_ms\": 98, \"result\": {\"kind\": \"all_clear\", \"summary\": \"Sin tareas vencidas ni plazos en los próximos 3 días\"}, \"error\": null, \"error_type\": null, \"s"
+  },
+  {
+    "name": "firm_revenue",
+    "module": "agent.tools.analytics_voice",
+    "description": "Revenue trend del despacho",
+    "required_args": [
+      "months"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 370,
+    "body_sample": "{\"ok\": true, \"tool\": \"firm_revenue\", \"duration_ms\": 69, \"result\": {\"months\": 30, \"summary\": \"En los últimos 30 meses: facturado $0 COP, cobrado $0 COP\", \"invoiced_cop_total\": 0.0, \"collected_cop_total"
+  },
+  {
+    "name": "lawyer_performance",
+    "module": "agent.tools.analytics_voice",
+    "description": "Top abogados por horas facturables",
+    "required_args": [
+      "days"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 390,
+    "body_sample": "{\"ok\": true, \"tool\": \"lawyer_performance\", \"duration_ms\": 62, \"result\": {\"days\": 30, \"top_lawyers\": [{\"full_name\": \"Freddy Rincones\", \"billable_hours\": 0.0, \"matters\": 0, \"tasks_completed\": 0}], \"coun"
+  },
+  {
+    "name": "prediction_accuracy",
+    "module": "agent.tools.analytics_voice",
+    "description": "Accuracy de predicciones IA",
+    "required_args": [
+      "days"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 448,
+    "body_sample": "{\"ok\": true, \"tool\": \"prediction_accuracy\", \"duration_ms\": 59, \"result\": {\"summary\": \"Aún no hay suficientes casos cerrados para medir accuracy\", \"data\": {\"error\": \"column reference \\\"actual\\\" is ambi"
+  },
+  {
+    "name": "executive_kpis",
+    "module": "agent.tools.analytics_voice",
+    "description": "Snapshot KPI ejecutivo",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 399,
+    "body_sample": "{\"ok\": true, \"tool\": \"executive_kpis\", \"duration_ms\": 60, \"result\": {\"matters_active\": 2, \"matters_closed_30d\": 0, \"invoiced_mtd_cop\": 0, \"collected_mtd_cop\": 0, \"ar_overdue_cop\": 0, \"tasks_overdue\": "
+  },
+  {
+    "name": "autofill_template",
+    "module": "agent.tools.doc_smart_fill",
+    "description": "Rellena variables {{}} en plantilla",
+    "required_args": [
+      "template_body",
+      "matter_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 366,
+    "body_sample": "{\"ok\": true, \"tool\": \"autofill_template\", \"duration_ms\": 1, \"result\": {\"filled\": {}, \"message\": \"El template no tiene variables {{...}}\"}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "extract_variables_from_text",
+    "module": "agent.tools.doc_smart_fill",
+    "description": "Extrae variables de texto genérico",
+    "required_args": [
+      "text",
+      "variables"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] Necesito list de variables",
+    "http_status": 200,
+    "duration_ms": 359,
+    "body_sample": "{\"ok\": false, \"tool\": \"extract_variables_from_text\", \"duration_ms\": 0, \"result\": {\"error\": \"Necesito list de variables\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"Necesito list de variables\"}"
+  },
+  {
+    "name": "list_intake_forms",
+    "module": "agent.tools.doc_smart_fill",
+    "description": "Formularios intake público (B2C)",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 398,
+    "body_sample": "{\"ok\": true, \"tool\": \"list_intake_forms\", \"duration_ms\": 70, \"result\": {\"items\": []}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "list_new_submissions",
+    "module": "agent.tools.doc_smart_fill",
+    "description": "Submissions sin convertir a lead",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 425,
+    "body_sample": "{\"ok\": true, \"tool\": \"list_new_submissions\", \"duration_ms\": 67, \"result\": {\"items\": [], \"count\": 0}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "search_judge",
+    "module": "agent.tools.judge_voice",
+    "description": "Busca juez por nombre/corte/especialidad",
+    "required_args": [
+      "q"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 450,
+    "body_sample": "{\"ok\": true, \"tool\": \"search_judge\", \"duration_ms\": 66, \"result\": {\"items\": [], \"count\": 0}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "get_judge_stats",
+    "module": "agent.tools.judge_voice",
+    "description": "Estadísticas del juez (jurisprudencia)",
+    "required_args": [
+      "judge_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] Juez no encontrado",
+    "http_status": 200,
+    "duration_ms": 367,
+    "body_sample": "{\"ok\": false, \"tool\": \"get_judge_stats\", \"duration_ms\": 59, \"result\": {\"error\": \"Juez no encontrado\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"Juez no encontrado\"}"
+  },
+  {
+    "name": "simulate_judge_view",
+    "module": "agent.tools.judge_simulator",
+    "description": "Simula visión del juez sobre escrito",
+    "required_args": [
+      "matter_id",
+      "judge_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] Juez no encontrado",
+    "http_status": 200,
+    "duration_ms": 440,
+    "body_sample": "{\"ok\": false, \"tool\": \"simulate_judge_view\", \"duration_ms\": 60, \"result\": {\"error\": \"Juez no encontrado\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"Juez no encontrado\"}"
+  },
+  {
+    "name": "validate_identity",
+    "module": "agent.tools.evidence_voice",
+    "description": "Valida identidad persona/empresa vs RUE/RUES",
+    "required_args": [
+      "subject_id_value",
+      "subject_kind"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 452,
+    "body_sample": "{\"ok\": true, \"tool\": \"validate_identity\", \"duration_ms\": 78, \"result\": {\"id\": \"a146fa52-1c9e-4e03-999c-83494dcfb878\", \"status\": \"matched\", \"summary\": \"Identidad validada · datos coinciden con registro"
+  },
+  {
+    "name": "check_doc_consistency",
+    "module": "agent.tools.evidence_voice",
+    "description": "Detecta inconsistencias internas en documento",
+    "required_args": [
+      "matter_document_id",
+      "document_text"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "FAIL",
+    "reason": "[soft] Documento muy corto (mín 100 caracteres)",
+    "http_status": 200,
+    "duration_ms": 366,
+    "body_sample": "{\"ok\": false, \"tool\": \"check_doc_consistency\", \"duration_ms\": 1, \"result\": {\"error\": \"Documento muy corto (mín 100 caracteres)\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"Documento muy corto "
+  },
+  {
+    "name": "score_evidence",
+    "module": "agent.tools.evidence_voice",
+    "description": "Puntúa probativa y convicción de evidencia",
+    "required_args": [
+      "matter_document_id",
+      "document_text"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "FAIL",
+    "reason": "[soft] Fallo: insert or update on table \"evidence_scores\" violates foreign key constraint \"evidence_scores_matter_document_id_fkey\"\nDETAIL:  Key (matter_document_id)=(00000000-0000-0000-0000-000000000000) is not present in table \"matter_documents\".",
+    "http_status": 200,
+    "duration_ms": 540,
+    "body_sample": "{\"ok\": false, \"tool\": \"score_evidence\", \"duration_ms\": 171, \"result\": {\"error\": \"Fallo: insert or update on table \\\"evidence_scores\\\" violates foreign key constraint \\\"evidence_scores_matter_document_"
+  },
+  {
+    "name": "list_wizards",
+    "module": "agent.tools.wizard_voice",
+    "description": "Wizards B2C disponibles (trámites públicos)",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 454,
+    "body_sample": "{\"ok\": true, \"tool\": \"list_wizards\", \"duration_ms\": 69, \"result\": {\"items\": [{\"slug\": \"derecho-peticion\", \"name\": \"Derecho de petición\", \"category\": \"derecho_peticion\", \"description\": \"Solicitud forma"
+  },
+  {
+    "name": "start_wizard",
+    "module": "agent.tools.wizard_voice",
+    "description": "Inicia sesión wizard anónimo",
+    "required_args": [
+      "slug"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] Wizard 'test_value' no encontrado o inactivo",
+    "http_status": 200,
+    "duration_ms": 417,
+    "body_sample": "{\"ok\": false, \"tool\": \"start_wizard\", \"duration_ms\": 62, \"result\": {\"error\": \"Wizard 'test_value' no encontrado o inactivo\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"Wizard 'test_value' no e"
+  },
+  {
+    "name": "wizard_session_status",
+    "module": "agent.tools.wizard_voice",
+    "description": "Progreso de sesión wizard",
+    "required_args": [
+      "session_token"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] Session no encontrada",
+    "http_status": 200,
+    "duration_ms": 428,
+    "body_sample": "{\"ok\": false, \"tool\": \"wizard_session_status\", \"duration_ms\": 64, \"result\": {\"error\": \"Session no encontrada\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"Session no encontrada\"}"
+  },
+  {
+    "name": "execute_skill",
+    "module": "agent.tools.skills_voice",
+    "description": "Ejecuta skill registrada (/redactar/...)",
+    "required_args": [
+      "command"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] command required (e.g. /revisar/contrato)",
+    "http_status": 200,
+    "duration_ms": 318,
+    "body_sample": "{\"ok\": false, \"tool\": \"execute_skill\", \"duration_ms\": 0, \"result\": {\"ok\": false, \"error\": \"command required (e.g. /revisar/contrato)\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"command requir"
+  },
+  {
+    "name": "review_contract",
+    "module": "agent.tools.skills_voice",
+    "description": "Analiza cláusulas de contrato por severity",
+    "required_args": [
+      "document_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "FAIL",
+    "reason": "[soft] documento no encontrado",
+    "http_status": 200,
+    "duration_ms": 428,
+    "body_sample": "{\"ok\": false, \"tool\": \"review_contract\", \"duration_ms\": 58, \"result\": {\"ok\": false, \"error\": \"documento no encontrado\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"documento no encontrado\"}"
+  },
+  {
+    "name": "apply_redline",
+    "module": "agent.tools.skills_voice",
+    "description": "Acepta redlines generadas por skill",
+    "required_args": [
+      "redline_set_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] redline set no encontrado",
+    "http_status": 200,
+    "duration_ms": 444,
+    "body_sample": "{\"ok\": false, \"tool\": \"apply_redline\", \"duration_ms\": 63, \"result\": {\"ok\": false, \"error\": \"redline set no encontrado\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"redline set no encontrado\"}"
+  },
+  {
+    "name": "reject_redline",
+    "module": "agent.tools.skills_voice",
+    "description": "Rechaza redlines específicas",
+    "required_args": [
+      "redline_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] redline_set_id required",
+    "http_status": 200,
+    "duration_ms": 329,
+    "body_sample": "{\"ok\": false, \"tool\": \"reject_redline\", \"duration_ms\": 0, \"result\": {\"ok\": false, \"error\": \"redline_set_id required\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"redline_set_id required\"}"
+  },
+  {
+    "name": "current_plan_status",
+    "module": "agent.tools.billing_voice",
+    "description": "Estado actual del plan y uso vs cuotas",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 464,
+    "body_sample": "{\"ok\": true, \"tool\": \"current_plan_status\", \"duration_ms\": 85, \"result\": {\"plan_code\": \"free\", \"plan_name\": \"Free Trial\", \"status\": \"trialing\", \"trial_ends_at\": \"2026-05-29T14:43:58.125544+00:00\", \"us"
+  },
+  {
+    "name": "remaining_quota",
+    "module": "agent.tools.billing_voice",
+    "description": "Cuota restante de tipo específico",
+    "required_args": [
+      "kind"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 438,
+    "body_sample": "{\"ok\": true, \"tool\": \"remaining_quota\", \"duration_ms\": 64, \"result\": {\"ok\": true, \"reason\": \"unknown_kind\"}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "pricing_recommendation",
+    "module": "agent.tools.billing_voice",
+    "description": "Recomienda upgrade de plan",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 425,
+    "body_sample": "{\"ok\": true, \"tool\": \"pricing_recommendation\", \"duration_ms\": 62, \"result\": {\"current_plan\": \"free\", \"recommended\": \"free\", \"reason\": \"Tu plan actual cubre bien tu uso. No es necesario un upgrade.\"}, "
+  },
+  {
+    "name": "saas_mrr_now",
+    "module": "agent.tools.admin_voice",
+    "description": "MRR/ARR/ARPU del SaaS (admin)",
+    "required_args": [],
+    "safety_class": "ADMIN_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 513,
+    "body_sample": "{\"ok\": true, \"tool\": \"saas_mrr_now\", \"duration_ms\": 133, \"result\": \"{\\\"arr_cop\\\": 0, \\\"mrr_cop\\\": 0, \\\"arpu_cop\\\": 0, \\\"paying_firms\\\": 0, \\\"past_due_firms\\\": 0, \\\"trialing_firms\\\": 4}\", \"error\": null"
+  },
+  {
+    "name": "saas_signups_mtd",
+    "module": "agent.tools.admin_voice",
+    "description": "Signups del mes (admin)",
+    "required_args": [],
+    "safety_class": "ADMIN_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 443,
+    "body_sample": "{\"ok\": true, \"tool\": \"saas_signups_mtd\", \"duration_ms\": 118, \"result\": \"{\\\"growth_pct\\\": null, \\\"signups_mtd\\\": 4, \\\"total_firms\\\": 4, \\\"signups_prev_month\\\": 0}\", \"error\": null, \"error_type\": null, \""
+  },
+  {
+    "name": "saas_churn_30d",
+    "module": "agent.tools.admin_voice",
+    "description": "Churn rolling 30d (admin)",
+    "required_args": [],
+    "safety_class": "ADMIN_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 482,
+    "body_sample": "{\"ok\": true, \"tool\": \"saas_churn_30d\", \"duration_ms\": 116, \"result\": \"{\\\"base_30d\\\": 0, \\\"churned_30d\\\": 0, \\\"churn_rate_pct\\\": 0}\", \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "search_firm_by_name",
+    "module": "agent.tools.admin_voice",
+    "description": "Busca firma por nombre (admin)",
+    "required_args": [
+      "q"
+    ],
+    "safety_class": "ADMIN_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 436,
+    "body_sample": "{\"ok\": true, \"tool\": \"search_firm_by_name\", \"duration_ms\": 122, \"result\": {\"items\": []}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "firm_health_snapshot",
+    "module": "agent.tools.admin_voice",
+    "description": "Snapshot de salud de firma (admin)",
+    "required_args": [
+      "firm_id"
+    ],
+    "safety_class": "ADMIN_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 434,
+    "body_sample": "{\"ok\": true, \"tool\": \"firm_health_snapshot\", \"duration_ms\": 128, \"result\": \"{\\\"plan\\\": null, \\\"country\\\": null, \\\"firm_id\\\": \\\"00000000-0000-0000-0000-000000000000\\\", \\\"created_at\\\": null, \\\"users_cou"
+  },
+  {
+    "name": "ui_navigate",
+    "module": "agent.tools.ui_bridge",
+    "description": "Navega a ruta whitelisted (UI)",
+    "required_args": [
+      "path"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_open_matter_canvas",
+    "module": "agent.tools.ui_bridge",
+    "description": "Abre Live Canvas del caso (UI)",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_open_matter_tab",
+    "module": "agent.tools.ui_bridge",
+    "description": "Abre pestaña específica del caso (UI)",
+    "required_args": [
+      "matter_id",
+      "tab"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_scroll_to",
+    "module": "agent.tools.ui_bridge",
+    "description": "Scroll a sección (UI)",
+    "required_args": [
+      "section"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_open_command_palette",
+    "module": "agent.tools.ui_bridge",
+    "description": "Abre command palette (UI)",
+    "required_args": [],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_prefill_form",
+    "module": "agent.tools.ui_bridge",
+    "description": "Pre-rellena campo de formulario (UI)",
+    "required_args": [
+      "form_id",
+      "field",
+      "value"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_show_toast",
+    "module": "agent.tools.ui_bridge",
+    "description": "Muestra notificación toast (UI)",
+    "required_args": [
+      "message"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_open_modal",
+    "module": "agent.tools.ui_bridge",
+    "description": "Abre modal/dialog (UI)",
+    "required_args": [
+      "modal_id"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "search_suin_juriscol",
+    "module": "agent.tools.external_research",
+    "description": "Busca normativa en SUIN-Juriscol",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] tipo, numero, anio son requeridos",
+    "http_status": 200,
+    "duration_ms": 297,
+    "body_sample": "{\"ok\": false, \"tool\": \"search_suin_juriscol\", \"duration_ms\": 0, \"result\": {\"error\": \"tipo, numero, anio son requeridos\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"tipo, numero, anio son reque"
+  },
+  {
+    "name": "verify_rue_persona",
+    "module": "agent.tools.external_research",
+    "description": "Verifica persona en RUE DIAN",
+    "required_args": [
+      "cedula"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] query requerido",
+    "http_status": 200,
+    "duration_ms": 314,
+    "body_sample": "{\"ok\": false, \"tool\": \"verify_rue_persona\", \"duration_ms\": 0, \"result\": {\"error\": \"query requerido\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"query requerido\"}"
+  },
+  {
+    "name": "fetch_dof_co_publicacion",
+    "module": "agent.tools.external_research",
+    "description": "Consulta Diario Oficial Colombia",
+    "required_args": [
+      "q"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] DOF http 404",
+    "http_status": 200,
+    "duration_ms": 5780,
+    "body_sample": "{\"ok\": false, \"tool\": \"fetch_dof_co_publicacion\", \"duration_ms\": 5405, \"result\": {\"error\": \"DOF http 404\", \"url\": \"https://www.imprenta.gov.co/rss/diario-oficial\"}, \"error\": null, \"error_type\": null, "
+  },
+  {
+    "name": "fetch_banrep_dtf",
+    "module": "agent.tools.external_research",
+    "description": "Tasas DTF/IBR/IPC de Banrep",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 575,
+    "body_sample": "{\"ok\": true, \"tool\": \"fetch_banrep_dtf\", \"duration_ms\": 190, \"result\": {\"source\": \"banrep_via_legal_constants\", \"serie\": \"DTF\", \"valor\": 0.1199, \"as_of\": \"2026-05-18T02:10:46.119787+00:00\", \"note\": \"V"
+  },
+  {
+    "name": "delegate_to",
+    "module": "agent.subagents.registry",
+    "description": "Delega tarea a sub-agente especializado",
+    "required_args": [
+      "subagent",
+      "task"
+    ],
+    "safety_class": "META",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "FAIL",
+    "reason": "[soft] subagent 'test_value' no existe. Disponibles: ['investigador', 'redactor', 'calculista']",
+    "http_status": 200,
+    "duration_ms": 383,
+    "body_sample": "{\"ok\": false, \"tool\": \"delegate_to\", \"duration_ms\": 0, \"result\": {\"error\": \"subagent 'test_value' no existe. Disponibles: ['investigador', 'redactor', 'calculista']\"}, \"error\": null, \"error_type\": nul"
+  },
+  {
+    "name": "remember",
+    "module": "agent.tools.memory",
+    "description": "Persiste memoria con scope (firm/user/matter)",
+    "required_args": [
+      "key",
+      "value"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 839,
+    "body_sample": "{\"ok\": true, \"tool\": \"remember\", \"duration_ms\": 481, \"result\": {\"id\": \"c0b6283c-d3c6-4bd9-8ca5-0da4150a5ccd\", \"key\": \"test_key\", \"scope\": \"firm\", \"stored\": true}, \"error\": null, \"error_type\": null, \"s"
+  },
+  {
+    "name": "recall",
+    "module": "agent.tools.memory",
+    "description": "Recupera memoria por key exacto",
+    "required_args": [
+      "key"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 361,
+    "body_sample": "{\"ok\": true, \"tool\": \"recall\", \"duration_ms\": 59, \"result\": {\"key\": \"test_key\", \"found\": true, \"value\": \"\\\"test_value\\\"\", \"scope\": \"firm\", \"scope_ref\": null, \"updated_at\": \"2026-05-18T02:10:47.332359+"
+  },
+  {
+    "name": "recall_relevant",
+    "module": "agent.tools.memory",
+    "description": "Busca memorias relevantes (semántico)",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 557,
+    "body_sample": "{\"ok\": true, \"tool\": \"recall_relevant\", \"duration_ms\": 174, \"result\": {\"matches\": [{\"key\": \"test_key\", \"value\": \"\\\"test_value\\\"\", \"scope\": \"firm\", \"similarity\": 0.6504561178223656}]}, \"error\": null, \""
+  },
+  {
+    "name": "forget",
+    "module": "agent.tools.memory",
+    "description": "Borra memoria específica",
+    "required_args": [
+      "key"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "PASS",
+    "reason": "",
+    "http_status": 200,
+    "duration_ms": 420,
+    "body_sample": "{\"ok\": true, \"tool\": \"forget\", \"duration_ms\": 59, \"result\": {\"key\": \"test_key\", \"deleted\": 1}, \"error\": null, \"error_type\": null, \"soft_error\": null}"
+  },
+  {
+    "name": "canvas_set_text",
+    "module": "agent.tools.canvas_edit",
+    "description": "Reemplaza TODO el documento Live Canvas",
+    "required_args": [
+      "markdown"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_append",
+    "module": "agent.tools.canvas_edit",
+    "description": "Añade contenido al final del documento",
+    "required_args": [
+      "markdown"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_replace_section",
+    "module": "agent.tools.canvas_edit",
+    "description": "Reemplaza sección bajo heading",
+    "required_args": [
+      "heading",
+      "markdown"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_save_version",
+    "module": "agent.tools.canvas_edit",
+    "description": "Fuerza guardar versión del documento",
+    "required_args": [],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_get_current",
+    "module": "agent.tools.canvas_edit",
+    "description": "Obtiene contenido actual del Canvas",
+    "required_args": [],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "get_document_content",
+    "module": "agent.tools.canvas_edit",
+    "description": "Lee contenido completo de documento",
+    "required_args": [
+      "matter_document_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "FAIL",
+    "reason": "[soft] document_id requerido",
+    "http_status": 200,
+    "duration_ms": 389,
+    "body_sample": "{\"ok\": false, \"tool\": \"get_document_content\", \"duration_ms\": 0, \"result\": {\"error\": \"document_id requerido\"}, \"error\": null, \"error_type\": null, \"soft_error\": \"document_id requerido\"}"
+  },
+  {
+    "name": "canvas_insert_at_cursor",
+    "module": "agent.tools.canvas_edit",
+    "description": "Inserta texto en posición del cursor",
+    "required_args": [
+      "markdown"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_find_replace",
+    "module": "agent.tools.canvas_edit",
+    "description": "Busca y reemplaza en el documento",
+    "required_args": [
+      "find",
+      "replace"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_select_section",
+    "module": "agent.tools.canvas_edit",
+    "description": "Selecciona sección por heading",
+    "required_args": [
+      "heading"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  }
+]

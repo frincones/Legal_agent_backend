@@ -1,0 +1,1855 @@
+[
+  {
+    "name": "research_jurisprudence",
+    "module": "api.citations",
+    "description": "Busca jurisprudencia colombiana con puntuación de relevancia",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 396,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "validate_citation",
+    "module": "api.citations",
+    "description": "Valida existencia y estado de una citación jurídica",
+    "required_args": [
+      "citation_ref"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 378,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "validate_norm_vigencia",
+    "module": "api.citations",
+    "description": "Verifica vigencia de normas y detecta derogaciones",
+    "required_args": [
+      "norm_reference"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 362,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "calc_liquidacion",
+    "module": "api.calc",
+    "description": "Calcula liquidación laboral (cesantías, prima, indemnización)",
+    "required_args": [
+      "fecha_ingreso",
+      "fecha_terminacion",
+      "salario_mensual_cop",
+      "causa"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 370,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "calc_prescripcion",
+    "module": "api.calc",
+    "description": "Calcula plazos de prescripción de acciones",
+    "required_args": [
+      "fecha_evento",
+      "tipo_accion"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 361,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "calc_intereses",
+    "module": "api.calc",
+    "description": "Calcula intereses moratorios y convencionales",
+    "required_args": [
+      "monto_base",
+      "fecha_inicio",
+      "tasa_anual"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 321,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "open_matter_context",
+    "module": "api.matters",
+    "description": "Abre contexto del caso (partes, hechos, documentos)",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 386,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "request_human_approval",
+    "module": "api.hitl",
+    "description": "Solicita aprobación humana para una acción del agente",
+    "required_args": [
+      "kind",
+      "preview"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 374,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "draft_pleading",
+    "module": "agent.tools.draft_pleading",
+    "description": "Genera escrito procesal desde hechos verificados",
+    "required_args": [
+      "kind",
+      "facts"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 342,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "list_legal_templates",
+    "module": "agent.tools.draft_pleading",
+    "description": "Enumera plantillas de escritos disponibles",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 384,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "list_my_matters",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Lista casos activos del usuario (filtrable por materia)",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 310,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "find_client",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Busca cliente por nombre, NIT o cédula",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 370,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "list_upcoming_deadlines",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Plazos próximos en ventana de N días",
+    "required_args": [
+      "days"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 302,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "add_matter_deadline",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Crea plazo para audiencia / acto procesal",
+    "required_args": [
+      "matter_id",
+      "titulo",
+      "fecha",
+      "tipo"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 299,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "mark_deadline_done",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Marca plazo como completado",
+    "required_args": [
+      "deadline_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 370,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "add_matter_note",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Agrega nota narrativa al caso",
+    "required_args": [
+      "matter_id",
+      "body"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 360,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "list_matter_documents",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Lista documentos del caso",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 362,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "summarize_document",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Genera resumen IA de un documento",
+    "required_args": [
+      "matter_document_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 362,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "list_pending_hitl",
+    "module": "agent.tools.paralegal_tools",
+    "description": "Muestra aprobaciones HITL pendientes",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 321,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "get_firm_metrics",
+    "module": "agent.tools.paralegal_tools",
+    "description": "KPIs del despacho (este mes)",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 381,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "extract_document_entities",
+    "module": "agent.tools.document_analysis",
+    "description": "Extrae partes, fechas, obligaciones del documento",
+    "required_args": [
+      "matter_document_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 373,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "subscribe_to_expediente",
+    "module": "api.notifications",
+    "description": "Suscribe a notificaciones judiciales del expediente",
+    "required_args": [
+      "expediente",
+      "fuente"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 376,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "list_judicial_notifications",
+    "module": "api.notifications",
+    "description": "Lista notificaciones judiciales sin leer",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 378,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "poll_judicial_now",
+    "module": "api.notifications",
+    "description": "Fuerza polling inmediato de suscripciones judiciales",
+    "required_args": [],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 401,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "parse_legal_email",
+    "module": "agent.tools.parse_legal_email",
+    "description": "Clasifica correo legal (auto, sentencia, citación)",
+    "required_args": [
+      "subject",
+      "body"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 372,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "daily_briefing",
+    "module": "agent.tools.daily_briefing",
+    "description": "Briefing matutino con urgencias y recomendaciones",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 364,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "run_sla_reminders",
+    "module": "agent.workers.sla_reminders",
+    "description": "Envía notificaciones de plazos próximos < 48h",
+    "required_args": [],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 300,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "sync_email_now",
+    "module": "agent.workers.email_ingest",
+    "description": "Fuerza polling de correo (Gmail/Outlook/IMAP)",
+    "required_args": [],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 317,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "query_audit_logs",
+    "module": "api.audit",
+    "description": "Consulta logs de auditoría del firm",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 362,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "check_quota",
+    "module": "api.quotas",
+    "description": "Verifica cuota disponible (llm, voice, docs)",
+    "required_args": [
+      "kind"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 298,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "sync_calendar",
+    "module": "agent.workers.calendar_sync",
+    "description": "Sincroniza Google/Outlook calendar",
+    "required_args": [],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 305,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "analyze_firm_performance",
+    "module": "api.analytics",
+    "description": "Análisis de performance del despacho con gráficas",
+    "required_args": [
+      "months",
+      "metric"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 383,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "find_anything",
+    "module": "api.search",
+    "description": "Búsqueda híbrida (FTS+vector) global",
+    "required_args": [
+      "q"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 297,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "send_whatsapp",
+    "module": "api.whatsapp",
+    "description": "Envía mensaje vía WhatsApp Business Cloud",
+    "required_args": [
+      "to_phone",
+      "body"
+    ],
+    "safety_class": "EXTERNAL_SEND",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class EXTERNAL_SEND skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "track_time",
+    "module": "api.time_entries",
+    "description": "Registra hora facturable",
+    "required_args": [
+      "matter_id",
+      "hours",
+      "description"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 357,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "log_expense",
+    "module": "api.expenses",
+    "description": "Registra gasto del caso",
+    "required_args": [
+      "matter_id",
+      "amount",
+      "description"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 360,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "generate_invoice",
+    "module": "api.invoices",
+    "description": "Genera factura del período",
+    "required_args": [
+      "matter_id",
+      "period_start",
+      "period_end"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 308,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "capture_lead",
+    "module": "api.leads",
+    "description": "Captura prospecto nuevo en CRM",
+    "required_args": [
+      "nombre",
+      "email",
+      "materia"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 315,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "generate_insights",
+    "module": "api.ai_insights",
+    "description": "Genera insights proactivos del despacho",
+    "required_args": [
+      "kind",
+      "target_type"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 387,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "run_automation",
+    "module": "api.automation",
+    "description": "Ejecuta regla de automatización",
+    "required_args": [
+      "rule_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 328,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "check_trust_balance",
+    "module": "api.trust_accounts",
+    "description": "Consulta saldo cuenta fiduciaria",
+    "required_args": [
+      "trust_account_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 384,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "record_trust_deposit",
+    "module": "api.trust_transactions",
+    "description": "Registra depósito en cuenta fiduciaria",
+    "required_args": [
+      "trust_account_id",
+      "amount",
+      "description"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 378,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "record_trust_payment",
+    "module": "api.trust_transactions",
+    "description": "Registra pago desde cuenta fiduciaria",
+    "required_args": [
+      "trust_account_id",
+      "amount",
+      "description"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 357,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "analyze_contract",
+    "module": "api.contract_analyzer",
+    "description": "Análisis profundo de contrato (riesgos, cláusulas)",
+    "required_args": [
+      "matter_document_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 367,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "ask_about_document",
+    "module": "api.doc_qa",
+    "description": "Pregunta sobre contenido de documento (Q&A)",
+    "required_args": [
+      "matter_document_id",
+      "question"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 363,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "compare_documents",
+    "module": "api.doc_compare",
+    "description": "Compara dos documentos · diff semántico",
+    "required_args": [
+      "document_a_id",
+      "document_b_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 379,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "send_for_signature",
+    "module": "api.signatures",
+    "description": "Envía documento para firma digital",
+    "required_args": [
+      "matter_id",
+      "signers",
+      "document"
+    ],
+    "safety_class": "EXTERNAL_SEND",
+    "needs_matter": true,
+    "needs_doc": true,
+    "status": "SKIP",
+    "reason": "safety_class EXTERNAL_SEND skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "check_signature_status",
+    "module": "api.signatures",
+    "description": "Estado de firma digital del sobre",
+    "required_args": [
+      "envelope_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 359,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "import_csv",
+    "module": "api.imports",
+    "description": "Importa masivo desde CSV",
+    "required_args": [
+      "file",
+      "kind"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 380,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "search_kb",
+    "module": "agent.tools.kb_voice",
+    "description": "Busca en knowledge base del despacho",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 314,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "add_to_kb",
+    "module": "agent.tools.kb_voice",
+    "description": "Agrega entrada a KB",
+    "required_args": [
+      "title",
+      "body"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 365,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "search_lessons",
+    "module": "agent.tools.kb_voice",
+    "description": "Busca lecciones aprendidas",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 307,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "extract_lesson",
+    "module": "agent.tools.extract_lessons",
+    "description": "Extrae lecciones aprendidas del caso",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 302,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "add_comment",
+    "module": "agent.tools.collab",
+    "description": "Crea comentario en caso/documento",
+    "required_args": [
+      "body",
+      "matter_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 486,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "resolve_comment",
+    "module": "agent.tools.collab",
+    "description": "Marca comentario como resuelto",
+    "required_args": [
+      "comment_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 375,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "show_activity",
+    "module": "agent.tools.collab",
+    "description": "Timeline de actividad del caso",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 379,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "show_active_users",
+    "module": "agent.tools.collab",
+    "description": "Usuarios conectados en caso",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 384,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "predict_outcome",
+    "module": "agent.tools.predict_outcome",
+    "description": "Predice outcome del caso (won/lost/settled)",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 298,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "create_task",
+    "module": "agent.tools.productivity",
+    "description": "Crea tarea con prioridad y due date",
+    "required_args": [
+      "title"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 323,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "complete_task",
+    "module": "agent.tools.productivity",
+    "description": "Marca tarea como completada",
+    "required_args": [
+      "task_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 299,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "what_today",
+    "module": "agent.tools.productivity",
+    "description": "Agenda del día (tareas + deadlines + eventos)",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 299,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "what_is_my_priority",
+    "module": "agent.tools.productivity",
+    "description": "Prioridad top-1 recomendada para hoy",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 357,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "firm_revenue",
+    "module": "agent.tools.analytics_voice",
+    "description": "Revenue trend del despacho",
+    "required_args": [
+      "months"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 387,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "lawyer_performance",
+    "module": "agent.tools.analytics_voice",
+    "description": "Top abogados por horas facturables",
+    "required_args": [
+      "days"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 388,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "prediction_accuracy",
+    "module": "agent.tools.analytics_voice",
+    "description": "Accuracy de predicciones IA",
+    "required_args": [
+      "days"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 368,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "executive_kpis",
+    "module": "agent.tools.analytics_voice",
+    "description": "Snapshot KPI ejecutivo",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 375,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "autofill_template",
+    "module": "agent.tools.doc_smart_fill",
+    "description": "Rellena variables {{}} en plantilla",
+    "required_args": [
+      "template_body",
+      "matter_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 312,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "extract_variables_from_text",
+    "module": "agent.tools.doc_smart_fill",
+    "description": "Extrae variables de texto genérico",
+    "required_args": [
+      "text",
+      "variables"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 314,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "list_intake_forms",
+    "module": "agent.tools.doc_smart_fill",
+    "description": "Formularios intake público (B2C)",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 368,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "list_new_submissions",
+    "module": "agent.tools.doc_smart_fill",
+    "description": "Submissions sin convertir a lead",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 301,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "search_judge",
+    "module": "agent.tools.judge_voice",
+    "description": "Busca juez por nombre/corte/especialidad",
+    "required_args": [
+      "q"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 328,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "get_judge_stats",
+    "module": "agent.tools.judge_voice",
+    "description": "Estadísticas del juez (jurisprudencia)",
+    "required_args": [
+      "judge_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 329,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "simulate_judge_view",
+    "module": "agent.tools.judge_simulator",
+    "description": "Simula visión del juez sobre escrito",
+    "required_args": [
+      "matter_id",
+      "judge_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 393,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "validate_identity",
+    "module": "agent.tools.evidence_voice",
+    "description": "Valida identidad persona/empresa vs RUE/RUES",
+    "required_args": [
+      "subject_id_value",
+      "subject_kind"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 382,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "check_doc_consistency",
+    "module": "agent.tools.evidence_voice",
+    "description": "Detecta inconsistencias internas en documento",
+    "required_args": [
+      "matter_document_id",
+      "document_text"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 373,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "score_evidence",
+    "module": "agent.tools.evidence_voice",
+    "description": "Puntúa probativa y convicción de evidencia",
+    "required_args": [
+      "matter_document_id",
+      "document_text"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 370,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "list_wizards",
+    "module": "agent.tools.wizard_voice",
+    "description": "Wizards B2C disponibles (trámites públicos)",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 359,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "start_wizard",
+    "module": "agent.tools.wizard_voice",
+    "description": "Inicia sesión wizard anónimo",
+    "required_args": [
+      "slug"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 296,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "wizard_session_status",
+    "module": "agent.tools.wizard_voice",
+    "description": "Progreso de sesión wizard",
+    "required_args": [
+      "session_token"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 371,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "execute_skill",
+    "module": "agent.tools.skills_voice",
+    "description": "Ejecuta skill registrada (/redactar/...)",
+    "required_args": [
+      "command"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 312,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "review_contract",
+    "module": "agent.tools.skills_voice",
+    "description": "Analiza cláusulas de contrato por severity",
+    "required_args": [
+      "document_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 376,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "apply_redline",
+    "module": "agent.tools.skills_voice",
+    "description": "Acepta redlines generadas por skill",
+    "required_args": [
+      "redline_set_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 373,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "reject_redline",
+    "module": "agent.tools.skills_voice",
+    "description": "Rechaza redlines específicas",
+    "required_args": [
+      "redline_id"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 358,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "current_plan_status",
+    "module": "agent.tools.billing_voice",
+    "description": "Estado actual del plan y uso vs cuotas",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 311,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "remaining_quota",
+    "module": "agent.tools.billing_voice",
+    "description": "Cuota restante de tipo específico",
+    "required_args": [
+      "kind"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 373,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "pricing_recommendation",
+    "module": "agent.tools.billing_voice",
+    "description": "Recomienda upgrade de plan",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 385,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "saas_mrr_now",
+    "module": "agent.tools.admin_voice",
+    "description": "MRR/ARR/ARPU del SaaS (admin)",
+    "required_args": [],
+    "safety_class": "ADMIN_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 361,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "saas_signups_mtd",
+    "module": "agent.tools.admin_voice",
+    "description": "Signups del mes (admin)",
+    "required_args": [],
+    "safety_class": "ADMIN_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 300,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "saas_churn_30d",
+    "module": "agent.tools.admin_voice",
+    "description": "Churn rolling 30d (admin)",
+    "required_args": [],
+    "safety_class": "ADMIN_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 320,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "search_firm_by_name",
+    "module": "agent.tools.admin_voice",
+    "description": "Busca firma por nombre (admin)",
+    "required_args": [
+      "q"
+    ],
+    "safety_class": "ADMIN_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 311,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "firm_health_snapshot",
+    "module": "agent.tools.admin_voice",
+    "description": "Snapshot de salud de firma (admin)",
+    "required_args": [
+      "firm_id"
+    ],
+    "safety_class": "ADMIN_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 325,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "ui_navigate",
+    "module": "agent.tools.ui_bridge",
+    "description": "Navega a ruta whitelisted (UI)",
+    "required_args": [
+      "path"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_open_matter_canvas",
+    "module": "agent.tools.ui_bridge",
+    "description": "Abre Live Canvas del caso (UI)",
+    "required_args": [
+      "matter_id"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_open_matter_tab",
+    "module": "agent.tools.ui_bridge",
+    "description": "Abre pestaña específica del caso (UI)",
+    "required_args": [
+      "matter_id",
+      "tab"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": true,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_scroll_to",
+    "module": "agent.tools.ui_bridge",
+    "description": "Scroll a sección (UI)",
+    "required_args": [
+      "section"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_open_command_palette",
+    "module": "agent.tools.ui_bridge",
+    "description": "Abre command palette (UI)",
+    "required_args": [],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_prefill_form",
+    "module": "agent.tools.ui_bridge",
+    "description": "Pre-rellena campo de formulario (UI)",
+    "required_args": [
+      "form_id",
+      "field",
+      "value"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_show_toast",
+    "module": "agent.tools.ui_bridge",
+    "description": "Muestra notificación toast (UI)",
+    "required_args": [
+      "message"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "ui_open_modal",
+    "module": "agent.tools.ui_bridge",
+    "description": "Abre modal/dialog (UI)",
+    "required_args": [
+      "modal_id"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "search_suin_juriscol",
+    "module": "agent.tools.external_research",
+    "description": "Busca normativa en SUIN-Juriscol",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 380,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "verify_rue_persona",
+    "module": "agent.tools.external_research",
+    "description": "Verifica persona en RUE DIAN",
+    "required_args": [
+      "cedula"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 317,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "fetch_dof_co_publicacion",
+    "module": "agent.tools.external_research",
+    "description": "Consulta Diario Oficial Colombia",
+    "required_args": [
+      "q"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 303,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "fetch_banrep_dtf",
+    "module": "agent.tools.external_research",
+    "description": "Tasas DTF/IBR/IPC de Banrep",
+    "required_args": [],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 380,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "delegate_to",
+    "module": "agent.subagents.registry",
+    "description": "Delega tarea a sub-agente especializado",
+    "required_args": [
+      "subagent",
+      "task"
+    ],
+    "safety_class": "META",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 313,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "remember",
+    "module": "agent.tools.memory",
+    "description": "Persiste memoria con scope (firm/user/matter)",
+    "required_args": [
+      "key",
+      "value"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 311,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "recall",
+    "module": "agent.tools.memory",
+    "description": "Recupera memoria por key exacto",
+    "required_args": [
+      "key"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 364,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "recall_relevant",
+    "module": "agent.tools.memory",
+    "description": "Busca memorias relevantes (semántico)",
+    "required_args": [
+      "query"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 325,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "forget",
+    "module": "agent.tools.memory",
+    "description": "Borra memoria específica",
+    "required_args": [
+      "key"
+    ],
+    "safety_class": "WRITE_SAFE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 321,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "canvas_set_text",
+    "module": "agent.tools.canvas_edit",
+    "description": "Reemplaza TODO el documento Live Canvas",
+    "required_args": [
+      "markdown"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_append",
+    "module": "agent.tools.canvas_edit",
+    "description": "Añade contenido al final del documento",
+    "required_args": [
+      "markdown"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_replace_section",
+    "module": "agent.tools.canvas_edit",
+    "description": "Reemplaza sección bajo heading",
+    "required_args": [
+      "heading",
+      "markdown"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_save_version",
+    "module": "agent.tools.canvas_edit",
+    "description": "Fuerza guardar versión del documento",
+    "required_args": [],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_get_current",
+    "module": "agent.tools.canvas_edit",
+    "description": "Obtiene contenido actual del Canvas",
+    "required_args": [],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "get_document_content",
+    "module": "agent.tools.canvas_edit",
+    "description": "Lee contenido completo de documento",
+    "required_args": [
+      "matter_document_id"
+    ],
+    "safety_class": "READ_ONLY",
+    "needs_matter": false,
+    "needs_doc": true,
+    "status": "AUTH_FAIL",
+    "reason": "401 unauthorized · token expired/invalid",
+    "http_status": 401,
+    "duration_ms": 321,
+    "body_sample": "{\"error\": \"{\\\"detail\\\":\\\"Invalid Authorization scheme; expected Bearer\\\"}\"}"
+  },
+  {
+    "name": "canvas_insert_at_cursor",
+    "module": "agent.tools.canvas_edit",
+    "description": "Inserta texto en posición del cursor",
+    "required_args": [
+      "markdown"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_find_replace",
+    "module": "agent.tools.canvas_edit",
+    "description": "Busca y reemplaza en el documento",
+    "required_args": [
+      "find",
+      "replace"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  },
+  {
+    "name": "canvas_select_section",
+    "module": "agent.tools.canvas_edit",
+    "description": "Selecciona sección por heading",
+    "required_args": [
+      "heading"
+    ],
+    "safety_class": "UI_BRIDGE",
+    "needs_matter": false,
+    "needs_doc": false,
+    "status": "SKIP",
+    "reason": "safety_class UI_BRIDGE skipped",
+    "duration_ms": 0,
+    "http_status": null
+  }
+]

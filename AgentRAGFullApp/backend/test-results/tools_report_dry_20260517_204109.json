@@ -1,0 +1,1874 @@
+[
+  {
+    "name": "research_jurisprudence",
+    "module": "api.citations",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "validate_citation",
+    "module": "api.citations",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "validate_norm_vigencia",
+    "module": "api.citations",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "calc_liquidacion",
+    "module": "api.calc",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "calc_prescripcion",
+    "module": "api.calc",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "calc_intereses",
+    "module": "api.calc",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "open_matter_context",
+    "module": "api.matters",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "request_human_approval",
+    "module": "api.hitl",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "draft_pleading",
+    "module": "agent.tools.draft_pleading",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "list_legal_templates",
+    "module": "agent.tools.draft_pleading",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "list_my_matters",
+    "module": "agent.tools.paralegal_tools",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "find_client",
+    "module": "agent.tools.paralegal_tools",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "list_upcoming_deadlines",
+    "module": "agent.tools.paralegal_tools",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "add_matter_deadline",
+    "module": "agent.tools.paralegal_tools",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "mark_deadline_done",
+    "module": "agent.tools.paralegal_tools",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "add_matter_note",
+    "module": "agent.tools.paralegal_tools",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "list_matter_documents",
+    "module": "agent.tools.paralegal_tools",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "summarize_document",
+    "module": "agent.tools.paralegal_tools",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "list_pending_hitl",
+    "module": "agent.tools.paralegal_tools",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "get_firm_metrics",
+    "module": "agent.tools.paralegal_tools",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "extract_document_entities",
+    "module": "agent.tools.document_analysis",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "subscribe_to_expediente",
+    "module": "api.notifications",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "list_judicial_notifications",
+    "module": "api.notifications",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "poll_judicial_now",
+    "module": "api.notifications",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "parse_legal_email",
+    "module": "agent.tools.parse_legal_email",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "daily_briefing",
+    "module": "agent.tools.daily_briefing",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "run_sla_reminders",
+    "module": "agent.workers.sla_reminders",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "sync_email_now",
+    "module": "agent.workers.email_ingest",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "query_audit_logs",
+    "module": "api.audit",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "check_quota",
+    "module": "api.quotas",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "sync_calendar",
+    "module": "agent.workers.calendar_sync",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "analyze_firm_performance",
+    "module": "api.analytics",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "find_anything",
+    "module": "api.search",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "send_whatsapp",
+    "module": "api.whatsapp",
+    "safety_class": "EXTERNAL_SEND",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "track_time",
+    "module": "api.time_entries",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "log_expense",
+    "module": "api.expenses",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "generate_invoice",
+    "module": "api.invoices",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "capture_lead",
+    "module": "api.leads",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "generate_insights",
+    "module": "api.ai_insights",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "run_automation",
+    "module": "api.automation",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "check_trust_balance",
+    "module": "api.trust_accounts",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "record_trust_deposit",
+    "module": "api.trust_transactions",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "record_trust_payment",
+    "module": "api.trust_transactions",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "analyze_contract",
+    "module": "api.contract_analyzer",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "ask_about_document",
+    "module": "api.doc_qa",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "compare_documents",
+    "module": "api.doc_compare",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "send_for_signature",
+    "module": "api.signatures",
+    "safety_class": "EXTERNAL_SEND",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "check_signature_status",
+    "module": "api.signatures",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "import_csv",
+    "module": "api.imports",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "search_kb",
+    "module": "agent.tools.kb_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "add_to_kb",
+    "module": "agent.tools.kb_voice",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "search_lessons",
+    "module": "agent.tools.kb_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "extract_lesson",
+    "module": "agent.tools.extract_lessons",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "add_comment",
+    "module": "agent.tools.collab",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "resolve_comment",
+    "module": "agent.tools.collab",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "show_activity",
+    "module": "agent.tools.collab",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "show_active_users",
+    "module": "agent.tools.collab",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "predict_outcome",
+    "module": "agent.tools.predict_outcome",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "create_task",
+    "module": "agent.tools.productivity",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "complete_task",
+    "module": "agent.tools.productivity",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "what_today",
+    "module": "agent.tools.productivity",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "what_is_my_priority",
+    "module": "agent.tools.productivity",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "firm_revenue",
+    "module": "agent.tools.analytics_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "lawyer_performance",
+    "module": "agent.tools.analytics_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "prediction_accuracy",
+    "module": "agent.tools.analytics_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "executive_kpis",
+    "module": "agent.tools.analytics_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "autofill_template",
+    "module": "agent.tools.doc_smart_fill",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "extract_variables_from_text",
+    "module": "agent.tools.doc_smart_fill",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "list_intake_forms",
+    "module": "agent.tools.doc_smart_fill",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "list_new_submissions",
+    "module": "agent.tools.doc_smart_fill",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "search_judge",
+    "module": "agent.tools.judge_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "get_judge_stats",
+    "module": "agent.tools.judge_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "simulate_judge_view",
+    "module": "agent.tools.judge_simulator",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "validate_identity",
+    "module": "agent.tools.evidence_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "check_doc_consistency",
+    "module": "agent.tools.evidence_voice",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "score_evidence",
+    "module": "agent.tools.evidence_voice",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "list_wizards",
+    "module": "agent.tools.wizard_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "start_wizard",
+    "module": "agent.tools.wizard_voice",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "wizard_session_status",
+    "module": "agent.tools.wizard_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "execute_skill",
+    "module": "agent.tools.skills_voice",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "review_contract",
+    "module": "agent.tools.skills_voice",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "apply_redline",
+    "module": "agent.tools.skills_voice",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "reject_redline",
+    "module": "agent.tools.skills_voice",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "current_plan_status",
+    "module": "agent.tools.billing_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "remaining_quota",
+    "module": "agent.tools.billing_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "pricing_recommendation",
+    "module": "agent.tools.billing_voice",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "saas_mrr_now",
+    "module": "agent.tools.admin_voice",
+    "safety_class": "ADMIN_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "saas_signups_mtd",
+    "module": "agent.tools.admin_voice",
+    "safety_class": "ADMIN_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "saas_churn_30d",
+    "module": "agent.tools.admin_voice",
+    "safety_class": "ADMIN_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "search_firm_by_name",
+    "module": "agent.tools.admin_voice",
+    "safety_class": "ADMIN_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "firm_health_snapshot",
+    "module": "agent.tools.admin_voice",
+    "safety_class": "ADMIN_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "ui_navigate",
+    "module": "agent.tools.ui_bridge",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "ui_open_matter_canvas",
+    "module": "agent.tools.ui_bridge",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "ui_open_matter_tab",
+    "module": "agent.tools.ui_bridge",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "ui_scroll_to",
+    "module": "agent.tools.ui_bridge",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "ui_open_command_palette",
+    "module": "agent.tools.ui_bridge",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "ui_prefill_form",
+    "module": "agent.tools.ui_bridge",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "ui_show_toast",
+    "module": "agent.tools.ui_bridge",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "ui_open_modal",
+    "module": "agent.tools.ui_bridge",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "search_suin_juriscol",
+    "module": "agent.tools.external_research",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "verify_rue_persona",
+    "module": "agent.tools.external_research",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "fetch_dof_co_publicacion",
+    "module": "agent.tools.external_research",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "fetch_banrep_dtf",
+    "module": "agent.tools.external_research",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "delegate_to",
+    "module": "agent.subagents.registry",
+    "safety_class": "META",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "remember",
+    "module": "agent.tools.memory",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "recall",
+    "module": "agent.tools.memory",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "recall_relevant",
+    "module": "agent.tools.memory",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "forget",
+    "module": "agent.tools.memory",
+    "safety_class": "WRITE_SAFE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "canvas_set_text",
+    "module": "agent.tools.canvas_edit",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "canvas_append",
+    "module": "agent.tools.canvas_edit",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "canvas_replace_section",
+    "module": "agent.tools.canvas_edit",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "canvas_save_version",
+    "module": "agent.tools.canvas_edit",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "canvas_get_current",
+    "module": "agent.tools.canvas_edit",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "get_document_content",
+    "module": "agent.tools.canvas_edit",
+    "safety_class": "READ_ONLY",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "canvas_insert_at_cursor",
+    "module": "agent.tools.canvas_edit",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "canvas_find_replace",
+    "module": "agent.tools.canvas_edit",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  },
+  {
+    "name": "canvas_select_section",
+    "module": "agent.tools.canvas_edit",
+    "safety_class": "UI_BRIDGE",
+    "registered": false,
+    "descriptor_ok": false,
+    "executed": false,
+    "status": "NOT_REGISTERED",
+    "duration_ms": 0,
+    "error": null,
+    "error_type": null,
+    "notes": [
+      "Catalogued but not in _tool_registry"
+    ],
+    "sample_result_keys": []
+  }
+]
