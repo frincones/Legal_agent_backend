@@ -786,12 +786,15 @@ def _tool_descriptors() -> list[dict]:
             "name": "create_matter",
             "description": (
                 "Crea un nuevo caso (matter). Útil para intake rápido por voz "
-                "o cuando el abogado quiere iniciar un expediente nuevo en el chat."
+                "o cuando el abogado quiere iniciar un expediente nuevo en el chat. "
+                "Devuelve `matter_id` del nuevo caso · ÚSALO para llamadas "
+                "subsiguientes (add_matter_note, add_matter_deadline, etc.) que "
+                "deban aplicar al caso recién creado, NO al matter_id del contexto."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "titulo": {"type": "string"},
+                    "titulo": {"type": "string", "description": "Título del caso · ej. 'Freddy contra Zurich por acoso laboral'."},
                     "materia": {
                         "type": "string",
                         "enum": [
@@ -800,7 +803,8 @@ def _tool_descriptors() -> list[dict]:
                             "ambiental", "otro",
                         ],
                     },
-                    "client_id": {"type": "string"},
+                    "client_id": {"type": "string", "description": "UUID del cliente si ya existe."},
+                    "client_name": {"type": "string", "description": "Nombre del cliente cuando no tienes client_id · la tool lo busca o crea automáticamente. Si el título tiene 'X contra Y', X se toma como cliente por default."},
                     "tribunal": {"type": "string"},
                     "priority": {
                         "type": "string",

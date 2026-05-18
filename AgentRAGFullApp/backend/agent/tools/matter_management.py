@@ -255,7 +255,18 @@ async def archive_matter_tool(args: dict, ctx: dict) -> dict:
 
 
 async def create_matter_tool(args: dict, ctx: dict) -> dict:
-    """Crea un nuevo caso (matter) · útil para intake rápido por voz/chat."""
+    """Crea un nuevo caso (matter) · útil para intake rápido por voz/chat.
+
+    Acepta:
+      titulo (required) · titulo del caso
+      materia (required) · civil/laboral/penal/familia/etc.
+      client_id (opcional) · UUID del cliente
+      client_name (opcional) · si client_id falta, busca o crea cliente
+                                con este nombre. Si tampoco está pero el
+                                titulo tiene patrón "X contra Y", usa X
+                                como nombre del cliente (demandante).
+      tribunal, priority (opcionales)
+    """
     firm_id = ctx.get("firm_id")
     user_id = ctx.get("user_id")
     titulo = (args.get("titulo") or args.get("title") or "").strip()
@@ -265,6 +276,7 @@ async def create_matter_tool(args: dict, ctx: dict) -> dict:
     if materia not in VALID_MATERIAS:
         return {"error": f"materia inválida · usa una de {sorted(VALID_MATERIAS)}"}
     client_id = args.get("client_id")
+    client_name = (args.get("client_name") or "").strip()
     tribunal = (args.get("tribunal") or "").strip() or None
     priority = (args.get("priority") or "media").strip().lower()
     if priority not in VALID_PRIORITIES:
@@ -275,6 +287,46 @@ async def create_matter_tool(args: dict, ctx: dict) -> dict:
     storage = await get_storage()
     if not hasattr(storage, "pool"):
         return {"error": "storage no disponible"}
+
+    # Si no hay client_id, intenta resolver/crear desde client_name o titulo.
+    if not client_id:
+        # Heurística: "Freddy contra Zurich" → cliente = "Freddy".
+        # "X vs Y" o "X v. Y" igual.
+        if not client_name and titulo:
+            import re as _re
+            m = _re.match(
+                r"^(?:caso\s+(?:de\s+)?)?(.+?)\s+(?:contra|vs\.?|v\.|c/)\s+",
+                titulo, _re.IGNORECASE,
+            )
+            if m:
+                client_name = m.group(1).strip()
+        if not client_name:
+            # Default: cliente placeholder por usuario
+            client_name = "Cliente por definir"
+
+        async with storage.pool.acquire() as conn:
+            # Busca cliente existente case-insensitive por nombre + firm
+            existing = await conn.fetchrow(
+                """
+                select id from clients
+                 where firm_id = $1::uuid and lower(nombre) = lower($2)
+                 limit 1
+                """,
+                firm_id, client_name,
+            )
+            if existing:
+                client_id = str(existing["id"])
+            else:
+                new_client = await conn.fetchrow(
+                    """
+                    insert into clients (firm_id, nombre)
+                    values ($1::uuid, $2)
+                    returning id
+                    """,
+                    firm_id, client_name,
+                )
+                client_id = str(new_client["id"])
+
     async with storage.pool.acquire() as conn:
         row = await conn.fetchrow(
             """
