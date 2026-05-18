@@ -459,6 +459,8 @@ from api.saas_skills_admin import router as saas_skills_admin_router
 # Templates · system catalog search + multi-agent generator (Sprints 1-3 templates)
 from api.templates_search import router as templates_search_router
 from api.multi_agent_generate import router as multi_agent_generate_router
+# Admin · per-tool integration test endpoint (used by scripts/test_all_tools_remote.py)
+from api.admin_tools_test import router as admin_tools_test_router
 from api.inbox import router as inbox_router
 from api.push import router as push_router
 from api.sla import router as sla_router
@@ -565,6 +567,8 @@ app.include_router(canvas_collab_router)
 app.include_router(templates_search_router)
 # Multi-agent document generator · /v1/multi-agent/*
 app.include_router(multi_agent_generate_router)
+# Admin · per-tool integration test · /v1/admin/tools/*
+app.include_router(admin_tools_test_router)
 app.include_router(firm_teams_router)
 app.include_router(firm_users_router)
 app.include_router(profile_router)
