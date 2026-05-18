@@ -264,6 +264,17 @@ async def run_skill_stream(
                           "canvas_chars"):
                     if k in ui_ctx and ui_ctx[k] is not None:
                         sub_ctx[k] = ui_ctx[k]
+            # Detección de intent forzado · si el user_prompt tiene señales
+            # claras de "agregar nota al caso" y add_matter_note está
+            # disponible, en el primer round forzamos esa tool con
+            # tool_choice. Esto vence la confusión del LLM con tag_matter,
+            # canvas_append, open_matter_context, etc.
+            forced_tool_first_round: Optional[str] = _detect_forced_tool(
+                input_data.get("prompt") or "",
+                (input_data.get("context") or {}).get("active_tab"),
+                {t["function"]["name"] for t in chat_tools
+                 if isinstance(t, dict) and t.get("function")},
+            )
             done_calling = False
             for round_idx in range(MAX_TOOL_ITERATIONS):
                 if done_calling:
@@ -278,6 +289,12 @@ async def run_skill_stream(
                     "stream": True,
                     "stream_options": {"include_usage": True},
                 }
+                # Forza la tool en el primer round si detect_forced_tool acertó.
+                if round_idx == 0 and forced_tool_first_round:
+                    kwargs["tool_choice"] = {
+                        "type": "function",
+                        "function": {"name": forced_tool_first_round},
+                    }
                 stream_resp = await client.chat.completions.create(**kwargs)
 
                 # Accumulate streamed content + tool_call deltas for this round.
@@ -672,6 +689,50 @@ async def run_skill(
         "warnings": warnings,
         "tool_calls": tool_calls_log,
     }
+
+
+def _detect_forced_tool(
+    prompt: str,
+    active_tab: Optional[str],
+    available: set[str],
+) -> Optional[str]:
+    """Detecta intent del usuario y devuelve el nombre del tool que el LLM
+    DEBE ejecutar en el primer round. Solo dispara cuando la señal es muy
+    clara y la tool está en `available`. Devuelve None si no aplica.
+
+    Esto vence la indecisión del LLM cuando el set de tools es grande
+    (75+ tools en /ask). Sin esto, gpt-4o gasta rounds llamando
+    open_matter_context o tag_matter aunque el prompt diga 'agrega una
+    nota' explícitamente.
+    """
+    if not prompt:
+        return None
+    low = prompt.lower()
+    canvas_words = (
+        "documento", "demanda", "contestación", "contestacion",
+        "contrato", "borrador", "redacta", "redactar", "escrito",
+        "cláusula", "clausula", "al doc ", "al documento",
+    )
+    if any(w in low for w in canvas_words):
+        return None  # canvas-intent · deja que el LLM elija canvas_*
+    if active_tab == "canvas":
+        return None  # usuario está editando el doc · no fuerces nota
+
+    note_triggers = (
+        "agrega una nota", "agrega nota", "agregar una nota", "agregar nota",
+        "crea una nota", "crea nota", "crear una nota", "crear nota",
+        "crea unas notas", "crear notas", "agrega notas", "añade notas",
+        "añade una nota", "anade una nota", "añade nota",
+        "anota ", "anotar ", "anotación", "anotacion",
+        "pasos pendientes", "recordatorio:", "recordatorio ",
+        "observación:", "observacion:",
+        "dentro del caso", "al expediente", "en el expediente",
+        "agrega esto al caso", "agregar al caso",
+    )
+    if any(t in low for t in note_triggers):
+        if "add_matter_note" in available:
+            return "add_matter_note"
+    return None
 
 
 def _format_user_message(skill: SkillDefinition, input_data: dict[str, Any]) -> str:
