@@ -38,14 +38,38 @@ def _ui(action: str, **payload) -> dict:
 async def canvas_set_text_tool(args: dict, ctx: dict) -> dict:
     """Reemplaza TODO el contenido del Canvas con un markdown.
 
-    Usar cuando rediseñas el documento desde cero (ej. después de
-    draft_pleading retorna un texto completo y quieres ponerlo en Canvas).
+    Operación destructiva: borra lo que el abogado tenía escrito. Si el
+    documento actual (en `ctx.document_text` — lo inyecta el frontend cuando
+    el canvas está abierto) tiene contenido sustantivo (>500 chars), la tool
+    devuelve error a menos que el caller pase `confirm_overwrite=true`. Esto
+    evita que el LLM sobrescriba un documento real por error cuando el
+    usuario solo quería agregar una nota (debió usar add_matter_note).
     """
     markdown = (args.get("markdown") or "").strip()
     if not markdown:
         return {"error": "markdown requerido"}
     if len(markdown) > 100_000:
         return {"error": "markdown excede 100k caracteres"}
+
+    # Safeguard contra sobreescritura accidental de documento con contenido.
+    # El frontend pasa ctx.document_text con el markdown actual del canvas.
+    current_text = (ctx.get("document_text") or "").strip()
+    confirm = bool(args.get("confirm_overwrite") or False)
+    if len(current_text) > 500 and not confirm:
+        return {
+            "ok": False,
+            "error": (
+                f"El documento actual del canvas ya tiene {len(current_text)} "
+                f"caracteres de contenido. canvas_set_text REEMPLAZARÍA todo. "
+                f"Si el usuario quiere AGREGAR una nota/anotación al caso, "
+                f"usa add_matter_note (matter_id, body) en su lugar — esas van "
+                f"a la pestaña Notas, NO al documento. Si el usuario sí quiere "
+                f"reemplazar el documento entero, pide confirmación explícita "
+                f"y vuelve a llamar canvas_set_text con confirm_overwrite=true."
+            ),
+            "current_doc_chars": len(current_text),
+        }
+
     return {
         "summary": f"Reemplacé el documento ({len(markdown)} caracteres)",
         "_ui_command": _ui("canvas_set_text", markdown=markdown),

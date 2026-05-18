@@ -696,8 +696,13 @@ def _tool_descriptors() -> list[dict]:
             "type": "function",
             "name": "add_matter_note",
             "description": (
-                "Agrega una nota dictada por voz al expediente. La nota queda visible "
-                "en la pestaña Notas del caso."
+                "PREFERIDA cuando el usuario dice 'agrega/crea una nota', 'anota X', "
+                "'pasos pendientes', 'recordatorio', 'observación del caso'. "
+                "Guarda la nota como fila en la tabla matter_notes y se ve en la "
+                "PESTAÑA NOTAS del caso (módulo separado del editor). "
+                "USA ESTA en lugar de canvas_append/canvas_set_text cuando la "
+                "intención sea anotar algo SOBRE EL CASO, no escribir contenido "
+                "DENTRO de un documento legal en redacción."
             ),
             "parameters": {
                 "type": "object",
@@ -1263,13 +1268,29 @@ def _tool_descriptors() -> list[dict]:
             "type": "function",
             "name": "canvas_set_text",
             "description": (
-                "Reemplaza TODO el contenido del Live Canvas con un markdown. "
-                "Usar después de draft_pleading cuando quieres poner el draft "
-                "completo en pantalla. El editor mantiene autosave cada 3s."
+                "REEMPLAZA TODO el contenido del Live Canvas (editor del documento "
+                "legal en redacción) con un markdown nuevo. OPERACIÓN DESTRUCTIVA: "
+                "borra todo lo que el abogado tenía escrito. "
+                "USAR SOLO cuando: (a) acabas de llamar draft_pleading y quieres "
+                "colocar el draft completo, o (b) el usuario dice EXPLÍCITAMENTE "
+                "'reemplaza el documento entero', 'sustituye todo el contenido'. "
+                "NO USAR para 'crear notas', 'agregar anotaciones' o 'pasos "
+                "pendientes' del caso → para eso usa add_matter_note. "
+                "Para cambios puntuales usa canvas_replace_section (sección por "
+                "heading) o canvas_find_replace (string→string). "
+                "Si el documento actual ya tiene contenido (>500 chars) la tool "
+                "rechaza la operación a menos que pases confirm_overwrite=true."
             ),
             "parameters": {
                 "type": "object",
-                "properties": {"markdown": {"type": "string"}},
+                "properties": {
+                    "markdown": {"type": "string"},
+                    "confirm_overwrite": {
+                        "type": "boolean",
+                        "description": "Pasar true si el usuario confirmó que "
+                                       "quiere reemplazar todo el documento existente.",
+                    },
+                },
                 "required": ["markdown"],
             },
         },
@@ -1278,8 +1299,13 @@ def _tool_descriptors() -> list[dict]:
             "name": "canvas_append",
             "description": (
                 "Añade un fragmento de markdown AL FINAL del documento del "
-                "Canvas. Útil para agregar una nueva sección sin tocar lo "
-                "existente. Soporta headings (#, ##, ###), listas, énfasis."
+                "Live Canvas (editor TipTap del caso). Útil para agregar una "
+                "nueva sección al borrador legal sin tocar lo existente. "
+                "NO USAR para 'agregar notas del caso', 'pasos pendientes', "
+                "'recordatorios' o 'observaciones del expediente' → para eso "
+                "usa add_matter_note (esas viven en la pestaña Notas, NO dentro "
+                "del documento). Esta tool inyecta texto al DOCUMENTO LEGAL "
+                "(demanda/contrato/escrito) que se está redactando."
             ),
             "parameters": {
                 "type": "object",
@@ -1310,12 +1336,12 @@ def _tool_descriptors() -> list[dict]:
             "type": "function",
             "name": "canvas_insert_at_cursor",
             "description": (
-                "Inserta un fragmento de markdown EN LA POSICIÓN EXACTA del caret "
-                "del usuario en el editor. Usar cuando el abogado dice 'agrega "
-                "aquí esta cláusula', 'inserta donde estoy', o cuando combinas con "
-                "canvas_select_section para añadir contenido en una sección "
-                "específica. Diferencia con canvas_append: append siempre va al "
-                "final del documento; insert_at_cursor respeta donde está el caret."
+                "Inserta markdown EN LA POSICIÓN EXACTA del caret del usuario "
+                "DENTRO DEL DOCUMENTO LEGAL del Live Canvas. Usar cuando el "
+                "abogado dice 'agrega aquí esta cláusula', 'inserta donde estoy'. "
+                "Diferencia con canvas_append: append siempre va al final; "
+                "insert_at_cursor respeta donde está el caret. "
+                "NO USAR para anotaciones del caso (use add_matter_note)."
             ),
             "parameters": {
                 "type": "object",

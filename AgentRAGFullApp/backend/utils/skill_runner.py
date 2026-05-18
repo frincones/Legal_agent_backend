@@ -247,6 +247,15 @@ async def run_skill_stream(
                 # claiming success to the LLM.
                 "document_text": input_data.get("document_text"),
             }
+            # Inyecta UI context (current_path, active_tab, canvas_has_content)
+            # cuando el frontend lo pasa · permite que tools y prompt sepan en
+            # qué pestaña está el usuario y eviten confusión notas vs canvas.
+            ui_ctx = input_data.get("context")
+            if isinstance(ui_ctx, dict):
+                for k in ("current_path", "active_tab", "canvas_has_content",
+                          "canvas_chars"):
+                    if k in ui_ctx and ui_ctx[k] is not None:
+                        sub_ctx[k] = ui_ctx[k]
             done_calling = False
             for round_idx in range(MAX_TOOL_ITERATIONS):
                 if done_calling:
@@ -480,7 +489,14 @@ async def run_skill(
             "matter_id": matter_id,
             "document_id": document_id,
             "subagent_chain": ["chat_skill"],
+            "document_text": input_data.get("document_text"),
         }
+        ui_ctx = input_data.get("context")
+        if isinstance(ui_ctx, dict):
+            for k in ("current_path", "active_tab", "canvas_has_content",
+                      "canvas_chars"):
+                if k in ui_ctx and ui_ctx[k] is not None:
+                    sub_ctx[k] = ui_ctx[k]
 
         tokens_in = 0
         tokens_out = 0
