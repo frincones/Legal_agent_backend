@@ -359,9 +359,14 @@ async def ask_about_document_tool(args: dict, ctx: dict) -> dict:
             [document_id] if document_id else [],
         )
 
-    # Reusar logica del endpoint /ask vía función directa
-    class _P:
-        firm_id = firm_id
-        user_id = user_id
-        role = ctx.get("role", "lawyer")
-    return await ask(str(s["id"]), AskRequest(question=question), _P())  # type: ignore
+    # Reusar lógica del endpoint /ask vía función directa.
+    # NOTE: a nested `class _P: firm_id = firm_id` doesn't work because
+    # Python evaluates the RHS in the class-body scope (which has no
+    # outer-scope visibility · classic NameError). Use SimpleNamespace.
+    from types import SimpleNamespace
+    principal = SimpleNamespace(
+        firm_id=firm_id,
+        user_id=user_id,
+        role=ctx.get("role", "lawyer"),
+    )
+    return await ask(str(s["id"]), AskRequest(question=question), principal)  # type: ignore

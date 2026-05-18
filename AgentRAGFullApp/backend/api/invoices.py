@@ -522,19 +522,29 @@ async def generate_invoice_tool(args: dict, ctx: dict) -> dict:
             "select lexai_billable_summary($1::uuid, $2::uuid, $3::date, $4::date)",
             firm_id, matter_id, since, until,
         )
+        # asyncpg returns JSONB as a string when no JSON codec is registered ·
+        # normalize before .get() (fixes "'str' object has no attribute 'get'").
+        if isinstance(preview, str):
+            import json as _json
+            try:
+                preview = _json.loads(preview)
+            except Exception:
+                preview = {}
         preview = preview or {}
         if (preview.get("time_entries", 0) + preview.get("expense_count", 0)) == 0:
             return {"error": "No hay horas ni gastos facturables en el periodo", "preview": preview}
-        # Crear via lógica de create_invoice (proxy a la función interna no es trivial sin Request,
-        # así que delegamos via HTTP-style approach: replicamos la lógica)
-    # Llamamos al endpoint vía función directa
-    class _P:
-        firm_id = firm_id
-        user_id = user_id
-        role = ctx.get("role") or "admin"
+    # Delegamos vía función directa al endpoint create_invoice. Class-body
+    # scope can't see outer `firm_id` (Python gotcha · same as
+    # doc_qa.ask_about_document_tool) → use SimpleNamespace.
+    from types import SimpleNamespace
+    principal = SimpleNamespace(
+        firm_id=firm_id,
+        user_id=user_id,
+        role=ctx.get("role") or "admin",
+    )
     inv = await create_invoice(
         CreateRequest(matter_id=matter_id, since=since, until=until, tax_pct=tax_pct),
-        principal=_P(),  # type: ignore
+        principal=principal,  # type: ignore
     )
     return {
         "invoice_id": inv["id"],

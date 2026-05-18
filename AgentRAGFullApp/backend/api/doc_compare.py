@@ -270,8 +270,11 @@ async def compare_documents_tool(args: dict, ctx: dict) -> dict:
     b = args.get("document_b_id")
     if not (firm_id and a and b):
         return {"error": "firm_id, document_a_id y document_b_id requeridos"}
-    class _P:
-        firm_id = firm_id
-        user_id = user_id
-        role = ctx.get("role", "lawyer")
-    return await compare(CompareRequest(document_a_id=a, document_b_id=b), _P())  # type: ignore
+    # SimpleNamespace · class-body scope can't see outer `firm_id`.
+    from types import SimpleNamespace
+    principal = SimpleNamespace(
+        firm_id=firm_id,
+        user_id=user_id,
+        role=ctx.get("role", "lawyer"),
+    )
+    return await compare(CompareRequest(document_a_id=a, document_b_id=b), principal)  # type: ignore

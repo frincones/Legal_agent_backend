@@ -56,7 +56,7 @@ TOOL_ARG_OVERRIDES: dict[str, dict[str, Any]] = {
     },
     "calc_intereses": {
         "capital_cop": 5000000, "fecha_inicio": "2024-01-15",
-        "fecha_fin": "2026-05-17", "tipo_interes": "moratorio_comercial",
+        "fecha_fin": "2026-05-17", "tipo_interes": "comercial_moratorio",
         "metodo": "simple",
     },
     # Norms / citations
@@ -68,11 +68,21 @@ TOOL_ARG_OVERRIDES: dict[str, dict[str, Any]] = {
     "extract_document_entities": {"document_id": "{document_id}"},
     "ask_about_document": {"document_id": "{document_id}", "question": "¿partes y cuantía?"},
     "analyze_contract": {"document_id": "{document_id}"},
-    "check_doc_consistency": {"document_id": "{document_id}", "document_text": "..."},
-    "score_evidence": {"document_id": "{document_id}", "document_text": "..."},
+    "check_doc_consistency": {
+        "matter_document_id": "{document_id}",
+        "document_text": "Documento de prueba con fecha 15 de enero de 2024 y monto $5.000.000.",
+    },
+    "score_evidence": {
+        "matter_document_id": "{document_id}",
+        "document_text": "Contrato firmado el 15-01-2024 por las partes Juan Pérez y EPS Demo · valor $2.000.000.",
+    },
     "review_contract": {"document_id": "{document_id}"},
     "get_document_content": {"document_id": "{document_id}"},
-    "compare_documents": {"doc_a_id": "{document_id}", "doc_b_id": "{document_id}"},
+    "compare_documents": {"document_a_id": "{document_id}", "document_b_id": "{document_id}"},
+    "execute_skill": {"command": "/redactar/tutela"},
+    "reject_redline": {"redline_set_id": "00000000-0000-0000-0000-000000000000",
+                        "redline_id": "00000000-0000-0000-0000-000000000000"},
+    "import_csv": {"job_id": "00000000-0000-0000-0000-000000000000"},
     # Time / expenses / billing
     "track_time": {"matter_id": "{matter_id}", "minutes": 60, "description": "test"},
     "log_expense": {"matter_id": "{matter_id}", "amount_cop": 50000, "description": "test"},

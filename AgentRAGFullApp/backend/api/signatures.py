@@ -609,12 +609,15 @@ async def send_for_signature_tool(args: dict, ctx: dict) -> dict:
         documents=[DocumentInput(source_document_id=str(doc["id"]), filename=doc["titulo"])],
     )
 
-    class _P:
-        firm_id = firm_id
-        user_id = user_id
-        role = ctx.get("role", "lawyer")
-    env = await create_envelope(body, _P())  # type: ignore
-    sent = await send_envelope(env["id"], _P())  # type: ignore
+    # SimpleNamespace · class-body scope can't see outer `firm_id`.
+    from types import SimpleNamespace
+    principal = SimpleNamespace(
+        firm_id=firm_id,
+        user_id=user_id,
+        role=ctx.get("role", "lawyer"),
+    )
+    env = await create_envelope(body, principal)  # type: ignore
+    sent = await send_envelope(env["id"], principal)  # type: ignore
     return sent
 
 
@@ -627,8 +630,12 @@ async def check_signature_status_tool(args: dict, ctx: dict) -> dict:
     if not envelope_id:
         return {"error": "envelope_id requerido"}
 
-    class _P:
-        firm_id = firm_id
-        user_id = ctx.get("user_id")
-        role = ctx.get("role", "lawyer")
-    return await get_envelope(envelope_id, _P())  # type: ignore
+    # NameError fix · class-body scope doesn't see outer `firm_id`.
+    # Use SimpleNamespace (same pattern as doc_qa.ask_about_document_tool).
+    from types import SimpleNamespace
+    principal = SimpleNamespace(
+        firm_id=firm_id,
+        user_id=ctx.get("user_id"),
+        role=ctx.get("role", "lawyer"),
+    )
+    return await get_envelope(envelope_id, principal)  # type: ignore
