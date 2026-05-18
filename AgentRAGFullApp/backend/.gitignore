@@ -1,1 +1,3 @@
-AgentRAGFullApp/backend/test-results/lexai_jwt.txt
+test-results/lexai_jwt.txt
+test-results/*.csv
+test-results/*.json
