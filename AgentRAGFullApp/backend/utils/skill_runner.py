@@ -870,11 +870,13 @@ def _detect_forced_tool(
         (r"\btrackea\b.*\bhoras\b", "track_time"),
         (r"\b(registra|anota|agrega)\s+gasto\b", "log_expense"),
         (r"\b(genera|crea)\s+factura\b", "generate_invoice"),
-        # --- Predicción / riesgos
+        # --- Predicción / riesgos / refundamentación
         (r"\bpredice\b", "predict_outcome"),
         (r"\bpredicción\b", "predict_outcome"),
         (r"\bidentifica\s+(los\s+)?riesgos\b", "predict_outcome"),
         (r"\briesgos\s+principales\b", "predict_outcome"),
+        (r"\brefundamentaci[óo]n\b", "predict_outcome"),
+        (r"\b(sugiere|sugerir)\s+(la\s+)?(estrategia|tesis|argumentos)\b", "predict_outcome"),
         # --- Lecciones
         (r"\bextrae\s+lecciones\b", "extract_lesson"),
         (r"\blecciones\s+aprendidas\b", "extract_lesson"),
