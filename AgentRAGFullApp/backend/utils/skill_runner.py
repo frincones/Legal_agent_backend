@@ -70,38 +70,41 @@ async def _execute_tool_call(
     fn_args: dict[str, Any],
     skill: SkillDefinition,
     ctx: dict[str, Any],
-) -> dict[str, Any]:
-    """Run one tool from the global _tool_registry · returns the result dict.
+) -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
+    """Run one tool from the global _tool_registry.
 
-    Validates the tool is allowed by the skill (defense-in-depth in case the
-    LLM hallucinates a name it shouldn't see). Strips _ui_command from the
-    result before returning (chat path has no UI bridge for now · those
-    commands are voice-only).
+    Returns (llm_result, ui_command):
+      - llm_result: dict sent back to the model (with _ui_command stripped so
+        the LLM doesn't see implementation noise).
+      - ui_command: the {action, ...} payload to forward to the frontend via
+        the SSE stream, or None if the tool didn't emit one. Caller is
+        responsible for emitting a `ui_command` SSE event.
     """
     try:
         from api.voice import _tool_registry
     except Exception as e:
-        return {"error": f"tool_registry unavailable: {e}"}
+        return {"error": f"tool_registry unavailable: {e}"}, None
 
     allowed = set(skill.allowed_tools)
     is_wildcard = "*" in allowed
     if not is_wildcard and fn_name not in allowed:
-        return {"error": f"tool '{fn_name}' not allowed for skill {skill.command}"}
+        return {"error": f"tool '{fn_name}' not allowed for skill {skill.command}"}, None
 
     fn = _tool_registry.get(fn_name)
     if fn is None:
-        return {"error": f"tool '{fn_name}' not registered"}
+        return {"error": f"tool '{fn_name}' not registered"}, None
 
     try:
         result = await fn(args=fn_args, ctx=ctx)
     except Exception as e:
         logger.exception("skill_runner tool %s raised: %s", fn_name, e)
-        return {"error": str(e)[:240]}
+        return {"error": str(e)[:240]}, None
 
-    # Drop _ui_command · chat path doesn't have the voice UI bridge yet.
+    ui_command: Optional[dict[str, Any]] = None
     if isinstance(result, dict) and "_ui_command" in result:
+        ui_command = result.get("_ui_command")
         result = {k: v for k, v in result.items() if k != "_ui_command"}
-    return result
+    return result, ui_command
 
 
 async def run_skill_stream(
@@ -301,7 +304,9 @@ async def run_skill_stream(
                         "event": "tool_started",
                         "data": {"name": fn_name, "round": round_idx + 1},
                     }
-                    tool_result = await _execute_tool_call(fn_name, fn_args, skill, sub_ctx)
+                    tool_result, ui_command = await _execute_tool_call(
+                        fn_name, fn_args, skill, sub_ctx
+                    )
                     yield {
                         "event": "tool_finished",
                         "data": {
@@ -311,6 +316,8 @@ async def run_skill_stream(
                             "preview": json.dumps(tool_result, ensure_ascii=False, default=str)[:200],
                         },
                     }
+                    if ui_command:
+                        yield {"event": "ui_command", "data": ui_command}
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
@@ -528,7 +535,9 @@ async def run_skill(
                         fn_args = json.loads(tc.function.arguments or "{}")
                     except json.JSONDecodeError:
                         fn_args = {}
-                    tool_result = await _execute_tool_call(fn_name, fn_args, skill, sub_ctx)
+                    tool_result, _ui = await _execute_tool_call(fn_name, fn_args, skill, sub_ctx)
+                    # Non-streaming path has no SSE channel for ui_command, so we
+                    # drop it · only the streaming path forwards canvas/UI ops.
                     tool_calls_log.append({
                         "name": fn_name,
                         "args_keys": list(fn_args.keys()),
