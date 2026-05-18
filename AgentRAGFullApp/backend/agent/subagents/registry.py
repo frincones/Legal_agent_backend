@@ -135,11 +135,40 @@ async def delegate_to_tool(args: dict, ctx: dict) -> dict:
     if has_error_keywords and not result.get("error"):
         result["error"] = "Sub-agente reportó dificultad — revisa summary"
 
-    # Resumen narrativo breve para el orquestador (que se lo lee al usuario)
-    return {
+    # Colectar TODOS los _ui_command emitidos por las tools que ejecutó el
+    # sub-agente, para reenviarlos al frontend. Sin esto, las canvas/data_
+    # changed que dispara el sub-agente quedan atrapadas en el sub-agente.
+    sub_ui_commands = [
+        tc.get("_ui_command") for tc in result.get("tool_calls", [])
+        if isinstance(tc, dict) and tc.get("_ui_command")
+    ]
+
+    out: dict = {
         "subagent": subagent_name,
         "summary": result.get("summary"),
         "tool_calls_count": len(result.get("tool_calls", [])),
         "duration_ms": duration_ms,
         "error": result.get("error"),
     }
+
+    # Voice/SSE pipeline solo despacha 1 _ui_command por tool result, así
+    # que cuando el sub-agente disparó múltiples, los exponemos como una
+    # lista en _ui_commands (plural). El frontend handler los dispatcha
+    # todos. Si solo hay 1, también se expone en _ui_command para
+    # compatibilidad con el pipeline existente.
+    if sub_ui_commands:
+        out["_ui_commands"] = sub_ui_commands
+        if len(sub_ui_commands) == 1:
+            out["_ui_command"] = sub_ui_commands[0]
+        else:
+            # Envoltorio: una señal genérica data_changed con la lista
+            # completa. El handler frontend prefiere _ui_commands si está.
+            out["_ui_command"] = {
+                "action": "data_changed",
+                "resource": "matters",
+                "matter_id": ctx.get("matter_id"),
+                "firm_id": ctx.get("firm_id"),
+                "op": "update",
+                "extra": {"delegated_count": len(sub_ui_commands)},
+            }
+    return out

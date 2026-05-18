@@ -121,6 +121,7 @@ async def add_to_kb_voice_tool(args: dict, ctx: dict) -> dict:
             embedding_pg, user_id,
         )
 
+    from agent.tools._ui_events import ui_data_changed
     return {
         "ok": True,
         "id": str(row["id"]),
@@ -128,6 +129,10 @@ async def add_to_kb_voice_tool(args: dict, ctx: dict) -> dict:
         "kind": row["kind"],
         "embedded": embedding_pg is not None,
         "message": f"Guardado en KB · {row['title']}",
+        "_ui_command": ui_data_changed(
+            "kb", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"kb_entry_id": str(row["id"])},
+        ),
     }
 
 

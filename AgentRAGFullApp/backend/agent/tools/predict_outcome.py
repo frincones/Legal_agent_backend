@@ -319,7 +319,7 @@ async def predict_outcome_tool(args: dict, ctx: dict) -> dict:
     if not matter_id:
         return {"error": "Necesito un matter_id (estás en algún caso?)"}
     try:
-        return await predict_outcome_for_matter(
+        result = await predict_outcome_for_matter(
             firm_id=firm_id, matter_id=matter_id, user_id=user_id,
         )
     except ValueError as e:
@@ -327,3 +327,10 @@ async def predict_outcome_tool(args: dict, ctx: dict) -> dict:
     except Exception as e:
         logger.exception("predict_outcome_tool failed")
         return {"error": f"Fallo predicción: {e}"}
+    if isinstance(result, dict) and not result.get("error"):
+        from agent.tools._ui_events import ui_data_changed
+        result["_ui_command"] = ui_data_changed(
+            "predictions", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"prediction_id": result.get("id")},
+        )
+    return result

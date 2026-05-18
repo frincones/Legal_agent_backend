@@ -27,6 +27,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from agent.tools._ui_events import ui_data_changed
+
 logger = logging.getLogger(__name__)
 
 
@@ -242,7 +244,14 @@ async def add_matter_deadline_tool(args: dict, ctx: dict) -> dict:
         except Exception:
             # timeline insert is best-effort; missing column shouldn't fail the deadline.
             pass
-    return {"id": str(row["id"]), "matter_id": matter_id, "titulo": titulo, "fecha": fecha_dt.isoformat(), "tipo": tipo}
+    return {
+        "id": str(row["id"]), "matter_id": matter_id, "titulo": titulo,
+        "fecha": fecha_dt.isoformat(), "tipo": tipo,
+        "_ui_command": ui_data_changed(
+            "deadlines", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"deadline_id": str(row["id"])},
+        ),
+    }
 
 
 async def mark_deadline_done_tool(args: dict, ctx: dict) -> dict:
@@ -266,7 +275,14 @@ async def mark_deadline_done_tool(args: dict, ctx: dict) -> dict:
         )
     if not row:
         return _err("deadline not found")
-    return {"id": deadline_id, "matter_id": str(row["matter_id"]), "titulo": row["titulo"], "completado": True}
+    return {
+        "id": deadline_id, "matter_id": str(row["matter_id"]), "titulo": row["titulo"],
+        "completado": True,
+        "_ui_command": ui_data_changed(
+            "deadlines", matter_id=str(row["matter_id"]), firm_id=firm_id, op="update",
+            extra={"deadline_id": deadline_id, "completed": True},
+        ),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -293,7 +309,14 @@ async def add_matter_note_tool(args: dict, ctx: dict) -> dict:
             """,
             matter_id, firm_id, user_id, body,
         )
-    return {"id": str(row["id"]), "matter_id": matter_id, "created_at": row["created_at"].isoformat()}
+    return {
+        "id": str(row["id"]), "matter_id": matter_id,
+        "created_at": row["created_at"].isoformat(),
+        "_ui_command": ui_data_changed(
+            "notes", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"note_id": str(row["id"])},
+        ),
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────

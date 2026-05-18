@@ -380,6 +380,12 @@ TIER1_TOOLS = {
     "list_upcoming_deadlines",
     "add_matter_deadline",
     "add_matter_note",
+    # Matter management · prioridad, tags, etapa, archivar, crear (Sprint M)
+    "set_matter_priority",
+    "tag_matter",
+    "update_matter_etapa",
+    "archive_matter",
+    "create_matter",
     # Cálculos determinísticos (los 3)
     "calc_liquidacion",
     "calc_prescripcion",
@@ -700,6 +706,103 @@ def _tool_descriptors() -> list[dict]:
                     "body": {"type": "string"},
                 },
                 "required": ["matter_id", "body"],
+            },
+        },
+        # ── Sprint M · Matter management ──────────────────────────────
+        {
+            "type": "function",
+            "name": "set_matter_priority",
+            "description": (
+                "Cambia la prioridad de un caso. Usa esto cuando el abogado dice "
+                "'márcalo como urgente' o 'baja prioridad'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "matter_id": {"type": "string"},
+                    "priority": {
+                        "type": "string",
+                        "enum": ["baja", "media", "alta", "critica", "urgente"],
+                    },
+                },
+                "required": ["matter_id", "priority"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "tag_matter",
+            "description": (
+                "Añade una etiqueta (tag) al caso. Útil para clasificar por tema, "
+                "cliente VIP, área de práctica especial, etc."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "matter_id": {"type": "string"},
+                    "tag": {"type": "string"},
+                },
+                "required": ["matter_id", "tag"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "update_matter_etapa",
+            "description": (
+                "Actualiza la etapa procesal del caso (ej. 'primera instancia', "
+                "'apelación', 'casación', 'cierre')."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "matter_id": {"type": "string"},
+                    "etapa": {"type": "string"},
+                },
+                "required": ["matter_id", "etapa"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "archive_matter",
+            "description": (
+                "Archiva un caso (soft delete · status='archivado'). "
+                "El caso desaparece de la lista activa pero los datos se preservan."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "matter_id": {"type": "string"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["matter_id"],
+            },
+        },
+        {
+            "type": "function",
+            "name": "create_matter",
+            "description": (
+                "Crea un nuevo caso (matter). Útil para intake rápido por voz "
+                "o cuando el abogado quiere iniciar un expediente nuevo en el chat."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "titulo": {"type": "string"},
+                    "materia": {
+                        "type": "string",
+                        "enum": [
+                            "civil", "comercial", "laboral", "familia", "penal",
+                            "administrativo", "tributario", "constitucional",
+                            "ambiental", "otro",
+                        ],
+                    },
+                    "client_id": {"type": "string"},
+                    "tribunal": {"type": "string"},
+                    "priority": {
+                        "type": "string",
+                        "enum": ["baja", "media", "alta", "critica", "urgente"],
+                    },
+                },
+                "required": ["titulo", "materia"],
             },
         },
         {
@@ -1641,9 +1744,21 @@ async def _handle_function_call(
     duration_ms = int((time.time() - started) * 1000)
 
     # F1 · UI BRIDGE
-    ui_command = None
-    if isinstance(result, dict) and "_ui_command" in result:
-        ui_command = result.pop("_ui_command")
+    # Soporta tanto un único `_ui_command` (tool normal) como una lista
+    # `_ui_commands` (cuando delegate_to recolecta varios del sub-agente).
+    ui_commands_to_send: list = []
+    if isinstance(result, dict):
+        if "_ui_commands" in result:
+            collected = result.pop("_ui_commands") or []
+            if isinstance(collected, list):
+                ui_commands_to_send.extend([c for c in collected if c])
+            # Si también vino _ui_command (envoltorio), evitar duplicado.
+            result.pop("_ui_command", None)
+        elif "_ui_command" in result:
+            single = result.pop("_ui_command")
+            if single:
+                ui_commands_to_send.append(single)
+    for ui_command in ui_commands_to_send:
         try:
             await websocket.send_json({
                 "type": "ui.command",

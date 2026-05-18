@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
+from agent.tools._ui_events import ui_data_changed
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,6 +47,10 @@ async def validate_identity_tool(args: dict, ctx: dict) -> dict:
             "status": result["status"],
             "summary": result["summary"],
             "mismatches_count": len(result["mismatches"]),
+            "_ui_command": ui_data_changed(
+                "evidence", matter_id=matter_id, firm_id=firm_id, op="create",
+                extra={"verification_id": result["id"], "kind": "identity"},
+            ),
         }
     except ValueError as e:
         return {"error": str(e)}
@@ -73,6 +79,10 @@ async def check_doc_consistency_tool(args: dict, ctx: dict) -> dict:
             "high_severity_count": result["high_severity_count"],
             "summary": result["summary"],
             "cached": result["cached"],
+            "_ui_command": ui_data_changed(
+                "evidence", matter_id=matter_id, firm_id=firm_id, op="create",
+                extra={"inconsistency_id": result["id"], "kind": "consistency"},
+            ),
         }
     except ValueError as e:
         return {"error": str(e)}
@@ -112,6 +122,10 @@ async def score_evidence_tool(args: dict, ctx: dict) -> dict:
             "summary": result["summary"],
             "positive_factors_count": len(result["positive_factors"]),
             "negative_factors_count": len(result["negative_factors"]),
+            "_ui_command": ui_data_changed(
+                "evidence", matter_id=matter_id, firm_id=firm_id, op="create",
+                extra={"score_id": result["id"], "kind": "probative_score"},
+            ),
         }
     except ValueError as e:
         return {"error": str(e)}

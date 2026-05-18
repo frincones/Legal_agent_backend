@@ -398,4 +398,11 @@ async def track_time_tool(args: dict, ctx: dict) -> dict:
             """,
             firm_id, matter_id, user_id, start, end, description,
         )
-    return {"id": str(row["id"]), "duration_min": row["duration_min"], "matter_id": matter_id}
+    from agent.tools._ui_events import ui_data_changed
+    return {
+        "id": str(row["id"]), "duration_min": row["duration_min"], "matter_id": matter_id,
+        "_ui_command": ui_data_changed(
+            "time_entries", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"time_entry_id": str(row["id"])},
+        ),
+    }

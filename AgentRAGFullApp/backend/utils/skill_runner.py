@@ -70,41 +70,53 @@ async def _execute_tool_call(
     fn_args: dict[str, Any],
     skill: SkillDefinition,
     ctx: dict[str, Any],
-) -> tuple[dict[str, Any], Optional[dict[str, Any]]]:
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Run one tool from the global _tool_registry.
 
-    Returns (llm_result, ui_command):
-      - llm_result: dict sent back to the model (with _ui_command stripped so
-        the LLM doesn't see implementation noise).
-      - ui_command: the {action, ...} payload to forward to the frontend via
-        the SSE stream, or None if the tool didn't emit one. Caller is
-        responsible for emitting a `ui_command` SSE event.
+    Returns (llm_result, ui_commands):
+      - llm_result: dict sent back to the model (with _ui_command/_ui_commands
+        stripped so the LLM doesn't see implementation noise).
+      - ui_commands: lista (posiblemente vacía) de payloads {action,...} a
+        reenviar al frontend como eventos SSE `ui_command` separados. Una
+        tool normal emite 0 o 1; `delegate_to` puede emitir varios cuando
+        el sub-agente ejecutó múltiples canvas/data_changed tools.
     """
     try:
         from api.voice import _tool_registry
     except Exception as e:
-        return {"error": f"tool_registry unavailable: {e}"}, None
+        return {"error": f"tool_registry unavailable: {e}"}, []
 
     allowed = set(skill.allowed_tools)
     is_wildcard = "*" in allowed
     if not is_wildcard and fn_name not in allowed:
-        return {"error": f"tool '{fn_name}' not allowed for skill {skill.command}"}, None
+        return {"error": f"tool '{fn_name}' not allowed for skill {skill.command}"}, []
 
     fn = _tool_registry.get(fn_name)
     if fn is None:
-        return {"error": f"tool '{fn_name}' not registered"}, None
+        return {"error": f"tool '{fn_name}' not registered"}, []
 
     try:
         result = await fn(args=fn_args, ctx=ctx)
     except Exception as e:
         logger.exception("skill_runner tool %s raised: %s", fn_name, e)
-        return {"error": str(e)[:240]}, None
+        return {"error": str(e)[:240]}, []
 
-    ui_command: Optional[dict[str, Any]] = None
-    if isinstance(result, dict) and "_ui_command" in result:
-        ui_command = result.get("_ui_command")
-        result = {k: v for k, v in result.items() if k != "_ui_command"}
-    return result, ui_command
+    ui_commands: list[dict[str, Any]] = []
+    if isinstance(result, dict):
+        if "_ui_commands" in result:
+            collected = result.get("_ui_commands") or []
+            if isinstance(collected, list):
+                ui_commands.extend([c for c in collected if c])
+            result = {
+                k: v for k, v in result.items()
+                if k not in ("_ui_command", "_ui_commands")
+            }
+        elif "_ui_command" in result:
+            single = result.get("_ui_command")
+            if single:
+                ui_commands.append(single)
+            result = {k: v for k, v in result.items() if k != "_ui_command"}
+    return result, ui_commands
 
 
 async def run_skill_stream(
@@ -308,7 +320,7 @@ async def run_skill_stream(
                         "event": "tool_started",
                         "data": {"name": fn_name, "round": round_idx + 1},
                     }
-                    tool_result, ui_command = await _execute_tool_call(
+                    tool_result, ui_commands = await _execute_tool_call(
                         fn_name, fn_args, skill, sub_ctx
                     )
                     yield {
@@ -320,7 +332,10 @@ async def run_skill_stream(
                             "preview": json.dumps(tool_result, ensure_ascii=False, default=str)[:200],
                         },
                     }
-                    if ui_command:
+                    # Reenvía CADA ui_command como evento SSE separado · el
+                    # frontend handler los dispatcha en orden. Esto cubre el
+                    # caso de delegate_to que acumula varios del sub-agente.
+                    for ui_command in ui_commands:
                         yield {"event": "ui_command", "data": ui_command}
                     messages.append({
                         "role": "tool",
@@ -540,8 +555,9 @@ async def run_skill(
                     except json.JSONDecodeError:
                         fn_args = {}
                     tool_result, _ui = await _execute_tool_call(fn_name, fn_args, skill, sub_ctx)
-                    # Non-streaming path has no SSE channel for ui_command, so we
-                    # drop it · only the streaming path forwards canvas/UI ops.
+                    # Non-streaming path has no SSE channel · _ui se descarta
+                    # (los callers de run_skill no-stream son admin/test paths
+                    # que no necesitan reflejo visual en el navegador).
                     tool_calls_log.append({
                         "name": fn_name,
                         "args_keys": list(fn_args.keys()),

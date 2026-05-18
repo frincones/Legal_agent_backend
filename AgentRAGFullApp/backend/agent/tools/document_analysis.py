@@ -401,6 +401,7 @@ async def extract_document_entities_tool(args: dict, ctx: dict) -> dict:
         )
 
     duration_ms = int((time.time() - started) * 1000)
+    from agent.tools._ui_events import ui_data_changed
     return {
         "id": extraction_id,
         "cached": False,
@@ -412,4 +413,10 @@ async def extract_document_entities_tool(args: dict, ctx: dict) -> dict:
         "matter_parties_inserted": inserted,
         "duration_ms": duration_ms,
         "hechos_clave": result.get("hechos_clave"),
+        "_ui_command": ui_data_changed(
+            "documents", matter_id=str(doc["matter_id"]) if doc.get("matter_id") else None,
+            firm_id=firm_id, op="update",
+            extra={"document_id": str(document_id), "extraction_id": extraction_id,
+                   "parties_inserted": inserted},
+        ),
     }

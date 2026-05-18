@@ -120,15 +120,19 @@ class BaseSubAgent(ABC):
                         logger.exception("subagent %s tool %s raised: %s", self.name, fn_name, e)
                         tool_result = {"error": str(e)}
 
-                # _ui_command no aplica para subagent calls (no hay browser asociado),
-                # lo strippeamos para no contaminar el contexto.
+                # Si la tool emitió _ui_command (canvas_*, data_changed, etc.),
+                # lo extraemos para que el orquestador padre lo reenvíe al
+                # frontend. Lo eliminamos del result para no contaminar el
+                # contexto del modelo (es ruido implementacional).
+                ui_cmd = None
                 if isinstance(tool_result, dict) and "_ui_command" in tool_result:
-                    tool_result.pop("_ui_command", None)
+                    ui_cmd = tool_result.pop("_ui_command", None)
 
                 tool_calls_log.append({
                     "name": fn_name,
                     "args": fn_args,
                     "result_preview": _trim(tool_result, 240),
+                    "_ui_command": ui_cmd,
                 })
                 messages.append({
                     "role": "tool",

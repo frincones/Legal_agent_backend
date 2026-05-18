@@ -133,10 +133,15 @@ async def apply_redline_tool(args: dict, ctx: dict) -> dict:
             len(accept_set), result_text, ctx.get("user_id"), redline_set_id,
         )
 
+    from agent.tools._ui_events import ui_data_changed
     return {
         "ok": True,
         "applied_count": len(accept_set),
         "summary": f"Aplicados {len(accept_set)} de {len(redlines)} redlines",
+        "_ui_command": ui_data_changed(
+            "redlines", matter_id=ctx.get("matter_id"), firm_id=ctx.get("firm_id"),
+            op="update", extra={"redline_set_id": redline_set_id, "status": "applied"},
+        ),
     }
 
 
@@ -158,4 +163,12 @@ async def reject_redline_tool(args: dict, ctx: dict) -> dict:
         )
     if not r:
         return {"ok": False, "error": "redline set no encontrado"}
-    return {"ok": True, "summary": "Todos los redlines rechazados · texto original preservado"}
+    from agent.tools._ui_events import ui_data_changed
+    return {
+        "ok": True,
+        "summary": "Todos los redlines rechazados · texto original preservado",
+        "_ui_command": ui_data_changed(
+            "redlines", matter_id=ctx.get("matter_id"), firm_id=ctx.get("firm_id"),
+            op="update", extra={"redline_set_id": redline_set_id, "status": "rejected"},
+        ),
+    }

@@ -508,4 +508,11 @@ async def capture_lead_tool(args: dict, ctx: dict) -> dict:
             args.get("source") or "voice", args.get("materia"), args.get("notes"),
             ctx.get("user_id"),
         )
-    return {"id": str(row["id"]), "nombre": row["nombre"]}
+    from agent.tools._ui_events import ui_data_changed
+    return {
+        "id": str(row["id"]), "nombre": row["nombre"],
+        "_ui_command": ui_data_changed(
+            "leads", firm_id=firm_id, op="create",
+            extra={"lead_id": str(row["id"])},
+        ),
+    }

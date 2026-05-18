@@ -618,6 +618,23 @@ async def send_for_signature_tool(args: dict, ctx: dict) -> dict:
     )
     env = await create_envelope(body, principal)  # type: ignore
     sent = await send_envelope(env["id"], principal)  # type: ignore
+    if isinstance(sent, dict):
+        from agent.tools._ui_events import ui_data_changed
+        # Derive matter_id best-effort from document for client-side targeting.
+        from utils.db import get_storage as _get
+        try:
+            _s = await _get()
+            async with _s.pool.acquire() as _c:
+                _mid = await _c.fetchval(
+                    "select matter_id from matter_documents where id = $1::uuid",
+                    document_id,
+                )
+        except Exception:
+            _mid = None
+        sent["_ui_command"] = ui_data_changed(
+            "signatures", matter_id=str(_mid) if _mid else None, firm_id=firm_id,
+            op="create", extra={"envelope_id": env.get("id")},
+        )
     return sent
 
 

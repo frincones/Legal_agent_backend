@@ -546,9 +546,14 @@ async def generate_invoice_tool(args: dict, ctx: dict) -> dict:
         CreateRequest(matter_id=matter_id, since=since, until=until, tax_pct=tax_pct),
         principal=principal,  # type: ignore
     )
+    from agent.tools._ui_events import ui_data_changed
     return {
         "invoice_id": inv["id"],
         "number": inv["number"],
         "total_cop": inv["total_cop"],
         "status": inv["status"],
+        "_ui_command": ui_data_changed(
+            "invoices", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"invoice_id": inv["id"], "number": inv["number"]},
+        ),
     }

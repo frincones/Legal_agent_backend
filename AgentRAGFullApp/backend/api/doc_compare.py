@@ -277,4 +277,11 @@ async def compare_documents_tool(args: dict, ctx: dict) -> dict:
         user_id=user_id,
         role=ctx.get("role", "lawyer"),
     )
-    return await compare(CompareRequest(document_a_id=a, document_b_id=b), principal)  # type: ignore
+    result = await compare(CompareRequest(document_a_id=a, document_b_id=b), principal)  # type: ignore
+    if isinstance(result, dict):
+        from agent.tools._ui_events import ui_data_changed
+        result["_ui_command"] = ui_data_changed(
+            "documents", matter_id=ctx.get("matter_id"), firm_id=firm_id, op="update",
+            extra={"comparison_id": result.get("id"), "kind": "comparison"},
+        )
+    return result

@@ -249,6 +249,18 @@ async def lifespan(app: FastAPI):
         register_tool("complete_task", complete_task_tool)
         register_tool("what_today", what_today_tool)
         register_tool("what_is_my_priority", what_is_my_priority_tool)
+        # Sprint M · Matter management (5 tools) · cubren huecos detectados
+        # en la auditoría agent-ui-sync: set_priority, tag, etapa, archive,
+        # create_matter. Todos emiten data_changed con resource='matters'.
+        from agent.tools.matter_management import (
+            set_matter_priority_tool, tag_matter_tool,
+            update_matter_etapa_tool, archive_matter_tool, create_matter_tool,
+        )
+        register_tool("set_matter_priority", set_matter_priority_tool)
+        register_tool("tag_matter", tag_matter_tool)
+        register_tool("update_matter_etapa", update_matter_etapa_tool)
+        register_tool("archive_matter", archive_matter_tool)
+        register_tool("create_matter", create_matter_tool)
         # Sprint 18 · Analytics ejecutivos
         from agent.tools.analytics_voice import (
             firm_revenue_tool, lawyer_performance_tool,

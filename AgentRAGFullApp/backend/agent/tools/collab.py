@@ -78,11 +78,16 @@ async def add_comment_tool(args: dict, ctx: dict) -> dict:
         except Exception as e:
             logger.debug("voice add_comment push failed: %s", e)
 
+    from agent.tools._ui_events import ui_data_changed
     return {
         "ok": True,
         "id": str(row["id"]),
         "mentions_count": len(mention_ids),
         "message": f"Comentario guardado{' · mencionaste a ' + str(len(mention_ids)) + ' persona(s)' if mention_ids else ''}",
+        "_ui_command": ui_data_changed(
+            "comments", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"comment_id": str(row["id"]), "mentions_count": len(mention_ids)},
+        ),
     }
 
 
@@ -111,7 +116,14 @@ async def resolve_comment_tool(args: dict, ctx: dict) -> dict:
         )
     if not row:
         return {"error": "Comentario no encontrado"}
-    return {"ok": True, "message": "Comentario resuelto"}
+    from agent.tools._ui_events import ui_data_changed
+    return {
+        "ok": True, "message": "Comentario resuelto",
+        "_ui_command": ui_data_changed(
+            "comments", firm_id=firm_id, op="update",
+            extra={"comment_id": comment_id, "resolved": True},
+        ),
+    }
 
 
 async def show_activity_tool(args: dict, ctx: dict) -> dict:

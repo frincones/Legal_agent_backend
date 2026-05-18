@@ -16,6 +16,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
+from agent.tools._ui_events import ui_data_changed
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,6 +78,10 @@ async def create_task_tool(args: dict, ctx: dict) -> dict:
         "due_at": row["due_at"].isoformat() if row["due_at"] else None,
         "message": f"Tarea creada · {row['title']}"
                    + (f" para {row['due_at'].strftime('%d-%b %H:%M')}" if row["due_at"] else ""),
+        "_ui_command": ui_data_changed(
+            "tasks", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"task_id": str(row["id"])},
+        ),
     }
 
 
@@ -101,7 +107,13 @@ async def complete_task_tool(args: dict, ctx: dict) -> dict:
         )
     if not row:
         return {"error": "Tarea no encontrada"}
-    return {"ok": True, "message": f"Tarea completada · {row['title']}"}
+    return {
+        "ok": True, "message": f"Tarea completada · {row['title']}",
+        "_ui_command": ui_data_changed(
+            "tasks", firm_id=firm_id, op="update",
+            extra={"task_id": task_id, "completed": True},
+        ),
+    }
 
 
 async def what_today_tool(args: dict, ctx: dict) -> dict:

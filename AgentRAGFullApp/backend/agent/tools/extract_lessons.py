@@ -292,7 +292,7 @@ async def extract_lesson_tool(args: dict, ctx: dict) -> dict:
     if not matter_id:
         return {"error": "Necesito un matter_id (estás en algún caso?)"}
     try:
-        return await extract_lesson_from_matter(
+        result = await extract_lesson_from_matter(
             firm_id=firm_id,
             matter_id=matter_id,
             user_id=user_id,
@@ -303,6 +303,13 @@ async def extract_lesson_tool(args: dict, ctx: dict) -> dict:
     except Exception as e:
         logger.exception("extract_lesson_tool failed")
         return {"error": f"Fallo extracción: {e}"}
+    if isinstance(result, dict) and not result.get("error"):
+        from agent.tools._ui_events import ui_data_changed
+        result["_ui_command"] = ui_data_changed(
+            "lessons", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"lesson_id": result.get("lesson_id")},
+        )
+    return result
 
 
 # ----------------------------------------------------------------

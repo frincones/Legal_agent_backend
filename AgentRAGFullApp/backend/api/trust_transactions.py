@@ -404,7 +404,14 @@ async def record_trust_deposit_tool(args: dict, ctx: dict) -> dict:
             args.get("description") or f"Depósito de {payer or 'cliente'}",
             payer or None, user_id,
         )
-    return {"id": str(row["id"]), "amount_cop": float(row["amount_cop"]), "matter_id": matter_id}
+    from agent.tools._ui_events import ui_data_changed
+    return {
+        "id": str(row["id"]), "amount_cop": float(row["amount_cop"]), "matter_id": matter_id,
+        "_ui_command": ui_data_changed(
+            "trust_transactions", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"transaction_id": str(row["id"]), "kind": "deposit"},
+        ),
+    }
 
 
 async def record_trust_payment_tool(args: dict, ctx: dict) -> dict:
@@ -457,4 +464,12 @@ async def record_trust_payment_tool(args: dict, ctx: dict) -> dict:
             args.get("description") or f"Pago a {payee or 'tercero'}",
             payee or None, user_id,
         )
-    return {"id": str(row["id"]), "amount_cop": amount, "balance_restante_cop": float(balance or 0) - amount}
+    from agent.tools._ui_events import ui_data_changed
+    return {
+        "id": str(row["id"]), "amount_cop": amount,
+        "balance_restante_cop": float(balance or 0) - amount,
+        "_ui_command": ui_data_changed(
+            "trust_transactions", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"transaction_id": str(row["id"]), "kind": "payment"},
+        ),
+    }

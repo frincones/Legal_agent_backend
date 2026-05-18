@@ -122,6 +122,7 @@ async def draft_pleading_tool(args: dict, ctx: dict) -> dict:
     except Exception as e:
         logger.warning("draft_pleading persist failed: %s", e)
 
+    from agent.tools._ui_events import ui_data_changed
     return {
         "id": doc_id,
         "kind": kind,
@@ -130,6 +131,10 @@ async def draft_pleading_tool(args: dict, ctx: dict) -> dict:
         "content": content,
         "citations_count": len(citations),
         "ts": datetime.now(timezone.utc).isoformat(),
+        "_ui_command": ui_data_changed(
+            "documents", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"document_id": doc_id, "kind": kind},
+        ),
     }
 
 

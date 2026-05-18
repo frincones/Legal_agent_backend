@@ -200,9 +200,14 @@ async def log_expense_tool(args: dict, ctx: dict) -> dict:
             """,
             firm_id, matter_id, user_id, kind, amount, description,
         )
+    from agent.tools._ui_events import ui_data_changed
     return {
         "id": str(row["id"]),
         "amount_cop": float(row["amount_cop"]),
         "kind": row["kind"],
         "matter_id": matter_id,
+        "_ui_command": ui_data_changed(
+            "expenses", matter_id=matter_id, firm_id=firm_id, op="create",
+            extra={"expense_id": str(row["id"])},
+        ),
     }

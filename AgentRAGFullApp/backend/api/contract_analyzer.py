@@ -273,5 +273,15 @@ async def stats(principal: Principal = Depends(get_current_firm)):
 async def analyze_contract_voice_tool(args: dict, ctx: dict) -> dict:
     """Voice: 'LexAI, analiza el contrato que acabo de subir'."""
     from agent.tools.contract_analyzer import analyze_contract_tool
+    from agent.tools._ui_events import ui_data_changed
     result = await analyze_contract_tool(args, ctx)
+    if isinstance(result, dict) and not result.get("error"):
+        result["_ui_command"] = ui_data_changed(
+            "documents", matter_id=ctx.get("matter_id"), firm_id=ctx.get("firm_id"),
+            op="update", extra={
+                "document_id": args.get("document_id"),
+                "analysis_id": result.get("id"),
+                "kind": "contract_analysis",
+            },
+        )
     return result
