@@ -120,6 +120,14 @@ TOOL_ARG_OVERRIDES: dict[str, dict[str, Any]] = {
                               "amount_cop": 50000, "description": "test"},
     "run_automation": {"rule_id": "b46cd027-96ef-4dc4-bccf-f29af71fb76e"},
     "check_signature_status": {"envelope_id": "e03af8b9-0b1e-44f7-a604-ddf5900997dd"},
+    # send_for_signature requires signer_name + signer_email (Pydantic validation).
+    # External provider (DocuSign/HelloSign) not configured · expected to error
+    # at provider-call step, but at least the validator must pass.
+    "send_for_signature": {
+        "document_id": "{document_id}",
+        "signer_name": "Juan Pérez",
+        "signer_email": "juan.perez@test.lexai.co",
+    },
     "import_csv": {"job_id": "489a99fc-8a58-4c4d-b510-ec3684d4edd9"},
     "wizard_session_status": {"session_token": "test-session-token"},
     # apply/reject_redline use canvas_redlines table (NOT redline_sets which
@@ -245,6 +253,10 @@ EXPECTED_PASS_PATTERNS: dict[str, list[str]] = {
     "query_audit_logs": ["solo socios", "admin", "permission"],   # RBAC works
     "search_suin_juriscol": ["SUIN http 404", "503", "timeout"],  # external API
     "fetch_dof_co_publicacion": ["DOF http 404", "503", "timeout"],
+    # External providers · expected to fail if not configured in env
+    "send_whatsapp": ["no configurado", "not configured", "missing credentials"],
+    "send_for_signature": ["no configurado", "not configured", "missing credentials",
+                            "provider", "envelope"],
 }
 
 
