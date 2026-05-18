@@ -105,8 +105,13 @@ async def _execute_one_tool(
 
     soft_error = None
     if isinstance(result, dict):
-        if "error" in result:
-            soft_error = str(result["error"])[:500]
+        # Use .get() so a present-but-None "error" key (which the subagent
+        # runner returns on success) doesn't get coerced to "None" string.
+        err = result.get("error")
+        if err:
+            soft_error = str(err)[:500]
+        elif result.get("ok") is False:
+            soft_error = str(result.get("reason") or result.get("detail") or "ok=false")[:500]
 
     return TestToolResult(
         ok=soft_error is None,

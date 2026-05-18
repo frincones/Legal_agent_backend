@@ -70,7 +70,13 @@ TOOL_ARG_OVERRIDES: dict[str, dict[str, Any]] = {
     "analyze_contract": {"document_id": "{document_id}"},
     "check_doc_consistency": {
         "matter_document_id": "{document_id}",
-        "document_text": "Documento de prueba con fecha 15 de enero de 2024 y monto $5.000.000.",
+        "document_text": (
+            "Contrato de trabajo a término indefinido suscrito el 15 de enero de 2024 "
+            "entre la empresa Bavaria S.A., identificada con NIT 860.005.224-1, y el señor "
+            "Juan Pérez, identificado con cédula de ciudadanía 1.234.567.890, por un salario "
+            "mensual de dos millones de pesos colombianos. La fecha de terminación está "
+            "prevista para diciembre de 2026 con prestaciones sociales completas según el CST."
+        ),
     },
     "score_evidence": {
         "matter_document_id": "{document_id}",
@@ -116,9 +122,10 @@ TOOL_ARG_OVERRIDES: dict[str, dict[str, Any]] = {
     "check_signature_status": {"envelope_id": "e03af8b9-0b1e-44f7-a604-ddf5900997dd"},
     "import_csv": {"job_id": "489a99fc-8a58-4c4d-b510-ec3684d4edd9"},
     "wizard_session_status": {"session_token": "test-session-token"},
-    "apply_redline": {"redline_set_id": "695578e4-8242-4271-8947-f08c57a89f82"},
-    "reject_redline": {"redline_id": "cd1fd1c4-25e0-4451-b04f-4a0d5547b5e7",
-                        "redline_set_id": "695578e4-8242-4271-8947-f08c57a89f82"},
+    # apply/reject_redline use canvas_redlines table (NOT redline_sets which
+    # was a misnamed exploration · canvas_redlines is the production table).
+    "apply_redline": {"redline_set_id": "66f2f675-6b10-4a5c-ba55-9c2633f1c3f8"},
+    "reject_redline": {"redline_set_id": "66f2f675-6b10-4a5c-ba55-9c2633f1c3f8"},
     # Documents with substantial text so length validators pass
     "analyze_contract": {"document_id": "{document_id}"},  # uses real doc with content_text
     # Documents · ensure doc text is >100 chars for check_doc_consistency
