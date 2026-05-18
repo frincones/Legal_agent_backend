@@ -696,6 +696,46 @@ def _format_user_message(skill: SkillDefinition, input_data: dict[str, Any]) -> 
         lines.append(f"\n**Argumentos:**\n```json\n{json.dumps(input_data['args'], indent=2, ensure_ascii=False)}\n```")
     if not lines:
         lines.append(f"```json\n{json.dumps(input_data, indent=2, ensure_ascii=False)[:3000]}\n```")
+
+    # Intent-detection hint · forza al LLM a usar add_matter_note cuando el
+    # prompt tiene señales fuertes de "agregar nota al caso" (no al documento).
+    # Sin esto, gpt-4o se confunde y elige tag_matter, canvas_append, o
+    # ui_open_matter_tab. El hint sale al final para que sea lo último que el
+    # modelo lea antes de decidir tools.
+    prompt_raw = (input_data.get("prompt") or "").lower()
+    has_matter_id = bool(input_data.get("matter_id"))
+    if prompt_raw and has_matter_id:
+        canvas_words = ("documento", "demanda", "contestación", "contestacion",
+                        "contrato", "borrador", "redacta", "redactar", "escrito",
+                        "cláusula", "clausula")
+        note_triggers = (
+            "agrega una nota", "agregar una nota", "agrega nota",
+            "crea una nota", "crear una nota", "crea nota",
+            "añade una nota", "anade una nota", "añade nota",
+            "anota ", "anotar ", "anotación", "anotacion",
+            "agrega notas", "crea notas", "añade notas",
+            "pasos pendientes", "recordatorio", "observación",
+            "observacion del caso", "dentro del caso", "al expediente",
+            "en el expediente",
+        )
+        in_canvas_tab = (input_data.get("context") or {}).get("active_tab") == "canvas"
+        looks_like_note = any(t in prompt_raw for t in note_triggers)
+        looks_like_canvas = any(w in prompt_raw for w in canvas_words)
+        if looks_like_note and not looks_like_canvas and not in_canvas_tab:
+            lines.append(
+                "\n---\n"
+                "**🎯 INTENT DETECTADO · ALTA CONFIANZA:** el usuario quiere "
+                "AGREGAR UNA NOTA al expediente (módulo Notas, no el documento "
+                "del canvas).\n\n"
+                "**Acción obligatoria:** llama `add_matter_note(matter_id, body)` "
+                "DIRECTAMENTE con el matter_id de arriba. NO llames "
+                "`tag_matter`, `canvas_append`, `canvas_set_text`, "
+                "`ui_open_matter_tab`, `ui_open_command_palette`, "
+                "`open_matter_context`, `list_my_matters`, "
+                "`list_upcoming_deadlines` ni ninguna otra tool de lookup. "
+                "Si no estás seguro del body exacto, infiérelo del prompt del "
+                "usuario y ejecuta · luego confirma brevemente en 1 línea."
+            )
     return "\n".join(lines)
 
 
