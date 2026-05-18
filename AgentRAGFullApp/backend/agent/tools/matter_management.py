@@ -26,7 +26,17 @@ from agent.tools._ui_events import ui_data_changed
 logger = logging.getLogger(__name__)
 
 
+# El enum DB es solo (alta|media|baja). Mapeamos sinónimos antes de
+# insertar para que el LLM pueda usar términos comunes como "urgente" o
+# "crítica" sin romper la insertion.
 VALID_PRIORITIES = {"baja", "media", "alta", "critica", "urgente"}
+PRIORITY_DB_MAP = {
+    "baja": "baja",
+    "media": "media",
+    "alta": "alta",
+    "critica": "alta",
+    "urgente": "alta",
+}
 VALID_MATERIAS = {
     "civil", "comercial", "laboral", "familia", "penal", "administrativo",
     "tributario", "constitucional", "ambiental", "otro",
@@ -45,7 +55,7 @@ async def set_matter_priority_tool(args: dict, ctx: dict) -> dict:
             "error": f"priority inválida · usa una de {sorted(VALID_PRIORITIES)}",
         }
     # Normalize 'urgente' → 'critica' to match enum if needed.
-    db_priority = "critica" if priority == "urgente" else priority
+    db_priority = PRIORITY_DB_MAP.get(priority, "media")
 
     from utils.db import get_storage
     storage = await get_storage()
@@ -281,7 +291,7 @@ async def create_matter_tool(args: dict, ctx: dict) -> dict:
     priority = (args.get("priority") or "media").strip().lower()
     if priority not in VALID_PRIORITIES:
         priority = "media"
-    db_priority = "critica" if priority == "urgente" else priority
+    db_priority = PRIORITY_DB_MAP.get(priority, "media")
 
     from utils.db import get_storage
     storage = await get_storage()
@@ -317,13 +327,21 @@ async def create_matter_tool(args: dict, ctx: dict) -> dict:
             if existing:
                 client_id = str(existing["id"])
             else:
+                # Heurística para tipo: si es empresa/SA/S.A.S/Ltda/SAS, → 'empresa'.
+                tipo = "persona"
+                if any(k in client_name.lower() for k in (
+                    "s.a.", "s.a", "sas", "s.a.s", "ltda", "ltd",
+                    "seguros", "banco", "empresa", "sociedad", "corporaci",
+                    "compañ", "compania", "inc.", "corp",
+                )):
+                    tipo = "empresa"
                 new_client = await conn.fetchrow(
                     """
-                    insert into clients (firm_id, nombre)
-                    values ($1::uuid, $2)
+                    insert into clients (firm_id, nombre, tipo)
+                    values ($1::uuid, $2, $3)
                     returning id
                     """,
-                    firm_id, client_name,
+                    firm_id, client_name, tipo,
                 )
                 client_id = str(new_client["id"])
 

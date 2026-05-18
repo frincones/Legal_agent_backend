@@ -373,6 +373,9 @@ async def run_skill_stream(
                 # canvas text in ctx so they can validate the needle BEFORE
                 # claiming success to the LLM.
                 "document_text": input_data.get("document_text"),
+                # Pass user prompt for tools that need to parse args when the
+                # LLM didn't extract them explicitly (amounts, ids, body).
+                "user_prompt": input_data.get("prompt"),
             }
             # Inyecta UI context (current_path, active_tab, canvas_has_content)
             # cuando el frontend lo pasa · permite que tools y prompt sepan en
@@ -658,6 +661,7 @@ async def run_skill(
             "document_id": document_id,
             "subagent_chain": ["chat_skill"],
             "document_text": input_data.get("document_text"),
+            "user_prompt": input_data.get("prompt"),
         }
         ui_ctx = input_data.get("context")
         if isinstance(ui_ctx, dict):
@@ -892,6 +896,20 @@ def _detect_forced_tool(
         (r"\btrackea\b.*\bhoras\b", "track_time"),
         (r"\b(registra|anota|agrega)\s+gasto\b", "log_expense"),
         (r"\b(genera|crea)\s+factura\b", "generate_invoice"),
+        # --- "Ver detalle/contexto del caso" → open_matter_context
+        (r"\bmu[ée]strame\s+(el\s+)?(detalle|caso|expediente|contexto)\b", "open_matter_context"),
+        (r"\b(ver|veamos)\s+(el\s+)?(detalle|expediente|caso)\b", "open_matter_context"),
+        (r"\bdetalle\s+del\s+caso\b", "open_matter_context"),
+        (r"\babre\s+(el\s+)?caso\b", "open_matter_context"),
+        # --- Marcar deadline como completado
+        (r"\bmarca\s+como\s+completad[ao]\s+.{0,40}\b(audiencia|plazo|deadline|conciliaci[óo]n)\b", "mark_deadline_done"),
+        (r"\bcompletar?\s+(la\s+|el\s+)?(audiencia|plazo)\b", "mark_deadline_done"),
+        (r"\b(audiencia|plazo)\s+(ya\s+)?(cumplid[ao]|hech[ao]|complet[ao]|realizad[ao])\b", "mark_deadline_done"),
+        # --- Completar tarea
+        (r"\bmarca\s+como\s+completad[ao]\s+.{0,40}\btarea\b", "complete_task"),
+        (r"\bcomplet(a|ar)\s+(la\s+)?tarea\b", "complete_task"),
+        # --- Resolver comentario
+        (r"\b(resuelve|marca\s+como\s+resuelto)\s+(el\s+)?comentario\b", "resolve_comment"),
         # --- Predicción / riesgos / refundamentación
         (r"\bpredice\b", "predict_outcome"),
         (r"\bpredicción\b", "predict_outcome"),

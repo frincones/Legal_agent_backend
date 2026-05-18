@@ -182,11 +182,27 @@ async def log_expense_tool(args: dict, ctx: dict) -> dict:
     firm_id = ctx.get("firm_id")
     user_id = ctx.get("user_id")
     matter_id = args.get("matter_id") or ctx.get("matter_id")
-    amount = float(args.get("amount_cop") or 0)
+    amount = float(args.get("amount_cop") or args.get("amount") or 0)
     kind = (args.get("kind") or "otro").strip().lower()
-    description = (args.get("description") or "").strip()
+    description = (args.get("description") or args.get("body")
+                   or args.get("text") or "").strip()
+    # Si no llega amount, intenta parsearlo del prompt (e.g. "150000 pesos").
+    if not amount:
+        import re
+        prompt_str = (args.get("prompt") or ctx.get("user_prompt") or "")
+        m = re.search(r"(\d{1,3}(?:[.,]?\d{3})*)\s*(?:pesos|cop|\$)", prompt_str.lower())
+        if not m:
+            m = re.search(r"\$\s*(\d{1,3}(?:[.,]?\d{3})*)", prompt_str)
+        if m:
+            try:
+                amount = float(m.group(1).replace(".", "").replace(",", ""))
+            except Exception:
+                pass
+        if not description and prompt_str:
+            description = prompt_str[:200]
     if not (firm_id and matter_id and amount > 0):
-        return {"error": "firm_id, matter_id, amount_cop>0 requeridos"}
+        return {"error": "firm_id, matter_id, amount_cop>0 requeridos",
+                "debug_args": list(args.keys())}
     from utils.db import get_storage
     storage = await get_storage()
     if not hasattr(storage, "pool"):

@@ -30,9 +30,22 @@ async def create_task_tool(args: dict, ctx: dict) -> dict:
     matter_id = args.get("matter_id") or ctx.get("matter_id")
     if not firm_id:
         return {"error": "firm_id requerido"}
-    title = (args.get("title") or "").strip()
+    # Tolerante: title, description, body, prompt o user_prompt del ctx.
+    title = (
+        args.get("title") or args.get("description") or args.get("body")
+        or args.get("text") or args.get("prompt")
+        or ctx.get("user_prompt") or ""
+    ).strip()
     if not title:
         return {"error": "Necesito un título para la tarea"}
+    # Si recibió el prompt entero (>120 chars), recórtalo a la primera
+    # oración o a 120 chars para que sea un título usable.
+    if len(title) > 120:
+        m = title.split(".", 1)[0].strip()
+        if m and len(m) < 120:
+            title = m
+        else:
+            title = title[:117] + "..."
     description = args.get("description") or None
     priority = (args.get("priority") or "normal").strip().lower()
     if priority not in VALID_PRIORITY:
@@ -89,8 +102,36 @@ async def complete_task_tool(args: dict, ctx: dict) -> dict:
     firm_id = ctx.get("firm_id")
     user_id = ctx.get("user_id")
     task_id = (args.get("task_id") or args.get("id") or "").strip()
-    if not (firm_id and task_id):
-        return {"error": "Necesito firm_id y task_id"}
+    matter_id = args.get("matter_id") or ctx.get("matter_id")
+    if not firm_id:
+        return {"error": "firm_id requerido"}
+    # Si no se pasa task_id, intenta inferir la última task abierta del
+    # matter (o del usuario si no hay matter).
+    if not task_id:
+        from utils.db import get_storage
+        storage = await get_storage()
+        if not hasattr(storage, "pool"):
+            return {"error": "Storage no disponible"}
+        async with storage.pool.acquire() as conn:
+            if matter_id:
+                row = await conn.fetchrow(
+                    """select id from tasks
+                        where firm_id=$1::uuid and matter_id=$2::uuid
+                          and status != 'done'
+                        order by created_at desc limit 1""",
+                    firm_id, matter_id,
+                )
+            else:
+                row = await conn.fetchrow(
+                    """select id from tasks
+                        where firm_id=$1::uuid and assignee_user_id=$2::uuid
+                          and status != 'done'
+                        order by created_at desc limit 1""",
+                    firm_id, user_id,
+                )
+        if not row:
+            return {"error": "No encontré tareas abiertas para completar"}
+        task_id = str(row["id"])
     from utils.db import get_storage
     storage = await get_storage()
     if not hasattr(storage, "pool"):

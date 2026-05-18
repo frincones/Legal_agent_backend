@@ -83,7 +83,13 @@ async def add_to_kb_voice_tool(args: dict, ctx: dict) -> dict:
     if not firm_id:
         return {"error": "firm_id requerido"}
     title = (args.get("title") or "").strip()
-    body = (args.get("body") or args.get("text") or "").strip()
+    body = (args.get("body") or args.get("text") or args.get("content")
+            or args.get("prompt") or ctx.get("user_prompt") or "").strip()
+    # Tolerante: si solo viene body (frecuente · el LLM da el contenido pero
+    # no title), genera title de la primera frase o primeros 60 chars.
+    if body and not title:
+        first_sentence = body.split(".", 1)[0].strip()
+        title = first_sentence[:80] if first_sentence else body[:60]
     if not title or not body:
         return {"error": "Necesito title y body"}
     kind = (args.get("kind") or "note").strip()

@@ -21,7 +21,21 @@ async def validate_identity_tool(args: dict, ctx: dict) -> dict:
     matter_id = args.get("matter_id") or ctx.get("matter_id")
     if not firm_id:
         return {"error": "firm_id requerido"}
-    subject_id_value = (args.get("subject_id_value") or args.get("cedula") or args.get("nit") or "").strip()
+    subject_id_value = (args.get("subject_id_value") or args.get("cedula")
+                         or args.get("nit") or args.get("id_value") or "").strip()
+    # Parser del prompt: extrae cédula/NIT cuando el LLM no los pasa explícito.
+    if not subject_id_value:
+        import re
+        prompt_str = (args.get("prompt") or ctx.get("user_prompt") or "")
+        # NIT 860.123.456-7 o 860123456 o cédula 1234567890
+        m = re.search(r"\b(?:nit|c[ée]dula|cc|cedula)\s*[:\.]?\s*([0-9.\-]{6,20})", prompt_str.lower())
+        if m:
+            subject_id_value = m.group(1).replace(".", "").replace("-", "").strip()
+        else:
+            # Fallback: cualquier número largo (7+ dígitos)
+            m = re.search(r"\b(\d{7,15})\b", prompt_str)
+            if m:
+                subject_id_value = m.group(1)
     if not subject_id_value:
         return {"error": "Necesito subject_id_value (cédula/NIT)"}
     subject_kind = (args.get("subject_kind") or "persona").strip().lower()

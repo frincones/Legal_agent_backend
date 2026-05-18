@@ -257,9 +257,32 @@ async def add_matter_deadline_tool(args: dict, ctx: dict) -> dict:
 async def mark_deadline_done_tool(args: dict, ctx: dict) -> dict:
     """Check off a deadline as completed."""
     firm_id = ctx.get("firm_id")
+    matter_id = args.get("matter_id") or ctx.get("matter_id")
     deadline_id = args.get("deadline_id")
-    if not (firm_id and deadline_id):
-        return _err("deadline_id required")
+    if not firm_id:
+        return _err("firm_id required")
+    if not deadline_id:
+        # Infiere el deadline próximo no-completado del matter (o el más reciente).
+        pool = await _pool()
+        async with pool.acquire() as conn:
+            if matter_id:
+                row = await conn.fetchrow(
+                    """select id from matter_deadlines
+                        where firm_id=$1::uuid and matter_id=$2::uuid
+                          and completado is not true
+                        order by fecha asc limit 1""",
+                    firm_id, matter_id,
+                )
+            else:
+                row = await conn.fetchrow(
+                    """select id from matter_deadlines
+                        where firm_id=$1::uuid and completado is not true
+                        order by fecha asc limit 1""",
+                    firm_id,
+                )
+        if not row:
+            return _err("no encontré deadlines abiertos")
+        deadline_id = str(row["id"])
 
     pool = await _pool()
     async with pool.acquire() as conn:
@@ -295,7 +318,12 @@ async def add_matter_note_tool(args: dict, ctx: dict) -> dict:
     firm_id = ctx.get("firm_id")
     user_id = ctx.get("user_id")
     matter_id = args.get("matter_id") or ctx.get("matter_id")
-    body = (args.get("body") or "").strip()
+    # Tolerante: body, text, content, note, prompt o user_prompt del ctx.
+    body = (
+        args.get("body") or args.get("text") or args.get("content")
+        or args.get("note") or args.get("prompt")
+        or ctx.get("user_prompt") or ""
+    ).strip()
     if not (firm_id and user_id and matter_id and body):
         return _err("matter_id and body required")
 

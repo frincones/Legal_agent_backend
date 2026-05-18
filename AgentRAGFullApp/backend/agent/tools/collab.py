@@ -29,7 +29,11 @@ async def add_comment_tool(args: dict, ctx: dict) -> dict:
     matter_document_id = args.get("matter_document_id")
     if not firm_id:
         return {"error": "firm_id requerido"}
-    body = (args.get("body") or args.get("text") or "").strip()
+    # Tolerante: body, text, content, prompt o user_prompt del ctx.
+    body = (
+        args.get("body") or args.get("text") or args.get("content")
+        or args.get("prompt") or ctx.get("user_prompt") or ""
+    ).strip()
     if not body:
         return {"error": "Necesito el texto del comentario"}
 
@@ -98,8 +102,33 @@ async def resolve_comment_tool(args: dict, ctx: dict) -> dict:
     if not firm_id:
         return {"error": "firm_id requerido"}
     comment_id = (args.get("comment_id") or args.get("id") or "").strip()
+    matter_id = args.get("matter_id") or ctx.get("matter_id")
     if not comment_id:
-        return {"error": "Necesito comment_id"}
+        # Infier el último comentario sin resolver del matter o user.
+        from utils.db import get_storage
+        storage = await get_storage()
+        if not hasattr(storage, "pool"):
+            return {"error": "Storage no disponible"}
+        async with storage.pool.acquire() as conn:
+            if matter_id:
+                row = await conn.fetchrow(
+                    """select id from comments
+                        where firm_id=$1::uuid and matter_id=$2::uuid
+                          and resolved is not true
+                        order by created_at desc limit 1""",
+                    firm_id, matter_id,
+                )
+            else:
+                row = await conn.fetchrow(
+                    """select id from comments
+                        where firm_id=$1::uuid and created_by=$2::uuid
+                          and resolved is not true
+                        order by created_at desc limit 1""",
+                    firm_id, user_id,
+                )
+        if not row:
+            return {"error": "No encontré comentarios sin resolver"}
+        comment_id = str(row["id"])
     from utils.db import get_storage
     storage = await get_storage()
     if not hasattr(storage, "pool"):
