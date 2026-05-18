@@ -26,11 +26,17 @@ async def list_skills(principal: Principal = Depends(get_current_firm)):
     return await list_active_skills(storage.pool, principal.firm_id)
 
 
+class HistoryMessage(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str
+
+
 class ExecuteSkillBody(BaseModel):
     command: str = Field(..., min_length=1)
     input: dict[str, Any] = Field(default_factory=dict)
     matter_id: Optional[UUID] = None
     document_id: Optional[UUID] = None
+    history: list[HistoryMessage] = Field(default_factory=list)
 
 
 @router.post("/execute")
@@ -48,6 +54,7 @@ async def execute_skill(
         input_data=body.input,
         matter_id=str(body.matter_id) if body.matter_id else None,
         document_id=str(body.document_id) if body.document_id else None,
+        history=[h.model_dump() for h in body.history],
     )
     if not result.get("ok"):
         if result.get("error") == "blocked_by_hook":
@@ -87,6 +94,7 @@ async def execute_skill_stream(
                 input_data=body.input,
                 matter_id=str(body.matter_id) if body.matter_id else None,
                 document_id=str(body.document_id) if body.document_id else None,
+                history=[h.model_dump() for h in body.history],
             ):
                 payload = json.dumps(evt["data"], ensure_ascii=False)
                 yield f"event: {evt['event']}\ndata: {payload}\n\n"

@@ -234,6 +234,7 @@ async def run_skill_stream(
     input_data: dict[str, Any],
     matter_id: Optional[str] = None,
     document_id: Optional[str] = None,
+    history: Optional[list[dict[str, Any]]] = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Versión streaming de run_skill · yield eventos para SSE.
 
@@ -346,8 +347,20 @@ async def run_skill_stream(
             #   1. Stream the assistant message (collecting tool_call deltas)
             #   2. If tool_calls exist, execute them and append tool messages
             #   3. Loop · stop when no more tool_calls or MAX_TOOL_ITERATIONS
+            # Conversation memory · prepend últimos N turnos (user/assistant)
+            # entre el system prompt y el user_message actual. Permite que el
+            # agente recuerde lo que pidió ('necesito el nombre del cliente')
+            # y use la respuesta del usuario en el siguiente turno.
+            history_msgs: list[dict[str, Any]] = []
+            if history:
+                for h in history[-12:]:  # cap por si llega historia larga
+                    role = h.get("role")
+                    content = h.get("content")
+                    if role in ("user", "assistant") and content:
+                        history_msgs.append({"role": role, "content": str(content)[:4000]})
             messages: list[dict[str, Any]] = [
                 {"role": "system", "content": full_system_prompt},
+                *history_msgs,
                 {"role": "user", "content": user_message},
             ]
             sub_ctx = {
@@ -557,6 +570,7 @@ async def run_skill(
     matter_id: Optional[str] = None,
     document_id: Optional[str] = None,
     stream: bool = False,
+    history: Optional[list[dict[str, Any]]] = None,
 ) -> dict[str, Any]:
     """Ejecuta skill end-to-end · retorna dict con result o error."""
     started = time.time()
@@ -625,8 +639,16 @@ async def run_skill(
         import os
         client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
+        history_msgs: list[dict[str, Any]] = []
+        if history:
+            for h in history[-12:]:
+                role = h.get("role")
+                content = h.get("content")
+                if role in ("user", "assistant") and content:
+                    history_msgs.append({"role": role, "content": str(content)[:4000]})
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": full_system_prompt},
+            *history_msgs,
             {"role": "user", "content": user_message},
         ]
         sub_ctx = {
