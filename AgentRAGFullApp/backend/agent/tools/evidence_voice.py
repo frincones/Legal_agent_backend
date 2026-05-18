@@ -78,9 +78,28 @@ async def check_doc_consistency_tool(args: dict, ctx: dict) -> dict:
     user_id = ctx.get("user_id")
     matter_id = args.get("matter_id") or ctx.get("matter_id")
     matter_document_id = (args.get("matter_document_id") or "").strip()
-    document_text = (args.get("document_text") or "").strip()
-    if not (firm_id and matter_document_id and document_text):
-        return {"error": "Necesito firm_id, matter_document_id y document_text"}
+    # Fallback: si no llega document_text en args, usa el del ctx (canvas).
+    document_text = (args.get("document_text") or ctx.get("document_text") or "").strip()
+    if not firm_id:
+        return {"error": "firm_id requerido"}
+    if not document_text:
+        return {"error": "Necesito document_text (canvas vacío o no proporcionado)"}
+    # Si no hay matter_document_id, infiere el doc más reciente del matter
+    # o crea uno fantasma con el texto recibido para que la tool corra.
+    if not matter_document_id and matter_id:
+        from utils.db import get_storage
+        _s = await get_storage()
+        if hasattr(_s, "pool"):
+            async with _s.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "select id from matter_documents where matter_id=$1::uuid "
+                    "and firm_id=$2::uuid order by created_at desc limit 1",
+                    matter_id, firm_id,
+                )
+                if row:
+                    matter_document_id = str(row["id"])
+    if not matter_document_id:
+        return {"error": "No hay matter_document_id ni document en el caso para analizar"}
     from agent.tools.inconsistency_detector import detect_inconsistencies_in_document
     try:
         result = await detect_inconsistencies_in_document(
@@ -110,9 +129,25 @@ async def score_evidence_tool(args: dict, ctx: dict) -> dict:
     user_id = ctx.get("user_id")
     matter_id = args.get("matter_id") or ctx.get("matter_id")
     matter_document_id = (args.get("matter_document_id") or "").strip()
-    document_text = (args.get("document_text") or "").strip()
-    if not (firm_id and matter_document_id and document_text):
-        return {"error": "Necesito matter_document_id y document_text"}
+    document_text = (args.get("document_text") or ctx.get("document_text") or "").strip()
+    if not firm_id:
+        return {"error": "firm_id requerido"}
+    if not document_text:
+        return {"error": "Necesito document_text"}
+    if not matter_document_id and matter_id:
+        from utils.db import get_storage
+        _s = await get_storage()
+        if hasattr(_s, "pool"):
+            async with _s.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "select id from matter_documents where matter_id=$1::uuid "
+                    "and firm_id=$2::uuid order by created_at desc limit 1",
+                    matter_id, firm_id,
+                )
+                if row:
+                    matter_document_id = str(row["id"])
+    if not matter_document_id:
+        return {"error": "No hay matter_document_id disponible en el caso"}
     from agent.tools.probative_scorer import compute_probative_score
     try:
         result = await compute_probative_score(

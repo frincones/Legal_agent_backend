@@ -931,6 +931,10 @@ def _detect_forced_tool(
         (r"\bvalida\s+(la\s+)?identidad\b", "validate_identity"),
         (r"\bvalida\s+nit\b", "validate_identity"),
         (r"\bverifica\s+consistencia\b", "check_doc_consistency"),
+        (r"\binconsistencias?\s+(internas?\s+|del\s+)?(documento)?\b", "check_doc_consistency"),
+        (r"\bscore\s+(probator(io|ia)|de\s+evidencia)\b", "score_evidence"),
+        (r"\bcalcula\s+el\s+score\b", "score_evidence"),
+        (r"\beval[úu]a\s+(la\s+)?evidencia\b", "score_evidence"),
         # --- Juez
         (r"\bestadísticas\s+del\s+juez\b", "get_judge_stats"),
         (r"\bperfil\s+del\s+juez\b", "search_judge"),

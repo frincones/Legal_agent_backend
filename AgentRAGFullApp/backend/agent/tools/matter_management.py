@@ -327,14 +327,14 @@ async def create_matter_tool(args: dict, ctx: dict) -> dict:
             if existing:
                 client_id = str(existing["id"])
             else:
-                # Heurística para tipo: si es empresa/SA/S.A.S/Ltda/SAS, → 'empresa'.
-                tipo = "persona"
+                # Check constraint: tipo ∈ ('persona_natural', 'persona_juridica').
+                tipo = "persona_natural"
                 if any(k in client_name.lower() for k in (
                     "s.a.", "s.a", "sas", "s.a.s", "ltda", "ltd",
                     "seguros", "banco", "empresa", "sociedad", "corporaci",
                     "compañ", "compania", "inc.", "corp",
                 )):
-                    tipo = "empresa"
+                    tipo = "persona_juridica"
                 new_client = await conn.fetchrow(
                     """
                     insert into clients (firm_id, nombre, tipo)

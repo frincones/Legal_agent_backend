@@ -261,6 +261,15 @@ async def mark_deadline_done_tool(args: dict, ctx: dict) -> dict:
     deadline_id = args.get("deadline_id")
     if not firm_id:
         return _err("firm_id required")
+    # Si el LLM pasó un string que no es UUID (ej "audiencia_conciliacion"),
+    # ignóralo y aplica fallback de búsqueda.
+    if deadline_id:
+        import re as _re
+        if not _re.fullmatch(
+            r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+            str(deadline_id).lower(),
+        ):
+            deadline_id = None  # no es UUID válido, forzar fallback
     if not deadline_id:
         # Infiere el deadline próximo no-completado del matter (o el más reciente).
         pool = await _pool()
