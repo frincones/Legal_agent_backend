@@ -185,6 +185,14 @@ async def run_skill_stream(
     full_system_prompt = (
         skill.system_prompt + "\n\n" + playbook_block + "\n\n" + (skill.references_md or "")
     )
+    # Inyecta matter_id + document_id en input_data ANTES de formatear para
+    # que el LLM los vea como parte del user_message · sin esto solo viven
+    # en ctx (que las tools ven, pero el LLM no). Permite que `add_matter_note`
+    # se llame directo sin perder ciclos buscando el caso.
+    if matter_id and not input_data.get("matter_id"):
+        input_data = {**input_data, "matter_id": matter_id}
+    if document_id and not input_data.get("document_id"):
+        input_data = {**input_data, "document_id": document_id}
     user_message = _format_user_message(skill, input_data)
 
     full_text_parts: list[str] = []
@@ -466,6 +474,12 @@ async def run_skill(
         + (skill.references_md or "")
     )
 
+    # Inyecta matter_id + document_id como en run_skill_stream · ver
+    # comentario allá. Permite al LLM verlos en el user_message.
+    if matter_id and not input_data.get("matter_id"):
+        input_data = {**input_data, "matter_id": matter_id}
+    if document_id and not input_data.get("document_id"):
+        input_data = {**input_data, "document_id": document_id}
     # Build user message from input_data
     user_message = _format_user_message(skill, input_data)
 
