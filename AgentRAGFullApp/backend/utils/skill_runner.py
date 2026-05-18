@@ -40,29 +40,135 @@ def _resolve_chat_tools(skill: SkillDefinition) -> list[dict[str, Any]]:
     Reads the global voice _tool_registry / _tool_descriptors (same source the
     voice agent + subagents use) so a chat skill and a voice tool stay in sync.
 
-    Returns [] when the skill doesn't declare any tools (= single-shot mode,
-    backward compatible with every existing skill).
+    Auto-generates a minimal descriptor (name + generic description + open
+    parameters) for tools that are in allowed-tools + _tool_registry but
+    don't have an explicit descriptor in voice.py. Sin esto, el chat agent
+    no podía llamar create_task, predict_outcome, track_time, extract_lesson,
+    get_judge_stats, add_comment, log_expense, generate_invoice, etc. —
+    estaban registradas en main.py pero invisibles para el LLM porque no
+    se les escribió descriptor manual en voice.py.
+
+    Returns [] when the skill doesn't declare any tools.
     """
     allowed = skill.allowed_tools
     if not allowed:
         return []
     try:
-        from api.voice import _tool_descriptors
+        from api.voice import _tool_descriptors, _tool_registry
         descriptors = _tool_descriptors()
+        registry_names = set(_tool_registry.keys())
     except Exception as e:
         logger.warning("skill_runner could not load _tool_descriptors: %s", e)
         return []
 
-    # Filter by name. Support "*" wildcard for skills that want everything
-    # (e.g. internal admin skills · not recommended for user-invocable ones).
+    descriptor_by_name = {d.get("name"): d for d in descriptors if d.get("name")}
+
     if "*" in allowed:
-        return [{"type": "function", "function": d} for d in descriptors]
-    name_set = set(allowed)
-    return [
-        {"type": "function", "function": d}
-        for d in descriptors
-        if d.get("name") in name_set
-    ]
+        names_to_emit = registry_names
+    else:
+        names_to_emit = set(allowed) & registry_names
+
+    out: list[dict[str, Any]] = []
+    for name in sorted(names_to_emit):
+        if name in descriptor_by_name:
+            out.append({"type": "function", "function": descriptor_by_name[name]})
+        else:
+            # Auto-generated minimal descriptor · permisivo en parameters
+            # para que el LLM pueda pasar lo que necesite. La tool sabe
+            # validar sus propios args.
+            out.append({
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": _auto_description(name),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": True,
+                    },
+                },
+            })
+    return out
+
+
+def _auto_description(tool_name: str) -> str:
+    """Genera una descripción mínima útil para un tool sin descriptor manual.
+
+    No reemplaza a un descriptor bien escrito · solo evita que el LLM ignore
+    la tool por completo. Si el tool es importante, conviene escribir el
+    descriptor real en api/voice.py.
+    """
+    # Mapping mínimo de tools comunes para que el LLM las elija bien.
+    hints = {
+        "predict_outcome": "Predice el resultado del caso e identifica riesgos. Usa cuando el usuario diga 'predice', 'pronostica', 'identifica riesgos'.",
+        "extract_lesson": "Extrae lecciones aprendidas del caso. Usa cuando el usuario diga 'extrae lecciones', 'lecciones aprendidas'.",
+        "create_task": "Crea una tarea (tabla tasks) asignada al usuario por default. Usa cuando el usuario diga 'crea/agrega/nueva tarea'.",
+        "complete_task": "Marca una tarea como completada.",
+        "track_time": "Registra tiempo facturable en un caso (matter_id, minutes). Usa cuando el usuario diga 'registra X minutos/horas'.",
+        "log_expense": "Registra un gasto facturable. Usa cuando el usuario diga 'registra gasto'.",
+        "generate_invoice": "Genera factura del caso a partir de horas/gastos. Usa cuando el usuario diga 'genera/crea factura'.",
+        "get_judge_stats": "Devuelve estadísticas históricas del juez (winrate por materia, etc.).",
+        "search_judge": "Busca jueces por nombre/sala/especialidad.",
+        "simulate_judge_view": "Simula cómo el juez asignado vería este caso.",
+        "validate_identity": "Verifica identidad de una persona/empresa (cédula/NIT) contra fuentes oficiales.",
+        "check_doc_consistency": "Detecta inconsistencias internas en un documento.",
+        "score_evidence": "Calcula puntaje probatorio de un documento.",
+        "add_comment": "Agrega un comentario colaborativo al caso/documento. Soporta menciones @user.",
+        "resolve_comment": "Marca un hilo de comentarios como resuelto.",
+        "what_today": "Devuelve dashboard del día (tareas, plazos, menciones).",
+        "what_is_my_priority": "Devuelve la prioridad #1 del usuario ahora.",
+        "show_activity": "Lista feed de actividad reciente del caso/firma.",
+        "show_active_users": "Lista usuarios activos en el caso ahora.",
+        "search_kb": "Busca en la base de conocimiento del despacho (knowledge_entries).",
+        "search_lessons": "Busca lecciones aprendidas similares.",
+        "add_to_kb": "Crea entrada en la knowledge base del despacho.",
+        "remember": "Guarda un dato en memoria persistente del agente.",
+        "recall": "Recupera un dato guardado por key exacto.",
+        "recall_relevant": "Recupera datos guardados similares al query.",
+        "forget": "Elimina un dato de memoria.",
+        "subscribe_to_expediente": "Suscribe a notificaciones de un expediente judicial.",
+        "list_judicial_notifications": "Lista notificaciones judiciales.",
+        "poll_judicial_now": "Fuerza poll inmediato de novedades judiciales.",
+        "sync_calendar": "Sincroniza calendario con Google/Outlook.",
+        "sync_email_now": "Sincroniza email con la bandeja del despacho.",
+        "parse_legal_email": "Clasifica un email como legal/no-legal y extrae metadata.",
+        "daily_briefing": "Genera resumen del día con plazos + judiciales + emails.",
+        "run_sla_reminders": "Dispara recordatorios SLA configurados.",
+        "record_trust_deposit": "Registra depósito en cuenta fiduciaria.",
+        "record_trust_payment": "Registra pago desde cuenta fiduciaria.",
+        "check_trust_balance": "Consulta balance de cuenta fiduciaria por caso.",
+        "review_contract": "Ejecuta /revisar/contrato sobre un documento.",
+        "apply_redline": "Aplica redlines aceptados al texto del documento.",
+        "reject_redline": "Rechaza redlines preservando el texto original.",
+        "list_wizards": "Lista wizards de intake disponibles.",
+        "start_wizard": "Inicia una sesión de wizard de intake.",
+        "wizard_session_status": "Consulta estado de una sesión de wizard.",
+        "capture_lead": "Captura un lead nuevo en el pipeline (CRM).",
+        "run_automation": "Ejecuta una regla de automatización.",
+        "generate_insights": "Genera insights proactivos de la firma.",
+        "send_whatsapp": "Envía mensaje WhatsApp via Graph API.",
+        "send_for_signature": "Envía documento a firma digital (DocuSign).",
+        "check_signature_status": "Consulta estado de envelope de firma.",
+        "import_csv": "Procesa job de import CSV.",
+        "find_anything": "Búsqueda global FTS en todos los recursos del despacho.",
+        "set_matter_priority": "Cambia prioridad del caso (baja/media/alta/critica/urgente).",
+        "tag_matter": "Añade un tag de 1-3 palabras al caso.",
+        "update_matter_etapa": "Cambia la etapa procesal del caso.",
+        "archive_matter": "Archiva un caso (soft delete).",
+        "create_matter": "Crea un nuevo caso/expediente.",
+        "request_human_approval": "Pide aprobación humana para una acción crítica.",
+        "list_pending_hitl": "Lista interrupts HITL pendientes.",
+        "delegate_to": "Delega tarea compleja a un sub-agente especializado.",
+        "execute_skill": "Ejecuta una skill personalizada del despacho.",
+        "extract_variables_from_text": "Extrae variables estructuradas de un texto.",
+        "autofill_template": "Auto-rellena una plantilla con datos del caso.",
+        "list_intake_forms": "Lista formularios de intake del despacho.",
+        "list_new_submissions": "Lista submissions nuevos de intake.",
+    }
+    return hints.get(
+        tool_name,
+        f"Tool {tool_name} · ver agent/tools para detalles. Acepta argumentos del caso (matter_id, etc.).",
+    )
 
 
 async def _execute_tool_call(
