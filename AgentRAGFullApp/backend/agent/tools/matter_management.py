@@ -171,9 +171,9 @@ async def update_matter_etapa_tool(args: dict, ctx: dict) -> dict:
         row = await conn.fetchrow(
             """
             update matters
-               set etapa = $1, updated_at = now()
+               set etapa_procesal = $1, updated_at = now()
              where id = $2::uuid and firm_id = $3::uuid
-             returning id, titulo, etapa
+             returning id, titulo, etapa_procesal as etapa
             """,
             etapa, matter_id, firm_id,
         )
@@ -280,7 +280,7 @@ async def create_matter_tool(args: dict, ctx: dict) -> dict:
             """
             insert into matters
               (firm_id, client_id, titulo, materia, tribunal, priority,
-               status, created_by)
+               status, owner_user_id)
             values
               ($1::uuid, $2::uuid, $3, $4, $5, $6, 'activo', $7::uuid)
             returning id, titulo, materia, priority, status, display_id
