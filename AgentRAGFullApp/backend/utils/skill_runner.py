@@ -269,11 +269,20 @@ async def run_skill_stream(
             # disponible, en el primer round forzamos esa tool con
             # tool_choice. Esto vence la confusión del LLM con tag_matter,
             # canvas_append, open_matter_context, etc.
+            avail_names = {t["function"]["name"] for t in chat_tools
+                           if isinstance(t, dict) and t.get("function")}
             forced_tool_first_round: Optional[str] = _detect_forced_tool(
                 input_data.get("prompt") or "",
                 (input_data.get("context") or {}).get("active_tab"),
-                {t["function"]["name"] for t in chat_tools
-                 if isinstance(t, dict) and t.get("function")},
+                avail_names,
+            )
+            logger.info(
+                "skill_runner force_check · prompt=%r active_tab=%r forced=%r "
+                "add_matter_note_in_avail=%s",
+                (input_data.get("prompt") or "")[:100],
+                (input_data.get("context") or {}).get("active_tab"),
+                forced_tool_first_round,
+                "add_matter_note" in avail_names,
             )
             done_calling = False
             for round_idx in range(MAX_TOOL_ITERATIONS):
