@@ -29,6 +29,79 @@ logger = logging.getLogger(__name__)
 
 MAX_TOKENS_BUDGET = 16000
 DEFAULT_TIMEOUT = 60.0
+# Max iterations of the tool-calling loop · prevents runaway in case the model
+# keeps requesting tools. Same value used by agent.subagents.base.BaseSubAgent.
+MAX_TOOL_ITERATIONS = 6
+
+
+def _resolve_chat_tools(skill: SkillDefinition) -> list[dict[str, Any]]:
+    """Build OpenAI Chat tools list from skill.frontmatter['allowed-tools'].
+
+    Reads the global voice _tool_registry / _tool_descriptors (same source the
+    voice agent + subagents use) so a chat skill and a voice tool stay in sync.
+
+    Returns [] when the skill doesn't declare any tools (= single-shot mode,
+    backward compatible with every existing skill).
+    """
+    allowed = skill.allowed_tools
+    if not allowed:
+        return []
+    try:
+        from api.voice import _tool_descriptors
+        descriptors = _tool_descriptors()
+    except Exception as e:
+        logger.warning("skill_runner could not load _tool_descriptors: %s", e)
+        return []
+
+    # Filter by name. Support "*" wildcard for skills that want everything
+    # (e.g. internal admin skills · not recommended for user-invocable ones).
+    if "*" in allowed:
+        return [{"type": "function", "function": d} for d in descriptors]
+    name_set = set(allowed)
+    return [
+        {"type": "function", "function": d}
+        for d in descriptors
+        if d.get("name") in name_set
+    ]
+
+
+async def _execute_tool_call(
+    fn_name: str,
+    fn_args: dict[str, Any],
+    skill: SkillDefinition,
+    ctx: dict[str, Any],
+) -> dict[str, Any]:
+    """Run one tool from the global _tool_registry · returns the result dict.
+
+    Validates the tool is allowed by the skill (defense-in-depth in case the
+    LLM hallucinates a name it shouldn't see). Strips _ui_command from the
+    result before returning (chat path has no UI bridge for now · those
+    commands are voice-only).
+    """
+    try:
+        from api.voice import _tool_registry
+    except Exception as e:
+        return {"error": f"tool_registry unavailable: {e}"}
+
+    allowed = set(skill.allowed_tools)
+    is_wildcard = "*" in allowed
+    if not is_wildcard and fn_name not in allowed:
+        return {"error": f"tool '{fn_name}' not allowed for skill {skill.command}"}
+
+    fn = _tool_registry.get(fn_name)
+    if fn is None:
+        return {"error": f"tool '{fn_name}' not registered"}
+
+    try:
+        result = await fn(args=fn_args, ctx=ctx)
+    except Exception as e:
+        logger.exception("skill_runner tool %s raised: %s", fn_name, e)
+        return {"error": str(e)[:240]}
+
+    # Drop _ui_command · chat path doesn't have the voice UI bridge yet.
+    if isinstance(result, dict) and "_ui_command" in result:
+        result = {k: v for k, v in result.items() if k != "_ui_command"}
+    return result
 
 
 async def run_skill_stream(
@@ -103,37 +176,147 @@ async def run_skill_stream(
     tokens_in = 0
     tokens_out = 0
 
+    # Resolve tool calling from skill.frontmatter["allowed-tools"].
+    # When the skill declares zero tools, we use the original single-shot
+    # streaming path (backward compatible).
+    chat_tools = _resolve_chat_tools(skill)
+
     try:
         from openai import AsyncOpenAI
         import os
         client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-        kwargs: dict[str, Any] = {
-            "model": skill.model,
-            "messages": [
+        if not chat_tools:
+            # ── Original path · single-shot streaming, no tools ──
+            kwargs: dict[str, Any] = {
+                "model": skill.model,
+                "messages": [
+                    {"role": "system", "content": full_system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                "temperature": 0.3,
+                "max_tokens": MAX_TOKENS_BUDGET,
+                "stream": True,
+                "stream_options": {"include_usage": True},
+            }
+            stream_resp = await client.chat.completions.create(**kwargs)
+            async for chunk in stream_resp:
+                if chunk.usage:
+                    tokens_in = chunk.usage.prompt_tokens or 0
+                    tokens_out = chunk.usage.completion_tokens or 0
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta.content
+                if delta:
+                    full_text_parts.append(delta)
+                    yield {"event": "delta", "data": {"text": delta}}
+        else:
+            # ── Tool-calling streaming path · multi-round ──
+            # Pattern from agent.subagents.base.BaseSubAgent.run, adapted for
+            # streaming. Each round:
+            #   1. Stream the assistant message (collecting tool_call deltas)
+            #   2. If tool_calls exist, execute them and append tool messages
+            #   3. Loop · stop when no more tool_calls or MAX_TOOL_ITERATIONS
+            messages: list[dict[str, Any]] = [
                 {"role": "system", "content": full_system_prompt},
                 {"role": "user", "content": user_message},
-            ],
-            "temperature": 0.3,
-            "max_tokens": MAX_TOKENS_BUDGET,
-            "stream": True,
-            "stream_options": {"include_usage": True},
-        }
-        # Streaming NO soporta structured json_schema response_format; si el skill
-        # lo requiere, el cliente debe llamar a /execute en su lugar. Aquí
-        # forzamos texto libre.
+            ]
+            sub_ctx = {
+                "firm_id": firm_id,
+                "user_id": user_id,
+                "matter_id": matter_id,
+                "document_id": document_id,
+                "subagent_chain": ["chat_skill"],
+            }
+            done_calling = False
+            for round_idx in range(MAX_TOOL_ITERATIONS):
+                if done_calling:
+                    break
+                kwargs = {
+                    "model": skill.model,
+                    "messages": messages,
+                    "tools": chat_tools,
+                    "tool_choice": "auto",
+                    "temperature": 0.3,
+                    "max_tokens": MAX_TOKENS_BUDGET,
+                    "stream": True,
+                    "stream_options": {"include_usage": True},
+                }
+                stream_resp = await client.chat.completions.create(**kwargs)
 
-        stream_resp = await client.chat.completions.create(**kwargs)
-        async for chunk in stream_resp:
-            if chunk.usage:
-                tokens_in = chunk.usage.prompt_tokens or 0
-                tokens_out = chunk.usage.completion_tokens or 0
-            if not chunk.choices:
-                continue
-            delta = chunk.choices[0].delta.content
-            if delta:
-                full_text_parts.append(delta)
-                yield {"event": "delta", "data": {"text": delta}}
+                # Accumulate streamed content + tool_call deltas for this round.
+                round_content_parts: list[str] = []
+                tool_calls_acc: dict[int, dict[str, Any]] = {}
+                async for chunk in stream_resp:
+                    if chunk.usage:
+                        tokens_in += chunk.usage.prompt_tokens or 0
+                        tokens_out += chunk.usage.completion_tokens or 0
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    if delta.content:
+                        round_content_parts.append(delta.content)
+                        full_text_parts.append(delta.content)
+                        yield {"event": "delta", "data": {"text": delta.content}}
+                    if delta.tool_calls:
+                        for tc in delta.tool_calls:
+                            idx = tc.index
+                            slot = tool_calls_acc.setdefault(idx, {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {"name": "", "arguments": ""},
+                            })
+                            if tc.id:
+                                slot["id"] = tc.id
+                            if tc.function:
+                                if tc.function.name:
+                                    slot["function"]["name"] = tc.function.name
+                                if tc.function.arguments:
+                                    slot["function"]["arguments"] += tc.function.arguments
+
+                # Build the assistant message (with any tool_calls).
+                assembled_calls = [tool_calls_acc[k] for k in sorted(tool_calls_acc)]
+                assistant_msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": "".join(round_content_parts) or None,
+                }
+                if assembled_calls:
+                    assistant_msg["tool_calls"] = assembled_calls
+                messages.append(assistant_msg)
+
+                if not assembled_calls:
+                    done_calling = True
+                    break
+
+                # Execute each tool call · feed results back into messages.
+                for tc in assembled_calls:
+                    fn_name = tc["function"]["name"]
+                    raw_args = tc["function"]["arguments"] or "{}"
+                    try:
+                        fn_args = json.loads(raw_args)
+                    except json.JSONDecodeError:
+                        fn_args = {}
+
+                    yield {
+                        "event": "tool_started",
+                        "data": {"name": fn_name, "round": round_idx + 1},
+                    }
+                    tool_result = await _execute_tool_call(fn_name, fn_args, skill, sub_ctx)
+                    yield {
+                        "event": "tool_finished",
+                        "data": {
+                            "name": fn_name,
+                            "round": round_idx + 1,
+                            "ok": "error" not in tool_result,
+                            "preview": json.dumps(tool_result, ensure_ascii=False, default=str)[:200],
+                        },
+                    }
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": json.dumps(tool_result, ensure_ascii=False, default=str),
+                    })
+            # End of tool-calling loop.
     except Exception as e:
         logger.warning("skill_runner stream OpenAI failed: %s", e)
         await _persist_execution(
@@ -251,35 +434,118 @@ async def run_skill(
     # Build user message from input_data
     user_message = _format_user_message(skill, input_data)
 
+    # Resolve tool calling (same source as voice agent registry).
+    chat_tools = _resolve_chat_tools(skill)
+    tool_calls_log: list[dict[str, Any]] = []
+
     # Call OpenAI
     try:
         from openai import AsyncOpenAI
         import os
         client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-        kwargs: dict[str, Any] = {
-            "model": skill.model,
-            "messages": [
-                {"role": "system", "content": full_system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            "temperature": 0.3,
-            "max_tokens": MAX_TOKENS_BUDGET,
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": full_system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+        sub_ctx = {
+            "firm_id": firm_id,
+            "user_id": user_id,
+            "matter_id": matter_id,
+            "document_id": document_id,
+            "subagent_chain": ["chat_skill"],
         }
-        if skill.output_schema:
-            kwargs["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": skill.command.replace("/", "_").strip("_"),
-                    "schema": skill.output_schema,
-                    "strict": False,
-                },
-            }
 
-        resp = await client.chat.completions.create(**kwargs)
-        content = resp.choices[0].message.content or ""
-        tokens_in = resp.usage.prompt_tokens if resp.usage else 0
-        tokens_out = resp.usage.completion_tokens if resp.usage else 0
+        tokens_in = 0
+        tokens_out = 0
+        content = ""
+
+        if not chat_tools:
+            # ── Original single-shot path · backward compatible ──
+            kwargs: dict[str, Any] = {
+                "model": skill.model,
+                "messages": messages,
+                "temperature": 0.3,
+                "max_tokens": MAX_TOKENS_BUDGET,
+            }
+            if skill.output_schema:
+                kwargs["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": skill.command.replace("/", "_").strip("_"),
+                        "schema": skill.output_schema,
+                        "strict": False,
+                    },
+                }
+            resp = await client.chat.completions.create(**kwargs)
+            content = resp.choices[0].message.content or ""
+            if resp.usage:
+                tokens_in = resp.usage.prompt_tokens or 0
+                tokens_out = resp.usage.completion_tokens or 0
+        else:
+            # ── Tool-calling loop · same pattern as agent.subagents.base ──
+            # NOTE: tool calling is incompatible with response_format=json_schema
+            # in many OpenAI scenarios; if a skill declares BOTH, tools win and
+            # the final answer is plain text. We just skip the schema here.
+            for _round in range(MAX_TOOL_ITERATIONS):
+                kwargs = {
+                    "model": skill.model,
+                    "messages": messages,
+                    "tools": chat_tools,
+                    "tool_choice": "auto",
+                    "temperature": 0.3,
+                    "max_tokens": MAX_TOKENS_BUDGET,
+                }
+                resp = await client.chat.completions.create(**kwargs)
+                if resp.usage:
+                    tokens_in += resp.usage.prompt_tokens or 0
+                    tokens_out += resp.usage.completion_tokens or 0
+                choice = resp.choices[0]
+                msg = choice.message
+
+                # Always append the assistant message (with tool_calls if any).
+                messages.append({
+                    "role": "assistant",
+                    "content": msg.content,
+                    "tool_calls": [
+                        {
+                            "id": tc.id,
+                            "type": "function",
+                            "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                        }
+                        for tc in (msg.tool_calls or [])
+                    ] if msg.tool_calls else None,
+                })
+
+                if not msg.tool_calls:
+                    content = msg.content or ""
+                    break
+
+                # Execute each tool call · append tool result messages.
+                for tc in msg.tool_calls:
+                    fn_name = tc.function.name
+                    try:
+                        fn_args = json.loads(tc.function.arguments or "{}")
+                    except json.JSONDecodeError:
+                        fn_args = {}
+                    tool_result = await _execute_tool_call(fn_name, fn_args, skill, sub_ctx)
+                    tool_calls_log.append({
+                        "name": fn_name,
+                        "args_keys": list(fn_args.keys()),
+                        "ok": "error" not in tool_result,
+                    })
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": json.dumps(tool_result, ensure_ascii=False, default=str),
+                    })
+            # If we exited the loop without a content message, get the last assistant content.
+            if not content:
+                content = next(
+                    (m.get("content") for m in reversed(messages)
+                     if m.get("role") == "assistant" and m.get("content")),
+                    "",
+                ) or ""
     except Exception as e:
         logger.warning("skill_runner OpenAI failed: %s", e)
         await _persist_execution(
@@ -345,6 +611,7 @@ async def run_skill(
         "tokens": {"input": tokens_in, "output": tokens_out},
         "output": parsed_output,
         "warnings": warnings,
+        "tool_calls": tool_calls_log,
     }
 
 
