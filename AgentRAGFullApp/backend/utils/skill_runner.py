@@ -230,6 +230,10 @@ async def run_skill_stream(
                 "matter_id": matter_id,
                 "document_id": document_id,
                 "subagent_chain": ["chat_skill"],
+                # canvas tools (find_replace, replace_section, ...) need the
+                # canvas text in ctx so they can validate the needle BEFORE
+                # claiming success to the LLM.
+                "document_text": input_data.get("document_text"),
             }
             done_calling = False
             for round_idx in range(MAX_TOOL_ITERATIONS):

@@ -136,7 +136,46 @@ async def canvas_find_replace_tool(args: dict, ctx: dict) -> dict:
         return {"error": "replacement requerido"}
     if len(needle) > 1_000:
         return {"error": "needle muy largo (>1000 chars)"}
+
+    # Validate the needle exists in the canvas text the LLM was given. If it
+    # doesn't, return an explicit error so the model doesn't confidently lie
+    # to the user about a replacement that never happened. The frontend may
+    # still find it via richer matching, but the LLM should know to retry
+    # with a different needle (case, surrounding chars, etc.).
+    doc_text = ctx.get("document_text") or ""
+    if isinstance(doc_text, str) and doc_text:
+        count_est = doc_text.count(needle)
+        if count_est == 0:
+            # Cheap case-insensitive hint so the model can self-correct.
+            lower_hit = doc_text.lower().count(needle.lower())
+            hint = ""
+            if lower_hit > 0:
+                hint = (
+                    f" Hint: encontré {lower_hit} match case-insensitive · "
+                    f"prueba con la grafía exacta del documento."
+                )
+            return {
+                "ok": False,
+                "error": (
+                    f"needle '{needle}' no encontrado en el documento."
+                    f"{hint} NO afirmes al usuario que reemplazaste nada."
+                ),
+            }
+        return {
+            "ok": True,
+            "count": count_est,
+            "summary": (
+                f"Reemplacé {count_est} ocurrencia{'s' if count_est != 1 else ''} "
+                f"de '{needle}' por '{replacement}'."
+            ),
+            "_ui_command": _ui(
+                "canvas_find_replace", needle=needle, replacement=replacement,
+            ),
+        }
+
+    # No doc_text in ctx · trust the frontend to count.
     return {
+        "ok": True,
         "summary": f"Reemplazando '{needle}' por '{replacement}' en el documento",
         "_ui_command": _ui("canvas_find_replace", needle=needle, replacement=replacement),
     }
