@@ -85,6 +85,23 @@ async def tag_matter_tool(args: dict, ctx: dict) -> dict:
         return {"error": "firm_id, matter_id y tag requeridos"}
     if len(tag) > 60:
         return {"error": "tag demasiado largo (max 60 chars)"}
+    # Salvaguarda: un tag es 1-3 palabras. Si el caller pasa una oración
+    # completa, probablemente confundió tag_matter con add_matter_note.
+    # Rechaza y sugiere la tool correcta.
+    word_count = len(tag.split())
+    if word_count > 5:
+        return {
+            "ok": False,
+            "error": (
+                f"El valor recibido tiene {word_count} palabras · esto parece "
+                f"una NOTA, no una etiqueta. Las etiquetas son 1-3 palabras "
+                f"(ej: 'urgente', 'cliente VIP', 'tutela'). "
+                f"Para agregar una nota del caso usa add_matter_note(matter_id, "
+                f"body) en su lugar."
+            ),
+            "suggested_tool": "add_matter_note",
+            "suggested_args": {"matter_id": matter_id, "body": tag},
+        }
 
     from utils.db import get_storage
     storage = await get_storage()
