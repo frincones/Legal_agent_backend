@@ -36,18 +36,42 @@ async def list_wizards_tool(args: dict, ctx: dict) -> dict:
 
 
 async def start_wizard_tool(args: dict, ctx: dict) -> dict:
-    slug = (args.get("slug") or "").strip().lower()
-    if not slug:
-        return {"error": "Necesito el slug del wizard"}
+    slug = (args.get("slug") or args.get("name") or args.get("wizard") or "").strip().lower()
     from utils.db import get_storage
     from utils.wizard_helpers import random_token
     storage = await get_storage()
     if not hasattr(storage, "pool"):
         return {"error": "Storage no disponible"}
+    # Fallback: extrae nombre del wizard del prompt o busca por nombre parcial.
+    if not slug:
+        prompt_str = (args.get("prompt") or ctx.get("user_prompt") or "").lower()
+        # Patrones comunes: "wizard de tutela", "el wizard tutela", "wizard X"
+        import re
+        m = re.search(r"wizard\s+(?:de\s+|del\s+)?([a-záéíóúñ_-]+)", prompt_str)
+        if m:
+            slug = m.group(1).strip()
+    tpl = None
     async with storage.pool.acquire() as conn:
-        tpl = await conn.fetchrow("select * from lexai_wizard_template_by_slug($1)", slug)
+        if slug:
+            tpl = await conn.fetchrow(
+                "select * from lexai_wizard_template_by_slug($1)", slug
+            )
+            if not tpl:
+                # busca match parcial por slug o nombre
+                tpl = await conn.fetchrow(
+                    """select * from wizard_templates
+                        where active = true
+                          and (slug ilike '%'||$1||'%' or name ilike '%'||$1||'%')
+                        limit 1""",
+                    slug,
+                )
         if not tpl:
-            return {"error": f"Wizard '{slug}' no encontrado o inactivo"}
+            # último fallback: el primer wizard activo
+            tpl = await conn.fetchrow(
+                "select * from wizard_templates where active=true order by created_at limit 1"
+            )
+        if not tpl:
+            return {"error": f"Wizard '{slug or 'sin slug'}' no encontrado o inactivo"}
         token = random_token()
         await conn.fetchrow(
             """

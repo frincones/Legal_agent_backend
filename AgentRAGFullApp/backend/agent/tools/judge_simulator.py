@@ -304,23 +304,16 @@ async def simulate_judge_view_tool(args: dict, ctx: dict) -> dict:
     if not matter_id:
         return {"error": "Necesito matter_id (estás en algún caso?)"}
     if not judge_id:
-        # Fallback al juez del matter o el primer juez seed.
+        # Fallback al primer juez seed (matters no tiene judge_id explícito).
         from utils.db import get_storage
         _s = await get_storage()
         if hasattr(_s, "pool"):
             async with _s.pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "select judge_id from matters where id=$1::uuid",
-                    matter_id,
+                    "select id from judges order by created_at limit 1"
                 )
-                if row and row.get("judge_id"):
-                    judge_id = str(row["judge_id"])
-                else:
-                    row = await conn.fetchrow(
-                        "select id from judges order by created_at limit 1"
-                    )
-                    if row:
-                        judge_id = str(row["id"])
+                if row:
+                    judge_id = str(row["id"])
     if not judge_id:
         return {"error": "Necesito judge_id · usa search_judge primero"}
     try:

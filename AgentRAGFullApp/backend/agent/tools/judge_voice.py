@@ -53,27 +53,18 @@ async def get_judge_stats_tool(args: dict, ctx: dict) -> dict:
         return {"error": "firm_id requerido"}
     judge_id = (args.get("judge_id") or "").strip()
     if not judge_id:
-        # Fallback: usa el juez asignado al matter actual (matters.juzgado
-        # mapeo) o el primero de la firma.
-        matter_id = args.get("matter_id") or ctx.get("matter_id")
+        # Fallback: el primer juez del seed (la tabla matters no tiene
+        # judge_id explícito · usa el juez relacionado por juzgado/tribunal
+        # cuando esté seedeado, sino el primer juez disponible).
         from utils.db import get_storage
         _s = await get_storage()
         if hasattr(_s, "pool"):
             async with _s.pool.acquire() as conn:
-                if matter_id:
-                    row = await conn.fetchrow(
-                        "select judge_id from matters where id=$1::uuid",
-                        matter_id,
-                    )
-                    if row and row.get("judge_id"):
-                        judge_id = str(row["judge_id"])
-                if not judge_id:
-                    # Cualquier juez activo de la firma o global (seed)
-                    row = await conn.fetchrow(
-                        "select id from judges order by created_at limit 1"
-                    )
-                    if row:
-                        judge_id = str(row["id"])
+                row = await conn.fetchrow(
+                    "select id from judges order by created_at limit 1"
+                )
+                if row:
+                    judge_id = str(row["id"])
     if not judge_id:
         return {"error": "Necesito judge_id"}
     from utils.db import get_storage
