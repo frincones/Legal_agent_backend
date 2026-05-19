@@ -108,7 +108,7 @@ async def check_doc_consistency_tool(args: dict, ctx: dict) -> dict:
                             (firm_id, matter_id, kind, titulo, status,
                              uploaded_by, mime_type, sha256, pages,
                              ocr_done, resumen_ia)
-                           values ($1::uuid, $2::uuid, 'externo'::doc_kind,
+                           values ($1::uuid, $2::uuid, 'otro'::doc_kind,
                                    'Documento ad-hoc · evidencia', 'completed',
                                    $3::uuid, 'text/plain', $4, 1, true, $5)
                            returning id""",
@@ -172,7 +172,7 @@ async def score_evidence_tool(args: dict, ctx: dict) -> dict:
                             (firm_id, matter_id, kind, titulo, status,
                              uploaded_by, mime_type, sha256, pages,
                              ocr_done, resumen_ia)
-                           values ($1::uuid, $2::uuid, 'externo'::doc_kind,
+                           values ($1::uuid, $2::uuid, 'otro'::doc_kind,
                                    'Documento ad-hoc · evidencia', 'completed',
                                    $3::uuid, 'text/plain', $4, 1, true, $5)
                            returning id""",
