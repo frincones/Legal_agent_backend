@@ -584,10 +584,37 @@ async def send_for_signature_tool(args: dict, ctx: dict) -> dict:
     firm_id = ctx.get("firm_id")
     user_id = ctx.get("user_id")
     document_id = args.get("document_id") or ctx.get("document_id")
+    matter_id = args.get("matter_id") or ctx.get("matter_id")
+    # Fallback: doc más reciente del matter
+    if not document_id and matter_id and firm_id:
+        from utils.db import get_storage as _gs
+        _s = await _gs()
+        if hasattr(_s, "pool"):
+            async with _s.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "select id from matter_documents where matter_id=$1::uuid "
+                    "and firm_id=$2::uuid order by created_at desc limit 1",
+                    matter_id, firm_id,
+                )
+                if row:
+                    document_id = str(row["id"])
     if not (firm_id and document_id):
         return {"error": "firm_id y document_id requeridos"}
-    signer_name = (args.get("signer_name") or "").strip()
-    signer_email = (args.get("signer_email") or "").strip()
+    signer_name = (args.get("signer_name") or args.get("name") or "").strip()
+    signer_email = (args.get("signer_email") or args.get("email") or "").strip()
+    # Extrae signer del prompt si LLM no lo pasa.
+    if not signer_name or not signer_email:
+        import re
+        prompt_str = (args.get("prompt") or ctx.get("user_prompt") or "")
+        em = re.search(r"\b([\w.-]+@[\w.-]+\.\w+)\b", prompt_str)
+        if em and not signer_email:
+            signer_email = em.group(1)
+        nm = re.search(
+            r"(?:con|firmante|signer|firma)\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,3})",
+            prompt_str,
+        )
+        if nm and not signer_name:
+            signer_name = nm.group(1).strip()
     if not signer_name:
         return {"error": "signer_name requerido"}
     from utils.db import get_storage
@@ -644,6 +671,27 @@ async def check_signature_status_tool(args: dict, ctx: dict) -> dict:
     if not firm_id:
         return {"error": "firm_id requerido"}
     envelope_id = args.get("envelope_id")
+    matter_id = args.get("matter_id") or ctx.get("matter_id")
+    # Fallback: el envelope más reciente del matter o de la firma.
+    if not envelope_id:
+        from utils.db import get_storage as _gs
+        _s = await _gs()
+        if hasattr(_s, "pool"):
+            async with _s.pool.acquire() as conn:
+                if matter_id:
+                    row = await conn.fetchrow(
+                        "select id from signature_envelopes where matter_id=$1::uuid "
+                        "and firm_id=$2::uuid order by created_at desc limit 1",
+                        matter_id, firm_id,
+                    )
+                else:
+                    row = await conn.fetchrow(
+                        "select id from signature_envelopes where firm_id=$1::uuid "
+                        "order by created_at desc limit 1",
+                        firm_id,
+                    )
+                if row:
+                    envelope_id = str(row["id"])
     if not envelope_id:
         return {"error": "envelope_id requerido"}
 

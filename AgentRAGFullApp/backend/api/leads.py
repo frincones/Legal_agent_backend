@@ -486,7 +486,39 @@ async def capture_lead_tool(args: dict, ctx: dict) -> dict:
     firm_id = ctx.get("firm_id")
     if not firm_id:
         return {"error": "firm_id requerido"}
-    nombre = (args.get("nombre") or "").strip()
+    nombre = (args.get("nombre") or args.get("name") or
+              args.get("full_name") or args.get("nombre_completo") or "").strip()
+    if not nombre:
+        # Intenta extraer del prompt: 'lead nuevo: Pedro Rodríguez, teléfono...'
+        import re
+        prompt_str = (args.get("prompt") or ctx.get("user_prompt") or "")
+        # Busca después de "lead", "prospecto", "cliente:", "nuevo:"
+        m = re.search(
+            r"(?:lead|prospecto|cliente|nuevo)[:\s]+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,3})",
+            prompt_str,
+        )
+        if m:
+            nombre = m.group(1).strip()
+        # Phone fallback
+        if not args.get("telefono"):
+            phone_match = re.search(r"\b(\d{10}|\d{3}[-\s]?\d{3}[-\s]?\d{4})\b", prompt_str)
+            if phone_match:
+                args = dict(args)
+                args["telefono"] = phone_match.group(1).replace("-", "").replace(" ", "")
+        # Source fallback
+        if not args.get("source"):
+            for src in ("whatsapp", "web", "referido", "instagram", "facebook", "linkedin"):
+                if src in prompt_str.lower():
+                    args = dict(args)
+                    args["source"] = src
+                    break
+        # Materia fallback
+        if not args.get("materia"):
+            for mat in ("laboral", "civil", "familia", "penal", "comercial", "tributario"):
+                if mat in prompt_str.lower():
+                    args = dict(args)
+                    args["materia"] = mat
+                    break
     if len(nombre) < 2:
         return {"error": "nombre requerido"}
     from utils.db import get_storage

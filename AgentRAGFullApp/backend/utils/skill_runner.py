@@ -896,6 +896,10 @@ def _detect_forced_tool(
         (r"\btrackea\b.*\bhoras\b", "track_time"),
         (r"\b(registra|anota|agrega)\s+gasto\b", "log_expense"),
         (r"\b(genera|crea)\s+factura\b", "generate_invoice"),
+        # --- Wizards (intake / templates)
+        (r"\b(qu[eé]\s+)?wizards?\s+(tenemos|disponibles|hay)\b", "list_wizards"),
+        (r"\binicia\s+(el\s+)?wizard\b", "start_wizard"),
+        (r"\bempezar?\s+(el\s+)?wizard\b", "start_wizard"),
         # --- "Ver detalle/contexto del caso" → open_matter_context
         (r"\bmu[ée]strame\s+(el\s+)?(detalle|caso|expediente|contexto)\b", "open_matter_context"),
         (r"\b(ver|veamos)\s+(el\s+)?(detalle|expediente|caso)\b", "open_matter_context"),

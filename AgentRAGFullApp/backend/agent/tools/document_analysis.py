@@ -294,18 +294,58 @@ async def extract_document_entities_tool(args: dict, ctx: dict) -> dict:
       { id, status, parties_count, obligations_count, ... }
       o { error: "..." }
     """
-    document_id = args.get("document_id")
-    if not document_id:
-        return {"error": "document_id requerido"}
+    document_id = args.get("document_id") or args.get("matter_document_id")
     firm_id = ctx.get("firm_id")
+    matter_id = args.get("matter_id") or ctx.get("matter_id")
     if not firm_id:
         return {"error": "firm_id requerido (auth)"}
-    regenerate = bool(args.get("regenerate") or False)
 
     from utils.db import get_storage
     storage = await get_storage()
     if not hasattr(storage, "pool"):
         return {"error": "storage no disponible"}
+
+    # Fallback al doc más reciente del matter actual si no llega document_id
+    # o si el LLM pasó un id de OTRO matter.
+    if document_id and matter_id:
+        async with storage.pool.acquire() as conn:
+            check = await conn.fetchrow(
+                "select id from matter_documents where id=$1::uuid "
+                "and firm_id=$2::uuid and matter_id=$3::uuid",
+                document_id, firm_id, matter_id,
+            )
+        if not check:
+            document_id = None  # invalida y cae al fallback
+    if not document_id and matter_id:
+        async with storage.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "select id from matter_documents where matter_id=$1::uuid "
+                "and firm_id=$2::uuid order by created_at desc limit 1",
+                matter_id, firm_id,
+            )
+            if row:
+                document_id = str(row["id"])
+            elif (ctx.get("document_text") or "").strip():
+                # auto-crea matter_document si solo hay texto del canvas
+                import hashlib as _hl
+                doc_text = ctx.get("document_text")
+                sha = _hl.sha256(doc_text.encode("utf-8")).hexdigest()
+                new_doc = await conn.fetchrow(
+                    """insert into matter_documents
+                        (firm_id, matter_id, kind, titulo, status,
+                         uploaded_by, mime_type, sha256, pages,
+                         ocr_done, resumen_ia)
+                       values ($1::uuid, $2::uuid, 'otro'::doc_kind,
+                               'Documento ad-hoc · análisis', 'completed',
+                               $3::uuid, 'text/plain', $4, 1, true, $5)
+                       returning id""",
+                    firm_id, matter_id, ctx.get("user_id"), sha,
+                    doc_text[:500],
+                )
+                document_id = str(new_doc["id"])
+    if not document_id:
+        return {"error": "document_id requerido"}
+    regenerate = bool(args.get("regenerate") or False)
 
     async with storage.pool.acquire() as conn:
         doc = await conn.fetchrow(

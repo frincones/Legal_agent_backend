@@ -92,6 +92,20 @@ async def analyze_contract_tool(args: dict, ctx: dict) -> dict:
     firm_id = ctx.get("firm_id")
     user_id = ctx.get("user_id")
     document_id = args.get("document_id") or args.get("matter_document_id")
+    matter_id = args.get("matter_id") or ctx.get("matter_id")
+    # Fallback al doc más reciente del matter si no llega document_id.
+    if not document_id and matter_id and firm_id:
+        from utils.db import get_storage as _gs
+        _s = await _gs()
+        if hasattr(_s, "pool"):
+            async with _s.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "select id from matter_documents where matter_id=$1::uuid "
+                    "and firm_id=$2::uuid order by created_at desc limit 1",
+                    matter_id, firm_id,
+                )
+                if row:
+                    document_id = str(row["id"])
     if not (firm_id and document_id):
         return {"error": "firm_id y document_id requeridos"}
 

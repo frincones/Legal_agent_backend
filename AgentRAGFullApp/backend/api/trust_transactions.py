@@ -364,9 +364,15 @@ async def record_trust_deposit_tool(args: dict, ctx: dict) -> dict:
     firm_id = ctx.get("firm_id")
     user_id = ctx.get("user_id")
     matter_id = args.get("matter_id") or ctx.get("matter_id")
-    amount = float(args.get("amount_cop") or 0)
+    amount = float(args.get("amount_cop") or args.get("amount") or 0)
     trust_account_id = args.get("trust_account_id")
     payer = (args.get("payer") or "").strip()
+    if not amount:
+        from agent.tools._amount_parser import parse_amount_from_text
+        parsed = parse_amount_from_text(
+            (args.get("prompt") or ctx.get("user_prompt") or ""))
+        if parsed:
+            amount = parsed
     if not (firm_id and amount > 0):
         return {"error": "amount_cop > 0 requerido"}
 
@@ -419,8 +425,14 @@ async def record_trust_payment_tool(args: dict, ctx: dict) -> dict:
     firm_id = ctx.get("firm_id")
     user_id = ctx.get("user_id")
     matter_id = args.get("matter_id") or ctx.get("matter_id")
-    amount = float(args.get("amount_cop") or 0)
-    payee = (args.get("payee") or "").strip()
+    amount = float(args.get("amount_cop") or args.get("amount") or 0)
+    payee = (args.get("payee") or args.get("beneficiario") or "").strip()
+    if not amount:
+        from agent.tools._amount_parser import parse_amount_from_text
+        parsed = parse_amount_from_text(
+            (args.get("prompt") or ctx.get("user_prompt") or ""))
+        if parsed:
+            amount = parsed
     if not (firm_id and matter_id and amount > 0):
         return {"error": "matter_id y amount_cop > 0 requeridos"}
 

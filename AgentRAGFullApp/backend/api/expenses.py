@@ -186,18 +186,13 @@ async def log_expense_tool(args: dict, ctx: dict) -> dict:
     kind = (args.get("kind") or "otro").strip().lower()
     description = (args.get("description") or args.get("body")
                    or args.get("text") or "").strip()
-    # Si no llega amount, intenta parsearlo del prompt (e.g. "150000 pesos").
+    # Si no llega amount, intenta parsearlo del prompt (helper centralizado).
     if not amount:
-        import re
+        from agent.tools._amount_parser import parse_amount_from_text
         prompt_str = (args.get("prompt") or ctx.get("user_prompt") or "")
-        m = re.search(r"(\d{1,3}(?:[.,]?\d{3})*)\s*(?:pesos|cop|\$)", prompt_str.lower())
-        if not m:
-            m = re.search(r"\$\s*(\d{1,3}(?:[.,]?\d{3})*)", prompt_str)
-        if m:
-            try:
-                amount = float(m.group(1).replace(".", "").replace(",", ""))
-            except Exception:
-                pass
+        parsed = parse_amount_from_text(prompt_str)
+        if parsed:
+            amount = parsed
         if not description and prompt_str:
             description = prompt_str[:200]
     if not (firm_id and matter_id and amount > 0):
