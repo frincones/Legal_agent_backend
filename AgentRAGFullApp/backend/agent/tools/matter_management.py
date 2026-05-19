@@ -346,17 +346,25 @@ async def create_matter_tool(args: dict, ctx: dict) -> dict:
                 client_id = str(new_client["id"])
 
     async with storage.pool.acquire() as conn:
+        # display_id is NOT NULL pero sin default · genera uno tipo
+        # "CASE-2026-NNNN" basado en count de matters de la firma.
+        seq_row = await conn.fetchrow(
+            "select count(*)::int + 1 as n from matters where firm_id=$1::uuid",
+            firm_id,
+        )
+        from datetime import datetime as _dt
+        display_id = f"CASE-{_dt.utcnow().year}-{int(seq_row['n']):04d}"
         row = await conn.fetchrow(
             """
             insert into matters
               (firm_id, client_id, titulo, materia, tribunal, priority,
-               status, owner_user_id)
+               status, owner_user_id, display_id)
             values
-              ($1::uuid, $2::uuid, $3, $4, $5, $6, 'activo', $7::uuid)
+              ($1::uuid, $2::uuid, $3, $4, $5, $6, 'activo', $7::uuid, $8)
             returning id, titulo, materia, priority, status, display_id
             """,
             firm_id, client_id, titulo, materia, tribunal,
-            db_priority, user_id,
+            db_priority, user_id, display_id,
         )
     return {
         "ok": True,
