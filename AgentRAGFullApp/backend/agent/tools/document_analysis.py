@@ -405,6 +405,24 @@ async def extract_document_entities_tool(args: dict, ctx: dict) -> dict:
     if len(text) > 60_000:
         text = text[:60_000] + "\n[... documento truncado por longitud ...]"
 
+    # ADR-007 Fase 4 · prefijación con módulos safety/output/channel si SUBAGENT=true
+    effective_system_prompt = _SYSTEM_PROMPT
+    try:
+        from utils import persona_assembler
+        inherited, _, _ = await persona_assembler.get_assembled_system_prompt(
+            pool=storage.pool,
+            firm_id=firm_id,
+            user_id=ctx.get("user_id"),
+            channel="chat",
+            skill="subagent",
+            session_id=None,
+            legacy_prompt="",
+        )
+        if inherited:
+            effective_system_prompt = inherited + "\n\n---\n\n" + _SYSTEM_PROMPT
+    except Exception as _pa_exc:
+        logger.warning("document_analysis: persona_assembler falló · usando _SYSTEM_PROMPT original. %s", _pa_exc)
+
     from utils.llm import llm_generate_json
     try:
         result = await llm_generate_json(
@@ -413,7 +431,7 @@ async def extract_document_entities_tool(args: dict, ctx: dict) -> dict:
                 "Extrae el JSON estructurado siguiendo el esquema."
             ),
             model="gpt-4o-mini",
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=effective_system_prompt,
             temperature=0.0,
             max_tokens=4000,
             purpose="document_extraction",

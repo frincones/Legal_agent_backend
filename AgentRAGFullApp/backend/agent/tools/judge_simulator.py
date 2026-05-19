@@ -166,11 +166,29 @@ async def simulate_judge_view_for_matter(
         + document_block
     )
 
+    # ADR-007 Fase 4 · prefijación con módulos safety/output/channel si SUBAGENT=true
+    effective_system_prompt = SYSTEM_PROMPT
+    try:
+        from utils import persona_assembler
+        inherited, _, _ = await persona_assembler.get_assembled_system_prompt(
+            pool=storage.pool,
+            firm_id=firm_id,
+            user_id=user_id,
+            channel="chat",
+            skill="subagent",
+            session_id=None,
+            legacy_prompt="",
+        )
+        if inherited:
+            effective_system_prompt = inherited + "\n\n---\n\n" + SYSTEM_PROMPT
+    except Exception as _pa_exc:
+        logger.warning("judge_simulator: persona_assembler falló · usando SYSTEM_PROMPT original. %s", _pa_exc)
+
     try:
         parsed = await llm_generate_json(
             prompt=user_prompt,
             model="gpt-4o-mini",
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=effective_system_prompt,
             temperature=0.1,
             max_tokens=1500,
             purpose="judge_simulation",

@@ -24,6 +24,7 @@ from uuid import UUID, uuid4
 from utils.skill_loader import SkillDefinition, resolve_skill
 from utils.playbook_resolver import get_firm_playbook, playbook_context_block
 from utils.hook_runner import run_hooks_for_skill
+from utils import persona_assembler
 
 logger = logging.getLogger(__name__)
 
@@ -289,8 +290,19 @@ async def run_skill_stream(
             }
             return
 
-    full_system_prompt = (
+    legacy_prompt = (
         skill.system_prompt + "\n\n" + playbook_block + "\n\n" + (skill.references_md or "")
+    )
+    full_system_prompt, personality_version_id, personality_checksum = (
+        await persona_assembler.get_assembled_system_prompt(
+            pool=pool,
+            firm_id=firm_id,
+            user_id=user_id,
+            channel="chat",
+            skill=skill.command,
+            session_id=None,
+            legacy_prompt=legacy_prompt,
+        )
     )
     # Inyecta matter_id + document_id en input_data ANTES de formatear para
     # que el LLM los vea como parte del user_message · sin esto solo viven
@@ -549,6 +561,8 @@ async def run_skill_stream(
         "success", None, pre_hooks_fired + post_hooks_fired,
         duration_ms, tokens_in, tokens_out,
         _estimate_cost_cents(tokens_in, tokens_out, skill.model),
+        personality_version_id=personality_version_id,
+        personality_checksum=personality_checksum,
     )
 
     yield {
@@ -559,6 +573,8 @@ async def run_skill_stream(
             "tokens": {"input": tokens_in, "output": tokens_out},
             "full_text": content,
             "warnings": warnings,
+            "personality_version_id": personality_version_id,
+            "personality_checksum": personality_checksum,
         },
     }
 
@@ -614,13 +630,24 @@ async def run_skill(
                 "reason": d.get("reason"),
             }
 
-    # Build final system prompt
-    full_system_prompt = (
+    # Build final system prompt con persona assembler (ADR-007)
+    legacy_prompt_ns = (
         skill.system_prompt
         + "\n\n"
         + playbook_block
         + "\n\n"
         + (skill.references_md or "")
+    )
+    full_system_prompt, personality_version_id_ns, personality_checksum_ns = (
+        await persona_assembler.get_assembled_system_prompt(
+            pool=pool,
+            firm_id=firm_id,
+            user_id=user_id,
+            channel="chat",
+            skill=skill.command,
+            session_id=None,
+            legacy_prompt=legacy_prompt_ns,
+        )
     )
 
     # Inyecta matter_id + document_id como en run_skill_stream · ver
@@ -816,6 +843,8 @@ async def run_skill(
         "success", None, pre_hooks_fired + post_hooks_fired,
         duration_ms, tokens_in, tokens_out,
         _estimate_cost_cents(tokens_in, tokens_out, skill.model),
+        personality_version_id=personality_version_id_ns,
+        personality_checksum=personality_checksum_ns,
     )
 
     return {
@@ -829,6 +858,8 @@ async def run_skill(
         "output": parsed_output,
         "warnings": warnings,
         "tool_calls": tool_calls_log,
+        "personality_version_id": personality_version_id_ns,
+        "personality_checksum": personality_checksum_ns,
     }
 
 
@@ -1051,8 +1082,15 @@ async def _persist_execution(
     matter_id, document_id, input_summary, output_summary,
     status, error_message, hooks_fired,
     duration_ms, tokens_in, tokens_out, cost_cents,
+    personality_version_id: Optional[str] = None,
+    personality_checksum: Optional[str] = None,
 ):
-    """Insert en skill_executions audit table."""
+    """Insert en skill_executions audit table.
+
+    personality_version_id y personality_checksum son opcionales (ADR-007):
+    presentes solo cuando LEXAI_PERSONA_PHASE >= 1 y la RPC tuvo éxito.
+    Las columnas deben existir en skill_executions (migración sprint_p1).
+    """
     try:
         async with pool.acquire() as conn:
             await conn.execute(
@@ -1063,13 +1101,15 @@ async def _persist_execution(
                    input_summary, output_summary,
                    status, error_message, hooks_fired,
                    duration_ms, tokens_input, tokens_output, cost_usd_cents,
-                   completed_at)
+                   completed_at,
+                   personality_version_id, personality_checksum)
                 values ($1::uuid, $2::uuid, $3::uuid, $4, $5,
                         $6, $7,
                         $8::jsonb, $9::jsonb,
                         $10, $11, $12,
                         $13, $14, $15, $16,
-                        case when $10 != 'running' then now() else null end)
+                        case when $10 != 'running' then now() else null end,
+                        $17, $18)
                 """,
                 execution_id, firm_id, user_id,
                 str(skill_id) if skill_id else None, command,
@@ -1078,6 +1118,8 @@ async def _persist_execution(
                 json.dumps(output_summary)[:4000],
                 status, (error_message or "")[:240], hooks_fired,
                 duration_ms, tokens_in, tokens_out, cost_cents,
+                personality_version_id,
+                personality_checksum,
             )
     except Exception as e:
         logger.warning("persist_execution failed (non-fatal): %s", e)

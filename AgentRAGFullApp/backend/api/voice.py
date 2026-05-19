@@ -316,12 +316,62 @@ Abogado [te interrumpe]: "Espera, mejor con interés legal."
 Tú: [DETENTE, llama calc_intereses] "Ajustado: 23.8 millones." """
 
 
-def build_session_update(matter_id: Optional[str] = None) -> dict:
+async def build_voice_instructions(
+    pool,
+    firm_id: Optional[str],
+    user_id: Optional[str],
+    session_id: Optional[str],
+) -> str:
+    """Retorna las instrucciones de voz usando el persona assembler (ADR-007 Fase 2).
+
+    Si LEXAI_PERSONA_VOICE=false o PHASE < 2, retorna LEGAL_VOICE_INSTRUCTIONS original.
+    Si la RPC falla, también retorna el fallback. LEGAL_VOICE_INSTRUCTIONS permanece
+    como constante para nunca dejar el canal sin instrucciones.
+    """
+    try:
+        from utils import persona_assembler
+        assembled, version_id, _checksum = await persona_assembler.get_assembled_system_prompt(
+            pool=pool,
+            firm_id=firm_id,
+            user_id=user_id,
+            channel="voice",
+            skill=None,
+            session_id=session_id,
+            legacy_prompt=LEGAL_VOICE_INSTRUCTIONS,
+        )
+        if version_id:
+            logger.info(
+                "build_voice_instructions: persona ensamblada OK "
+                "version_id=%s firm_id=%s",
+                version_id, firm_id,
+            )
+        return assembled
+    except Exception as exc:
+        logger.warning(
+            "build_voice_instructions: error al llamar persona_assembler · "
+            "fallback a LEGAL_VOICE_INSTRUCTIONS. error=%s firm_id=%s",
+            exc, firm_id,
+        )
+        return LEGAL_VOICE_INSTRUCTIONS
+
+
+async def build_session_update(
+    matter_id: Optional[str] = None,
+    pool=None,
+    firm_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> dict:
     """Build the initial session.update payload with tools and config.
 
     Tool catalog matches server-side `_tool_registry` keys.
+    Usa build_voice_instructions para obtener las instrucciones según ADR-007 Fase 2.
     """
-    instructions = LEGAL_VOICE_INSTRUCTIONS
+    if pool is not None:
+        instructions = await build_voice_instructions(pool, firm_id, user_id, session_id)
+    else:
+        instructions = LEGAL_VOICE_INSTRUCTIONS
+
     if matter_id:
         instructions += (
             f"\n\nContexto activo: matter_id={matter_id}. Carga partes/hechos/plazos "
@@ -1512,8 +1562,18 @@ async def voice_relay(
                 firm_id, user_id, matter_id, session_db_id,
             )
 
-            # 3) Push initial session.update
-            await upstream.send(json.dumps(build_session_update(matter_id=matter_id)))
+            # 3) Push initial session.update (ADR-007: usa persona assembler si PHASE>=2)
+            from utils.db import get_storage as _get_storage_voice
+            _voice_storage = await _get_storage_voice()
+            _voice_pool = getattr(_voice_storage, "pool", None)
+            _session_update_payload = await build_session_update(
+                matter_id=matter_id,
+                pool=_voice_pool,
+                firm_id=firm_id,
+                user_id=user_id,
+                session_id=session_db_id,
+            )
+            await upstream.send(json.dumps(_session_update_payload))
             await websocket.send_json({"type": "session.ready", "session_id": session_db_id})
 
             # 4) Pump messages bidirectionally
