@@ -98,6 +98,24 @@ async def check_doc_consistency_tool(args: dict, ctx: dict) -> dict:
                 )
                 if row:
                     matter_document_id = str(row["id"])
+                elif document_text:
+                    # Auto-crea matter_document fantasma para que evidence
+                    # tools corran cuando el matter aún no tiene docs reales.
+                    import hashlib as _hl
+                    sha = _hl.sha256(document_text.encode("utf-8")).hexdigest()
+                    new_doc = await conn.fetchrow(
+                        """insert into matter_documents
+                            (firm_id, matter_id, kind, titulo, status,
+                             uploaded_by, mime_type, sha256, pages,
+                             ocr_done, resumen_ia)
+                           values ($1::uuid, $2::uuid, 'externo'::doc_kind,
+                                   'Documento ad-hoc · evidencia', 'completed',
+                                   $3::uuid, 'text/plain', $4, 1, true, $5)
+                           returning id""",
+                        firm_id, matter_id, user_id, sha,
+                        document_text[:500],
+                    )
+                    matter_document_id = str(new_doc["id"])
     if not matter_document_id:
         return {"error": "No hay matter_document_id ni document en el caso para analizar"}
     from agent.tools.inconsistency_detector import detect_inconsistencies_in_document
@@ -146,6 +164,22 @@ async def score_evidence_tool(args: dict, ctx: dict) -> dict:
                 )
                 if row:
                     matter_document_id = str(row["id"])
+                elif document_text:
+                    import hashlib as _hl
+                    sha = _hl.sha256(document_text.encode("utf-8")).hexdigest()
+                    new_doc = await conn.fetchrow(
+                        """insert into matter_documents
+                            (firm_id, matter_id, kind, titulo, status,
+                             uploaded_by, mime_type, sha256, pages,
+                             ocr_done, resumen_ia)
+                           values ($1::uuid, $2::uuid, 'externo'::doc_kind,
+                                   'Documento ad-hoc · evidencia', 'completed',
+                                   $3::uuid, 'text/plain', $4, 1, true, $5)
+                           returning id""",
+                        firm_id, matter_id, user_id, sha,
+                        document_text[:500],
+                    )
+                    matter_document_id = str(new_doc["id"])
     if not matter_document_id:
         return {"error": "No hay matter_document_id disponible en el caso"}
     from agent.tools.probative_scorer import compute_probative_score
