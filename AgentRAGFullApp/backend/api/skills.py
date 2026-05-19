@@ -37,6 +37,10 @@ class ExecuteSkillBody(BaseModel):
     matter_id: Optional[UUID] = None
     document_id: Optional[UUID] = None
     history: list[HistoryMessage] = Field(default_factory=list)
+    # session_id permite activar session_personality_overrides (capa D3 ADR-007).
+    # El frontend puede pasar el ID de conversación o tab para que los overrides
+    # de sesión (brevedad, tono efímero) funcionen correctamente.
+    session_id: Optional[str] = None
 
 
 @router.post("/execute")
@@ -55,6 +59,7 @@ async def execute_skill(
         matter_id=str(body.matter_id) if body.matter_id else None,
         document_id=str(body.document_id) if body.document_id else None,
         history=[h.model_dump() for h in body.history],
+        session_id=body.session_id,
     )
     if not result.get("ok"):
         if result.get("error") == "blocked_by_hook":
@@ -95,6 +100,7 @@ async def execute_skill_stream(
                 matter_id=str(body.matter_id) if body.matter_id else None,
                 document_id=str(body.document_id) if body.document_id else None,
                 history=[h.model_dump() for h in body.history],
+                session_id=body.session_id,
             ):
                 payload = json.dumps(evt["data"], ensure_ascii=False)
                 yield f"event: {evt['event']}\ndata: {payload}\n\n"

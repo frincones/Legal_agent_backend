@@ -236,6 +236,7 @@ async def run_skill_stream(
     matter_id: Optional[str] = None,
     document_id: Optional[str] = None,
     history: Optional[list[dict[str, Any]]] = None,
+    session_id: Optional[str] = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Versión streaming de run_skill · yield eventos para SSE.
 
@@ -293,6 +294,21 @@ async def run_skill_stream(
     legacy_prompt = (
         skill.system_prompt + "\n\n" + playbook_block + "\n\n" + (skill.references_md or "")
     )
+    # Resolución de session_id (Bug #1 fix / ADR-007 capa D3):
+    # Prioridad: (a) session_id explícito del caller, (b) input_data.context.session_id,
+    # (c) execution_id como fallback estable dentro de esta request.
+    resolved_session_id: Optional[str] = (
+        session_id
+        or (input_data.get("context") or {}).get("session_id")
+        or execution_id
+    )
+    logger.info(
+        "skill_runner stream session_id resolution · explicit=%r ctx=%r fallback=%s resolved=%s",
+        session_id,
+        (input_data.get("context") or {}).get("session_id"),
+        execution_id,
+        resolved_session_id,
+    )
     full_system_prompt, personality_version_id, personality_checksum = (
         await persona_assembler.get_assembled_system_prompt(
             pool=pool,
@@ -300,7 +316,7 @@ async def run_skill_stream(
             user_id=user_id,
             channel="chat",
             skill=skill.command,
-            session_id=None,
+            session_id=resolved_session_id,
             legacy_prompt=legacy_prompt,
         )
     )
@@ -590,6 +606,7 @@ async def run_skill(
     document_id: Optional[str] = None,
     stream: bool = False,
     history: Optional[list[dict[str, Any]]] = None,
+    session_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Ejecuta skill end-to-end · retorna dict con result o error."""
     started = time.time()
@@ -638,6 +655,21 @@ async def run_skill(
         + "\n\n"
         + (skill.references_md or "")
     )
+    # Resolución de session_id (Bug #1 fix / ADR-007 capa D3):
+    # Prioridad: (a) session_id explícito del caller, (b) input_data.context.session_id,
+    # (c) execution_id como fallback estable dentro de esta request.
+    resolved_session_id_ns: Optional[str] = (
+        session_id
+        or (input_data.get("context") or {}).get("session_id")
+        or execution_id
+    )
+    logger.info(
+        "skill_runner session_id resolution · explicit=%r ctx=%r fallback=%s resolved=%s",
+        session_id,
+        (input_data.get("context") or {}).get("session_id"),
+        execution_id,
+        resolved_session_id_ns,
+    )
     full_system_prompt, personality_version_id_ns, personality_checksum_ns = (
         await persona_assembler.get_assembled_system_prompt(
             pool=pool,
@@ -645,7 +677,7 @@ async def run_skill(
             user_id=user_id,
             channel="chat",
             skill=skill.command,
-            session_id=None,
+            session_id=resolved_session_id_ns,
             legacy_prompt=legacy_prompt_ns,
         )
     )

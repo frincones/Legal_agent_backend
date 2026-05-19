@@ -356,8 +356,32 @@ begin
   end if;
 
   -- ----------------------------------------------------------------
-  -- PASO 3: Aplicar gating por canal (voice / chat)
-  -- PASO 4: Aplicar gating por skill (subagent / skill_doctrine)
+  -- PASO 3: Cargar D2 (user preferences) anticipado — se inyecta inline
+  --         inmediatamente después del módulo S2 (Tone) para que el LLM
+  --         no sufra atenuación de contexto distante.
+  --         Bug #2 fix (ADR-007): preferencias al inicio, no al final.
+  -- ----------------------------------------------------------------
+  if p_user_id is not null then
+    select tone, brevity, language
+      into v_user_tone, v_user_brevity, v_user_language
+      from user_personality_preferences
+     where user_id = p_user_id
+     limit 1;
+
+    if found then
+      v_user_pref_line := format(
+        'Preferencias del usuario (aplica desde ahora y en CADA respuesta): tratamiento=%s | brevedad=%s | idioma=%s',
+        coalesce(v_user_tone, 'usted'),
+        coalesce(v_user_brevity, 'normal'),
+        coalesce(v_user_language, 'es-CO')
+      );
+    end if;
+  end if;
+
+  -- ----------------------------------------------------------------
+  -- PASO 4: Aplicar gating por canal (voice / chat)
+  -- PASO 5: Aplicar gating por skill (subagent / skill_doctrine)
+  --         Inyecta D2 inline inmediatamente después del módulo type='tone' (S2).
   -- ----------------------------------------------------------------
   foreach v_mod in array v_modules loop
     -- Voice: excluir 'examples' (S10) y tipos no permitidos
@@ -378,6 +402,15 @@ begin
     end if;
 
     v_parts := array_append(v_parts, v_mod.body_md);
+
+    -- D2 inline injection: justo después del módulo Tone (S2) para compliance máximo.
+    -- El bloque lleva header explícito para que el LLM no lo confunda con S2.
+    if v_mod.type = 'tone' and v_user_pref_line is not null then
+      v_parts := array_append(v_parts,
+        '--- PREFERENCIAS DEL USUARIO (ALTA PRIORIDAD — RESPETA EN CADA TURNO) ---' ||
+        E'\n' || v_user_pref_line
+      );
+    end if;
   end loop;
 
   -- Voice override: añadir instrucción de texto plano al final de los static
@@ -388,30 +421,13 @@ begin
   end if;
 
   -- ----------------------------------------------------------------
-  -- PASO 5: Cargar capas DYNAMIC
+  -- PASO 6: Cargar capas DYNAMIC restantes (D1 firm append, D3 session)
+  --         D2 ya fue inyectado inline en el bucle de módulos (ver arriba).
   -- ----------------------------------------------------------------
 
   -- D1: firm append (si existe fpo con system_append_md)
   if v_has_fpo then
     v_firm_append := v_fpo.system_append_md;
-  end if;
-
-  -- D2: user preferences
-  if p_user_id is not null then
-    select tone, brevity, language
-      into v_user_tone, v_user_brevity, v_user_language
-      from user_personality_preferences
-     where user_id = p_user_id
-     limit 1;
-
-    if found then
-      v_user_pref_line := format(
-        'Preferencias del usuario: tratamiento=%s | brevedad=%s | idioma=%s',
-        coalesce(v_user_tone, 'usted'),
-        coalesce(v_user_brevity, 'normal'),
-        coalesce(v_user_language, 'es-CO')
-      );
-    end if;
   end if;
 
   -- D3: session override (solo si no ha expirado)
@@ -425,20 +441,17 @@ begin
   end if;
 
   -- ----------------------------------------------------------------
-  -- PASO 6: Ensamblar en orden exacto
+  -- PASO 7: Ensamblar en orden exacto
   -- ----------------------------------------------------------------
   v_prompt := array_to_string(v_parts, E'\n\n');
 
-  -- Bloque dynamic
-  if v_firm_append is not null or v_user_pref_line is not null or v_session_append is not null then
-    v_prompt := v_prompt || E'\n\n--- instrucciones adicionales ---';
+  -- Bloque dynamic final: D1 firm append + D3 session override
+  -- (D2 ya está inyectado inline tras S2)
+  if v_firm_append is not null or v_session_append is not null then
+    v_prompt := v_prompt || E'\n\n--- instrucciones adicionales del despacho ---';
 
     if v_firm_append is not null then
       v_prompt := v_prompt || E'\n\n' || v_firm_append;
-    end if;
-
-    if v_user_pref_line is not null then
-      v_prompt := v_prompt || E'\n\n' || v_user_pref_line;
     end if;
 
     if v_session_append is not null then
@@ -447,7 +460,7 @@ begin
   end if;
 
   -- ----------------------------------------------------------------
-  -- PASO 7: Calcular checksum
+  -- PASO 8: Calcular checksum
   -- Usamos md5() que es nativo de Postgres sin extensiones.
   -- El checksum sirve solo para deduplicación determinista, no para
   -- seguridad criptográfica, por lo que md5 es suficiente.
@@ -455,7 +468,7 @@ begin
   v_checksum := md5(v_prompt);
 
   -- ----------------------------------------------------------------
-  -- PASO 8: INSERT idempotente en agent_personality_versions
+  -- PASO 9: INSERT idempotente en agent_personality_versions
   --         firm_id puede ser null (versión system default sin firma).
   -- ----------------------------------------------------------------
   -- INSERT idempotente.
@@ -480,7 +493,7 @@ begin
   end if;
 
   -- ----------------------------------------------------------------
-  -- PASO 9: Retornar (asignación a los OUT params de RETURNS TABLE)
+  -- PASO 10: Retornar (asignación a los OUT params de RETURNS TABLE)
   -- Los nombres coinciden con las columnas del RETURNS TABLE.
   -- ----------------------------------------------------------------
   system_prompt  := v_prompt;
