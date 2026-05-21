@@ -550,6 +550,9 @@ from api.judges_admin import router as judges_admin_router
 from api.evidence import router as evidence_router
 from api.wizard_templates import router as wizard_templates_router, sessions_router as wizard_sessions_router
 from api.wizard_public import router as wizard_public_router
+# F1 UX v2 · complementary endpoints for sidebar + command palette
+from api.voice_tools import router as voice_tools_router
+from api.threads import router as threads_router
 
 app.include_router(health_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
@@ -687,6 +690,9 @@ app.include_router(evidence_router, dependencies=[_Depends_S25(_req_mod_S25("evi
 app.include_router(wizard_templates_router, dependencies=[_Depends_S25(_req_mod_S25("wizards_public"))])
 app.include_router(wizard_sessions_router, dependencies=[_Depends_S25(_req_mod_S25("wizards_public"))])
 app.include_router(wizard_public_router)  # public · sin gate
+# F1 UX v2 · GET /v1/voice/tools (CommandPaletteV2) + GET /v1/threads (SidebarHilosList)
+app.include_router(voice_tools_router)
+app.include_router(threads_router)
 
 
 def main():
