@@ -569,10 +569,18 @@ async def run_skill_stream(
             yield {"event": "warning", "data": warning}
 
     duration_ms = int((time.time() - started) * 1000)
+    # Guardar prompt real en input_summary para que /v1/threads pueda derivar título.
+    # Antes se guardaba sólo {"keys": [...]}, lo que hacía que todos los hilos
+    # mostraran el command ("/ask") en lugar del texto del usuario.
+    _input_summary_for_audit = {
+        "prompt": str(input_data.get("prompt", ""))[:240] if input_data.get("prompt") else None,
+        "command": command,
+        "keys": list(input_data.keys()),
+    }
     await _persist_execution(
         pool, execution_id, firm_id, user_id, skill.id, command,
         matter_id, document_id,
-        {"keys": list(input_data.keys())},
+        _input_summary_for_audit,
         {"keys": list(parsed_output.keys()), "warning_count": len(warnings)},
         "success", None, pre_hooks_fired + post_hooks_fired,
         duration_ms, tokens_in, tokens_out,
@@ -866,10 +874,16 @@ async def run_skill(
 
     duration_ms = int((time.time() - started) * 1000)
 
+    # Guardar prompt real en input_summary para que /v1/threads pueda derivar título.
+    _input_summary_ns = {
+        "prompt": str(input_data.get("prompt", ""))[:240] if input_data.get("prompt") else None,
+        "command": command,
+        "keys": list(input_data.keys()),
+    }
     await _persist_execution(
         pool, execution_id, firm_id, user_id, skill.id, command,
         matter_id, document_id,
-        {"keys": list(input_data.keys())},
+        _input_summary_ns,
         {"keys": list(parsed_output.keys()),
          "warning_count": len(warnings)},
         "success", None, pre_hooks_fired + post_hooks_fired,

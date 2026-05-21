@@ -93,6 +93,12 @@ async def list_threads(
     firm_id = principal.firm_id
     user_id = principal.user_id
 
+    logger.info(
+        "list_threads · firm_id=%s user_id=%s limit=%d pool_ok=%s",
+        firm_id, user_id, limit,
+        storage.pool is not None if storage else False,
+    )
+
     sql = """
         select
             id,
@@ -109,6 +115,7 @@ async def list_threads(
     """
 
     rows = []
+    _query_error: Optional[str] = None
     try:
         async with storage.pool.acquire() as conn:
             records = await conn.fetch(sql, firm_id, user_id, limit)
@@ -138,8 +145,11 @@ async def list_threads(
                     }
                 )
     except Exception as exc:
-        logger.warning("list_threads query failed: %s", exc)
-        # Return empty list rather than 500 — sidebar handles empty gracefully
-        return {"threads": [], "total": 0}
+        # Log con stack trace completo para diagnóstico (antes era sólo warning)
+        logger.exception("list_threads query failed: %s", exc)
+        _query_error = str(exc)
+        # Retorna el error en el body para facilitar diagnóstico en dev/staging.
+        # El sidebar frontend maneja lista vacía sin romperse.
+        return {"threads": [], "total": 0, "_error": _query_error}
 
     return {"threads": rows, "total": len(rows)}
