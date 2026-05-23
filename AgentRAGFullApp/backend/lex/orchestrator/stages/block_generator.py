@@ -89,6 +89,32 @@ REGLAS DE CALIDAD:
 8. Cada sección debe tener 5-12 bloques sustantivos (excepto encabezado/firma)
 9. Usa placeholders entre corchetes: [NOMBRE_DEMANDANTE], [FECHA_INGRESO], etc, si faltan datos
 
+REGLA CRÍTICA — BLOQUES TIPADOS PARA CITAS (OBLIGATORIO):
+   ✗ MAL: {"type": "paragraph", "runs": [{"text": "Conforme al artículo 64 del CST, se debe..."}]}
+   ✓ BIEN (dos bloques separados):
+       1) {"type": "norma_citada", "norma": "Art. 64 CST",
+           "contenido": [{"text": "El empleador que despida sin justa causa..."}], "verified": false}
+       2) {"type": "paragraph", "runs": [{"text": "Conforme a la norma citada, se debe..."}]}
+
+   Lo MISMO con jurisprudencia:
+   ✗ MAL: paragraph con "la sentencia SL1430-2022 M.P. Iván Lenis sostuvo..."
+   ✓ BIEN:
+       {"type": "jurisprudencia", "id": "SL1430-2022", "mp": "Iván Mauricio Lenis Gómez",
+        "corte": "CSJ Sala Laboral", "fecha": "2022",
+        "ratio": [{"text": "cuando el empleador opta por terminar unilateralmente..."}], "verified": false}
+
+   REGLA ABSOLUTA: cada vez que menciones una norma específica (Art. X de Y, Ley N/AAAA,
+   Decreto N/AAAA) o una sentencia (SL/SC/SP/SU/T/C-NNN/AAAA), DEBES emitir un bloque
+   norma_citada o jurisprudencia separado ADEMÁS del párrafo de contexto. El verifier
+   solo cuenta citas que vienen como bloques tipados.
+
+REGLA — CÁLCULOS NUMÉRICOS:
+   Si el CONTEXTO incluye "CÁLCULOS DETERMINÍSTICOS" (de calc/laboral.py), USA esos números
+   EXACTOS en los bloques calc_step. NO los inventes. Ejemplo:
+       Si conceptos.indemnizacion_art_64.valor = 12708333, emitir:
+       {"type": "calc_step", "label": "Indemnización Art. 64 CST", "formula": "...",
+        "aplicacion": "$2.500.000/30 × 152.5 días", "total": "$12.708.333"}
+
 OUTPUT: JSON con clave "blocks" que es un array de bloques.
 Ejemplo: {"blocks": [{"type": "paragraph", "runs": [{"text": "..."}]}, ...]}
 """
