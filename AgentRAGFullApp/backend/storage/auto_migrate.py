@@ -1,11 +1,11 @@
 """
-Auto-migration runner para migraciones Sprint L-DOC.
+Auto-migration runner para migraciones Sprint L-DOC y Sprint M (block streaming).
 
 Se ejecuta desde el lifespan del backend al iniciar.
 Idempotente: usa IF NOT EXISTS, DO $$ EXCEPTION BLOCK, etc.
 Si la migracion ya esta aplicada, no hace nada.
 
-Solo aplica migraciones del Sprint L-DOC (no toca migraciones legacy).
+Solo aplica migraciones controladas por LexAI v2 (no toca migraciones legacy).
 """
 from __future__ import annotations
 
@@ -17,14 +17,16 @@ import asyncpg
 
 logger = logging.getLogger(__name__)
 
-# Lista de migraciones Sprint L-DOC a aplicar en orden.
+# Lista de migraciones a aplicar en orden.
 # Cada migracion DEBE ser idempotente.
 SPRINT_L_DOC_MIGRATIONS = [
     "2026_05_25_sprint_l_doc.sql",
+    "2026_05_26_sprint_m_block_streaming.sql",
 ]
 
-# Tablas que la migracion crea — usadas para detectar si ya esta aplicada.
+# Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
 EXPECTED_TABLES = {
+    # Sprint L-DOC
     "ingest_queue",
     "ingest_runs",
     "pipeline_logs",
@@ -33,6 +35,12 @@ EXPECTED_TABLES = {
     "document_section_revisions",
     "document_quality_scores",
     "template_usage_stats",
+    # Sprint M (block streaming)
+    "document_blocks",
+    "generation_audit",
+    "template_catalog",
+    "citation_verifications",
+    "document_versions",
 }
 
 
