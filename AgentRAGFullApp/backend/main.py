@@ -717,6 +717,14 @@ try:
 except Exception as _e:
     logger.warning("admin_pipeline_test router registration failed: %s", _e)
 
+# Sprint L-DOC · Ingest URL endpoint (validar fuentes con 1 doc real)
+try:
+    from api.admin_ingest_url import router as admin_ingest_url_router
+    app.include_router(admin_ingest_url_router)
+    logger.info("admin_ingest_url router registered")
+except Exception as _e:
+    logger.warning("admin_ingest_url router registration failed: %s", _e)
+
 # Sprint L-DOC · POST /v1/documents/generate (SSE)
 try:
     from api.documents_generate import router as documents_generate_router
