@@ -70,6 +70,13 @@ async def lifespan(app: FastAPI):
     storage = await get_storage(config.storage)
     logger.info("Storage initialized: %s", config.storage.provider)
 
+    # Sprint L-DOC: auto-apply migrations idempotente
+    try:
+        from storage.auto_migrate import run_sprint_l_doc_migrations
+        await run_sprint_l_doc_migrations(storage.pool)
+    except Exception as e:
+        logger.warning("Sprint L-DOC auto_migrate failed (non-fatal): %s", e)
+
     # Pre-warm OpenAI connection to eliminate cold-start latency on first request
     await _prewarm_openai()
 
@@ -693,6 +700,22 @@ app.include_router(wizard_public_router)  # public · sin gate
 # F1 UX v2 · GET /v1/voice/tools (CommandPaletteV2) + GET /v1/threads (SidebarHilosList)
 app.include_router(voice_tools_router)
 app.include_router(threads_router)
+
+# Sprint L-DOC · Admin Pipeline endpoints (/admin/pipeline/*)
+try:
+    from api.admin_pipeline import router as admin_pipeline_router
+    app.include_router(admin_pipeline_router)
+    logger.info("admin_pipeline router registered")
+except Exception as _e:
+    logger.warning("admin_pipeline router registration failed: %s", _e)
+
+# Sprint L-DOC · POST /v1/documents/generate (SSE)
+try:
+    from api.documents_generate import router as documents_generate_router
+    app.include_router(documents_generate_router)
+    logger.info("documents_generate router registered")
+except Exception as _e:
+    logger.warning("documents_generate router registration failed: %s", _e)
 
 
 def main():
