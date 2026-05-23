@@ -444,15 +444,16 @@ async def run_corte_cc_bulk(
     import uuid
 
     # Lista hito de sentencias Corte Constitucional (las mas citadas)
+    # NOTA: numeros sin leading zeros (Python 3 no permite literales decimales 025/002)
     DEFAULT_SENTENCIAS = sentencias or [
         ("T", 760, 2008),   # Derecho a la salud - hito
         ("T", 406, 1992),   # Estado social de derecho
         ("C", 355, 2006),   # Aborto
         ("T", 388, 2013),   # Concepto de tutela
         ("SU", 168, 2017),  # Cosa juzgada
-        ("T", 025, 2004),   # Desplazamiento forzado
+        ("T", 25, 2004),    # Desplazamiento forzado (T-025/04)
         ("C", 1064, 2001),  # Salario minimo
-        ("T", 002, 1992),   # Vida digna
+        ("T", 2, 1992),     # Vida digna (T-002/92)
         ("C", 239, 1997),   # Eutanasia
         ("T", 717, 2017),   # Pension de invalidez
     ]
