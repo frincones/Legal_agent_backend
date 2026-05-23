@@ -149,11 +149,44 @@ async def get_document_audit(
     }
 
 
+@router.post("/documents/{document_id}/export-forensic")
+async def export_forensic_docx(
+    document_id: str,
+    _claims: dict = Depends(_require_session),
+):
+    """Exporta documento como .docx forense (Times NR, márgenes 3cm, justified)
+    construyendo imperativamente desde bloques persistidos."""
+    if not _flag_enabled():
+        raise HTTPException(status_code=503, detail="docgen_v2_disabled")
+    storage = await get_storage()
+    from lex.storage import BlocksRepo
+    from lex.docx_forensic_builder import build_docx_from_blocks
+    from fastapi.responses import StreamingResponse
+    import io as _io
+
+    repo = BlocksRepo(storage.pool)
+    blocks = await repo.get_blocks_for_document(document_id)
+    if not blocks:
+        raise HTTPException(status_code=404, detail="document_not_found_or_empty")
+
+    try:
+        docx_bytes = build_docx_from_blocks(blocks, title=f"Documento {document_id[:8]}", author="LexAI")
+    except Exception as e:
+        logger.exception("docx forensic export failed")
+        raise HTTPException(status_code=500, detail=f"export_error:{str(e)[:120]}")
+
+    return StreamingResponse(
+        _io.BytesIO(docx_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="documento_{document_id[:8]}.docx"'},
+    )
+
+
 @router.get("/health")
 async def health():
     """Health check + flag status."""
     return {
         "status": "ok",
         "flag_docgen_v2": _flag_enabled(),
-        "version": "v2.0.0-M1",
+        "version": "v2.0.0-M5",
     }

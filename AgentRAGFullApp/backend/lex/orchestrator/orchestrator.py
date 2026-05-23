@@ -418,6 +418,35 @@ class Orchestrator:
             except Exception as e:
                 logger.warning("citation/derogation stage failed: %s", e)
 
+        # ===== STAGE 9: POLISH PASS (gpt-4o) =====
+        polish_info: dict[str, Any] = {}
+        try:
+            from lex.orchestrator.stages.polish import run_polish
+            yield SSEEvent.polish_started(model="gpt-4o", draft_chars=sum(
+                len(str(b.get("block_data", {}))) for b in all_blocks
+            ))
+            polish_info = await run_polish(self.client, all_blocks, classification.doc_type)
+            yield SSEEvent.polish_done(
+                polished_chars=polish_info.get("delta_chars", 0),
+                delta_chars=polish_info.get("delta_chars", 0),
+                error=polish_info.get("error"),
+            )
+        except Exception as e:
+            logger.warning("polish stage exception: %s", e)
+
+        # ===== STAGE 10: QA AGENT (rule-based + template validation_rules) =====
+        qa_result: dict[str, Any] = {}
+        try:
+            from lex.orchestrator.stages.qa import run_qa
+            qa_result = await run_qa(all_blocks, template)
+            yield SSEEvent.qa_done(
+                passed=qa_result.get("passed", True),
+                score=qa_result.get("score", 7.5),
+                issues=qa_result.get("issues", []),
+            )
+        except Exception as e:
+            logger.warning("qa stage exception: %s", e)
+
         # ===== Persistir bloques en BD (best-effort) =====
         if self.blocks_repo:
             try:
@@ -437,7 +466,7 @@ class Orchestrator:
         # gpt-4o ~$2.50/1M input + $10/1M output
         estimated_cost = round(0.005 + 0.003 * len(plan), 4)
 
-        # Build consolidated audit report (M4)
+        # Build consolidated audit report (M4 + M5 polish/qa)
         from lex.verify import build_audit_report
         audit_payload = build_audit_report(
             generation_id=generation_id,
@@ -458,6 +487,8 @@ class Orchestrator:
             citations=citations_collected,
             citation_verifications=verification_results,
             derogation_checks=derogation_results,
+            qa_result=qa_result,
+            polish_info=polish_info,
             total_blocks=len(all_blocks),
         )
 
