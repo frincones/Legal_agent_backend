@@ -112,6 +112,8 @@ class ColombiaCompraScraper(TemplateSourceBase):
     description = "Pliegos tipo y modelos de contratos estatales · Colombia Compra Eficiente"
     base_url = "https://colombiacompra.gov.co"
     request_delay_seconds = 3.0  # respetuoso con el portal oficial
+    # Override user_agent ASCII-only (httpx requiere ASCII en headers HTTP)
+    user_agent = "LexAI-Template-Ingestor/1.0 (+https://lexai.co contact:ingest@lexai.co)"
 
     def __init__(self, *, seed_urls: Optional[list] = None):
         self.seed_urls = seed_urls or SEED_URLS

@@ -292,6 +292,13 @@ async def get_pipeline_inventory(
         except Exception:
             pass
 
+        # Template candidates (staging area scraping)
+        total_candidates = 0
+        try:
+            total_candidates = await conn.fetchval("SELECT count(*) FROM template_candidates") or 0
+        except Exception:
+            pass
+
         # Storage usage
         db_size = await conn.fetchval("SELECT pg_database_size(current_database())") or 0
 
@@ -302,16 +309,17 @@ async def get_pipeline_inventory(
         except Exception:
             pass
 
-        # Desglose por (source, doc_type, materia) — usa documents si existe el campo
+        # Desglose por (source, doc_type, materia)
+        # Combina documents + template_candidates (staging) para visibilidad completa
         by_source: list[dict[str, Any]] = []
         try:
             rows = await conn.fetch("""
                 SELECT
                     source,
-                    doc_type,
+                    COALESCE(doc_type, 'unknown') AS doc_type,
                     NULL::text AS materia,
                     count(*) AS count,
-                    max(ingested_at) AS last_ingested_at
+                    NULL::timestamptz AS last_ingested_at
                 FROM documents
                 WHERE source IS NOT NULL
                 GROUP BY source, doc_type
@@ -321,7 +329,7 @@ async def get_pipeline_inventory(
             by_source = [
                 {
                     "source": r["source"],
-                    "doc_type": r["doc_type"] or "unknown",
+                    "doc_type": r["doc_type"],
                     "materia": r["materia"],
                     "count": int(r["count"]),
                     "last_ingested_at": r["last_ingested_at"].isoformat() if r["last_ingested_at"] else None,
@@ -329,7 +337,32 @@ async def get_pipeline_inventory(
                 for r in rows
             ]
         except Exception as e:
-            logger.warning("inventory by_source query failed: %s", e)
+            logger.warning("inventory by_source documents query failed: %s", e)
+
+        # Tambien template_candidates (staging area sin curar aun)
+        try:
+            cand_rows = await conn.fetch("""
+                SELECT
+                    source,
+                    COALESCE(suggested_doc_type, 'unknown') AS doc_type,
+                    suggested_materia AS materia,
+                    count(*) AS count,
+                    max(created_at) AS last_ingested_at
+                FROM template_candidates
+                GROUP BY source, suggested_doc_type, suggested_materia
+                ORDER BY count DESC
+                LIMIT 50
+            """)
+            for r in cand_rows:
+                by_source.append({
+                    "source": f"{r['source']} (staging)",
+                    "doc_type": r["doc_type"],
+                    "materia": r["materia"],
+                    "count": int(r["count"]),
+                    "last_ingested_at": r["last_ingested_at"].isoformat() if r["last_ingested_at"] else None,
+                })
+        except Exception as e:
+            logger.warning("inventory by_source candidates query failed: %s", e)
 
     pg_mb = db_size / 1024 / 1024
 
@@ -339,6 +372,7 @@ async def get_pipeline_inventory(
         "total_templates": int(total_templates),
         "total_sentencias": int(total_sentencias),
         "total_normas": int(total_normas),
+        "total_candidates": int(total_candidates),
         "postgres_size_mb": round(pg_mb, 1),
         "postgres_limit_mb": 500,
         "r2_size_gb": 0.0,
