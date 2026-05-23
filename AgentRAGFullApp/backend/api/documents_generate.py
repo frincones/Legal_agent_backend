@@ -73,14 +73,16 @@ SECTIONS_PLAN_BY_TYPE: dict[str, list[dict[str, Any]]] = {
         {"key": "firmas", "title": "Firmas", "required": True, "order": 9},
     ],
     "demanda": [
-        {"key": "encabezado", "title": "Encabezado", "required": True, "order": 1},
-        {"key": "partes", "title": "Partes", "required": True, "order": 2},
-        {"key": "hechos", "title": "Hechos", "required": True, "order": 3},
-        {"key": "pretensiones", "title": "Pretensiones", "required": True, "order": 4},
-        {"key": "fundamentos_derecho", "title": "Fundamentos de derecho", "required": True, "order": 5},
-        {"key": "pruebas", "title": "Pruebas solicitadas", "required": True, "order": 6},
-        {"key": "competencia", "title": "Competencia y cuantía", "required": True, "order": 7},
-        {"key": "anexos", "title": "Anexos", "required": False, "order": 8},
+        {"key": "encabezado", "title": "Encabezado y referencia", "required": True, "order": 1},
+        {"key": "partes", "title": "Identificación de las partes", "required": True, "order": 2},
+        {"key": "competencia", "title": "Jurisdicción, competencia y cuantía", "required": True, "order": 3},
+        {"key": "hechos", "title": "Hechos (numerados con fechas y montos)", "required": True, "order": 4},
+        {"key": "pretensiones", "title": "Pretensiones (PRIMERA, SEGUNDA, TERCERA...)", "required": True, "order": 5},
+        {"key": "fundamentos_derecho", "title": "Fundamentos de derecho (normas + jurisprudencia citada literal)", "required": True, "order": 6},
+        {"key": "calculos", "title": "Cálculos liquidación (cesantías, intereses, indemnización, sanción moratoria)", "required": True, "order": 7},
+        {"key": "pruebas", "title": "Pruebas (documentales, testimoniales, periciales)", "required": True, "order": 8},
+        {"key": "anexos", "title": "Anexos numerados", "required": True, "order": 9},
+        {"key": "notificaciones", "title": "Notificaciones y firma con TP del apoderado", "required": True, "order": 10},
     ],
     "derecho_peticion": [
         {"key": "encabezado", "title": "Encabezado", "required": True, "order": 1},
@@ -189,58 +191,91 @@ async def _generate_section_streaming(
       ('done', final_content)
     """
     system_prompt = (
-        "Eres un abogado senior colombiano experto en redactar documentos legales "
-        "profesionales en español. Redactas con técnica jurídica colombiana correcta, "
-        "citas la Constitución Política de 1991, Código Civil, Código Sustantivo del "
-        "Trabajo, Ley 100 de 1993, Código General del Proceso, y sentencias relevantes "
-        "de la Corte Constitucional cuando aplique. Usas un tono formal apropiado para "
-        "presentar ante autoridades judiciales colombianas. "
-        "IMPORTANTE: cuando se te proporcione CONTEXTO LEGAL relevante (jurisprudencia, "
-        "normas), DEBES citarlo correctamente en tu redacción. NUNCA inventes citas; "
-        "solo usa las que aparecen en el CONTEXTO o las que conoces con certeza."
+        "Eres un ABOGADO LITIGANTE SENIOR colombiano con más de 20 años de experiencia "
+        "en redacción de documentos forenses. Tu redacción debe ser EQUIVALENTE a la de "
+        "un memorial presentado por un bufete top de Bogotá ante la Corte Suprema o un "
+        "Juzgado del Circuito.\n\n"
+        "ESTÁNDARES OBLIGATORIOS DE CALIDAD:\n"
+        "1. Tono solemne, formal y respetuoso: usa 'Honorable señor Juez', 'comedidamente "
+        "solicito', 'respetuosamente expongo', 'por medio del presente memorial', "
+        "'me permito poner en conocimiento de su despacho'.\n"
+        "2. Citas ESPECÍFICAS Y EXACTAS con artículo, ley, año:\n"
+        "   - 'el artículo 64 del Código Sustantivo del Trabajo, modificado por el "
+        "     artículo 28 de la Ley 789 de 2002'\n"
+        "   - 'la sentencia T-760 de 2008, M.P. Manuel José Cepeda Espinosa'\n"
+        "   - 'el artículo 13 de la Constitución Política de 1991'\n"
+        "3. Razonamiento jurídico CONCATENADO: silogismo (norma → hecho → conclusión).\n"
+        "4. Cuando hay cálculos económicos (cesantías, intereses, indemnización), MUESTRA "
+        "LA FÓRMULA EXACTA con los valores. Ej: 'la indemnización corresponde a 30 días de "
+        "salario por el primer año y 20 días adicionales por cada año siguiente, conforme "
+        "al artículo 64 del CST: ([SALARIO] / 30) × (30 + 20 × ([AÑOS]-1)) = $[MONTO]'.\n"
+        "5. Usa numeración romana en pretensiones (PRIMERA, SEGUNDA, TERCERA...) y arábiga "
+        "en hechos (1., 2., 3...).\n"
+        "6. NUNCA inventes citas o jurisprudencia. Solo usa lo que aparece en el CONTEXTO "
+        "LEGAL provisto, o normas básicas que CONOZCAS CON CERTEZA (CN/91, CST, CCom, CC, "
+        "Ley 100/93, CGP, Ley 1010/06).\n"
+        "7. Estructura cada sección con sub-numerales si es necesario (1.1, 1.2, etc.).\n"
+        "8. Redacción extensa y exhaustiva: NO seas escueto. Cada sección debe tener entre "
+        "5 y 12 párrafos sustantivos, salvo encabezado y firma.\n"
+        "9. Cuando uses placeholders, usa formato consistente: [NOMBRE_DEMANDANTE], "
+        "[CC_DEMANDANTE], [FECHA_INGRESO], [SALARIO_MENSUAL], etc.\n"
+        "10. Para demandas laborales SIEMPRE menciona: contrato (Art. 22 CST), salario "
+        "(Art. 127 CST), cesantías (Art. 249 CST), intereses cesantías (Art. 99 Ley 50/90), "
+        "prima de servicios (Art. 306 CST), vacaciones (Art. 186 CST), indemnización despido "
+        "sin justa causa (Art. 64 CST) y sanción moratoria si aplica (Art. 65 CST).\n"
     )
 
     previous_context = "\n\n".join(
-        f"## {k}\n{v[:500]}" for k, v in previous_sections.items() if v
+        f"## {k}\n{v[:700]}" for k, v in previous_sections.items() if v
     )
 
-    # Formatear RAG context para el prompt
+    # Formatear RAG context (MAS rico: 1200 chars por chunk)
     rag_block = ""
     if rag_context:
-        rag_lines = ["CONTEXTO LEGAL RELEVANTE (extraído de la base de conocimiento):"]
+        rag_lines = ["CONTEXTO LEGAL RELEVANTE (extraído de la base de conocimiento — DEBES USARLO):"]
         for i, ctx in enumerate(rag_context, 1):
             src = ctx.get("source", "?")
-            title = (ctx.get("title") or "")[:80]
-            text = ctx.get("text", "")[:800]
-            rag_lines.append(f"\n[{i}] Fuente: {src} - {title}\n{text}\n")
+            title = (ctx.get("title") or "")[:100]
+            text = ctx.get("text", "")[:1200]
+            sim = ctx.get("similarity", 0)
+            rag_lines.append(f"\n[{i}] [{sim:.2f}] {src} — {title}\n{text}\n")
         rag_block = "\n".join(rag_lines)
 
-    user_prompt = f"""Estás redactando un documento legal colombiano.
+    user_prompt = f"""DOCUMENTO LEGAL COLOMBIANO — REDACCIÓN FORENSE PROFESIONAL
 
 INTENT DEL USUARIO:
 {intent}
 
-BRIEF DEL CASO:
+BRIEF DEL CASO (datos del cliente):
 {user_brief or intent}
 
 MATERIA: {materia or 'general'}
 
 {rag_block}
 
-SECCIONES ANTERIORES (contexto):
-{previous_context or '(ninguna aún)'}
+SECCIONES YA REDACTADAS (NO repitas, solo lee para coherencia):
+{previous_context or '(ninguna aún — esta es la primera sección)'}
 
-REDACTA SOLO LA SIGUIENTE SECCIÓN:
-{section_order}. {section_title}
+═══════════════════════════════════════════════════════════════════════
+REDACTA AHORA SOLO ESTA SECCIÓN (NO repitas el título):
 
-INSTRUCCIONES:
-- Redacta la sección de forma profesional, completa y técnica.
-- USA EL CONTEXTO LEGAL ARRIBA cuando sea relevante para citar normas/jurisprudencia.
-- NO escribas el título de la sección (ya está arriba).
-- NO escribas las otras secciones, solo esta.
-- Para datos faltantes del caso, usa placeholders como [NOMBRE_DEMANDANTE], [FECHA], etc.
-- Si citas normas o sentencias, usa el formato exacto: "Art. 49 CN", "Ley 100 de 1993", "T-760 de 2008".
-- Sé técnico, formal y exhaustivo. Mínimo 3 párrafos sustantivos.
+   {section_order}. {section_title}
+
+═══════════════════════════════════════════════════════════════════════
+
+CHECKLIST DE CALIDAD OBLIGATORIA PARA ESTA SECCIÓN:
+☐ Mínimo 5 párrafos sustantivos (excepto encabezado/firma)
+☐ Cita al menos 2-3 normas específicas con artículo
+☐ Cuando aplique, cita jurisprudencia del CONTEXTO con número y M.P.
+☐ Si hay cálculos económicos, muestra la fórmula matemática completa
+☐ Numeración interna formal (PRIMERA/SEGUNDA en pretensiones, 1./2. en hechos)
+☐ Tono solemne: 'Honorable señor Juez', 'comedidamente', 'respetuosamente'
+☐ Razonamiento jurídico silogístico: norma + hecho + conclusión
+
+USA EL CONTEXTO LEGAL ARRIBA para citar correctamente. NO inventes citas.
+Si faltan datos del caso, usa placeholders: [NOMBRE_DEMANDANTE], [FECHA_INGRESO], etc.
+
+Redacta ahora la sección con calidad de bufete top de Bogotá:
 """
 
     accumulated = ""
@@ -252,8 +287,8 @@ INSTRUCCIONES:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            temperature=0.3,
-            max_tokens=1500,
+            temperature=0.25,
+            max_tokens=3500,  # aumentado de 1500 a 3500 para secciones extensas
             stream=True,
         )
 
@@ -331,13 +366,13 @@ async def _stream_generation(
             "total_sections": len(plan),
         })
 
-        # RAG: buscar contexto relevante para esta seccion especifica
-        rag_query = f"{req.intent} {section['title']} {req.materia or ''} {req.user_brief[:200]}"
+        # RAG: buscar contexto relevante (top_k 8 para mas riqueza)
+        rag_query = f"{req.intent} {section['title']} {req.materia or ''} {req.user_brief[:300]}"
         rag_context = await _retrieve_rag_context(
             pool=storage.pool,
             query=rag_query,
             materia=req.materia,
-            top_k=4,
+            top_k=8,
         )
         if rag_context:
             logger.info("RAG: %d chunks recuperados para %s", len(rag_context), section["key"])
