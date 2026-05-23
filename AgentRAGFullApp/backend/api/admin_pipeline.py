@@ -556,7 +556,7 @@ async def run_corte_cc_bulk(
                 )
                 embeddings = [item.embedding for item in emb_response.data]
 
-                # Persistir
+                # Persistir documents + chunks (transaccion atomica primaria)
                 async with pool.acquire() as conn:
                     async with conn.transaction():
                         doc_row = await conn.fetchrow("""
@@ -585,15 +585,19 @@ async def run_corte_cc_bulk(
                                 __import__("json").dumps({"sentencia": f"{tipo}-{numero}-{anio}"}),
                             )
 
-                        # Tambien en jurisprudencia
-                        try:
-                            await conn.execute("""
-                                INSERT INTO jurisprudencia (numero, anio, tipo, texto_completo, fuente, url)
-                                VALUES ($1, $2, $3, $4, $5, $6)
-                                ON CONFLICT DO NOTHING
-                            """, f"{tipo}-{numero}/{str(anio)[-2:]}", anio, tipo, text, "corte_cc", final_url)
-                        except Exception:
-                            pass  # tabla puede no tener constraint o columnas distintas
+                # IMPORTANTE: insert jurisprudencia en CONEXION SEPARADA (transaccion aparte)
+                # para que si falla NO aborte la transaccion principal (asyncpg gotcha:
+                # except dentro de transaction() no permite recuperarse; toda la txn se aborta).
+                try:
+                    async with pool.acquire() as conn2:
+                        await conn2.execute("""
+                            INSERT INTO jurisprudencia (numero, anio, tipo, texto_completo, fuente, url)
+                            VALUES ($1, $2, $3, $4, $5, $6)
+                            ON CONFLICT DO NOTHING
+                        """, f"{tipo}-{numero}/{str(anio)[-2:]}", anio, tipo, text, "corte_cc", final_url)
+                except Exception as e:
+                    # Si jurisprudencia tiene schema distinto, no es bloqueante
+                    logger.debug("jurisprudencia insert skipped: %s", str(e)[:80])
 
                 emitted += 1
                 logger.info("Corte CC: %s-%s-%s ingestada (%d chunks)", tipo, numero, anio, len(chunks))
