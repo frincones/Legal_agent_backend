@@ -396,6 +396,118 @@ async def get_pipeline_jobs(
     return {"running": running, "cron": cron}
 
 
+@router.post("/run-scraper")
+async def run_scraper(
+    source: str = Query(..., regex="^(colombia_compra|defensoria|icbf|minjusticia|mintrabajo)$"),
+    limit: int = Query(10, ge=1, le=100),
+    _claims: dict = Depends(_require_session),
+) -> dict[str, Any]:
+    """
+    Dispara un scraper de plantillas en background.
+    Devuelve inmediatamente con job_id; el ingest corre async.
+    Por ahora solo colombia_compra esta implementado; el resto devolveran 501.
+    """
+    if source != "colombia_compra":
+        raise HTTPException(status_code=501, detail=f"scraper_{source}_not_implemented")
+
+    import asyncio
+    import uuid
+
+    job_id = str(uuid.uuid4())
+
+    async def _run_scraper_bg():
+        try:
+            from legal_sources.templates.colombia_compra_scraper import ColombiaCompraScraper
+        except Exception as e:
+            logger.error("Import scraper fallo: %s", e)
+            return
+
+        storage = await get_storage()
+        pool = storage.pool
+
+        # Crear ingest_run
+        run_id = None
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    INSERT INTO ingest_runs (source, triggered_by, started_at)
+                    VALUES ($1, 'admin_ui', now())
+                    RETURNING id
+                """, source)
+                run_id = str(row["id"])
+        except Exception as e:
+            logger.warning("ingest_run create fallo: %s", e)
+
+        scraper = ColombiaCompraScraper()
+        emitted, skipped, failed = 0, 0, 0
+        errors: list[str] = []
+
+        async for cand in scraper.fetch(limit=limit):
+            try:
+                async with pool.acquire() as conn:
+                    existing = await conn.fetchval("""
+                        SELECT id FROM template_candidates
+                        WHERE source = $1 AND source_ref = $2 LIMIT 1
+                    """, cand.source, cand.source_ref)
+                    if existing:
+                        skipped += 1
+                        continue
+                    import json as _json
+                    await conn.execute("""
+                        INSERT INTO template_candidates (
+                            id, source, source_ref, source_url,
+                            raw_text, normalized_md,
+                            suggested_materia, suggested_doc_type, suggested_subtype,
+                            suggested_norms, metadata, created_at
+                        ) VALUES (
+                            gen_random_uuid(), $1, $2, $3,
+                            $4, $5,
+                            $6, $7, $8,
+                            $9, $10::jsonb, now()
+                        )
+                    """,
+                        cand.source, cand.source_ref, cand.source_url,
+                        cand.raw_text[:50000], cand.normalized_md,
+                        cand.suggested_materia, cand.suggested_doc_type, cand.suggested_subtype,
+                        cand.suggested_norms,
+                        _json.dumps(cand.metadata or {}),
+                    )
+                    emitted += 1
+            except Exception as e:
+                failed += 1
+                errors.append(f"{cand.source_ref}: {e}")
+
+        # Update ingest_run
+        if run_id:
+            try:
+                async with pool.acquire() as conn:
+                    import json as _json
+                    await conn.execute("""
+                        UPDATE ingest_runs
+                        SET completed_at = now(),
+                            docs_processed = $1, docs_failed = $2, docs_skipped = $3,
+                            stats_jsonb = $4::jsonb
+                        WHERE id = $5
+                    """, emitted, failed, skipped,
+                        _json.dumps({"errors": errors[:20], "job_id": job_id}),
+                        run_id)
+            except Exception as e:
+                logger.warning("ingest_run update fallo: %s", e)
+
+        logger.info("Scraper %s: emitted=%d skipped=%d failed=%d", source, emitted, skipped, failed)
+
+    # Lanzar background sin esperar
+    asyncio.create_task(_run_scraper_bg())
+
+    return {
+        "job_id": job_id,
+        "source": source,
+        "limit": limit,
+        "status": "started",
+        "message": f"Scraper {source} ejecutandose en background. Verificar /admin/pipeline/inventory en ~30-60 segundos.",
+    }
+
+
 @router.get("/logs")
 async def get_pipeline_logs(
     _claims: dict = Depends(_require_session),
