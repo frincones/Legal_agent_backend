@@ -430,6 +430,218 @@ async def get_pipeline_jobs(
     return {"running": running, "cron": cron}
 
 
+@router.post("/run-corte-cc-bulk")
+async def run_corte_cc_bulk(
+    _claims: dict = Depends(_require_session),
+    sentencias: list[str] | None = None,
+) -> dict[str, Any]:
+    """
+    Ingest bulk de sentencias Corte Constitucional con embeddings.
+    Si no se especifica `sentencias`, usa lista hardcoded de sentencias hito.
+    Persiste en documents + chunks (con embeddings text-embedding-3-small).
+    """
+    import asyncio
+    import uuid
+
+    # Lista hito de sentencias Corte Constitucional (las mas citadas)
+    DEFAULT_SENTENCIAS = sentencias or [
+        ("T", 760, 2008),   # Derecho a la salud - hito
+        ("T", 406, 1992),   # Estado social de derecho
+        ("C", 355, 2006),   # Aborto
+        ("T", 388, 2013),   # Concepto de tutela
+        ("SU", 168, 2017),  # Cosa juzgada
+        ("T", 025, 2004),   # Desplazamiento forzado
+        ("C", 1064, 2001),  # Salario minimo
+        ("T", 002, 1992),   # Vida digna
+        ("C", 239, 1997),   # Eutanasia
+        ("T", 717, 2017),   # Pension de invalidez
+    ]
+
+    job_id = str(uuid.uuid4())
+
+    async def _bulk_ingest_bg():
+        storage = await get_storage()
+        pool = storage.pool
+
+        # Importar dependencias
+        try:
+            from legal_sources.corte_constitucional import CorteConstitucionalSource
+            from utils.llm import get_openai_client
+        except Exception as e:
+            logger.error("Import fallo: %s", e)
+            return
+
+        # Crear ingest_run
+        run_id = None
+        try:
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    INSERT INTO ingest_runs (source, triggered_by, started_at, stats_jsonb)
+                    VALUES ('corte_cc', 'admin_ui', now(), '{}')
+                    RETURNING id
+                """)
+                run_id = str(row["id"])
+        except Exception as e:
+            logger.warning("ingest_run create fallo: %s", e)
+
+        source_obj = CorteConstitucionalSource()
+        client = get_openai_client()
+        emitted, skipped, failed = 0, 0, 0
+        errors: list[str] = []
+
+        try:
+            async with source_obj._get_client() as _:
+                pass  # warm up
+        except Exception:
+            pass
+
+        for tipo, numero, anio in DEFAULT_SENTENCIAS:
+            try:
+                # Construir URL y descargar
+                urls = source_obj._build_sentencia_urls(tipo, numero, anio)
+                http_client = await source_obj._get_client()
+
+                content_html = None
+                final_url = None
+                for url in urls:
+                    try:
+                        resp = await http_client.get(url)
+                        if resp.status_code == 200 and len(resp.content) > source_obj._EMPTY_RESPONSE_MAX_BYTES:
+                            content_html = resp.text
+                            final_url = url
+                            break
+                    except Exception:
+                        continue
+
+                if not content_html:
+                    failed += 1
+                    errors.append(f"{tipo}-{numero}-{anio}: not_found")
+                    continue
+
+                # Parser simple: extraer texto plano del HTML
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(content_html, "html.parser")
+                for tag in soup(["script", "style", "nav", "footer", "header"]):
+                    tag.decompose()
+                text = soup.get_text(separator="\n", strip=True)
+                text = text[:50000]  # cap
+
+                if len(text) < 500:
+                    failed += 1
+                    errors.append(f"{tipo}-{numero}-{anio}: text too short ({len(text)} chars)")
+                    continue
+
+                # Dedup: check si ya existe
+                async with pool.acquire() as conn:
+                    existing = await conn.fetchval(
+                        "SELECT id FROM documents WHERE source = $1 AND title = $2 LIMIT 1",
+                        "corte_cc", f"{tipo}-{numero}-{anio}"
+                    )
+                    if existing:
+                        skipped += 1
+                        continue
+
+                # Chunkear (simple: 1000 chars con overlap 200)
+                chunks: list[str] = []
+                chunk_size = 1000
+                overlap = 200
+                for i in range(0, len(text), chunk_size - overlap):
+                    chunks.append(text[i:i + chunk_size])
+
+                # Embeddings batch
+                emb_response = await client.embeddings.create(
+                    model="text-embedding-3-small",
+                    input=chunks,
+                )
+                embeddings = [item.embedding for item in emb_response.data]
+
+                # Persistir
+                async with pool.acquire() as conn:
+                    async with conn.transaction():
+                        doc_row = await conn.fetchrow("""
+                            INSERT INTO documents (title, source, content, doc_type, metadata)
+                            VALUES ($1, $2, $3, $4, $5::jsonb)
+                            RETURNING id
+                        """,
+                            f"{tipo}-{numero}-{anio}",
+                            "corte_cc",
+                            text[:10000],
+                            "sentencia",
+                            __import__("json").dumps({
+                                "tipo": tipo, "numero": numero, "anio": anio,
+                                "url": final_url, "tema": "constitucional",
+                            }),
+                        )
+                        doc_id = str(doc_row["id"])
+
+                        for idx, (chunk, emb) in enumerate(zip(chunks, embeddings)):
+                            emb_str = "[" + ",".join(str(x) for x in emb) + "]"
+                            await conn.execute("""
+                                INSERT INTO chunks (document_id, content, embedding, chunk_index, token_count, metadata)
+                                VALUES ($1::uuid, $2, $3::vector, $4, $5, $6::jsonb)
+                            """,
+                                doc_id, chunk, emb_str, idx, len(chunk) // 4,
+                                __import__("json").dumps({"sentencia": f"{tipo}-{numero}-{anio}"}),
+                            )
+
+                        # Tambien en jurisprudencia
+                        try:
+                            await conn.execute("""
+                                INSERT INTO jurisprudencia (numero, anio, tipo, texto_completo, fuente, url)
+                                VALUES ($1, $2, $3, $4, $5, $6)
+                                ON CONFLICT DO NOTHING
+                            """, f"{tipo}-{numero}/{str(anio)[-2:]}", anio, tipo, text, "corte_cc", final_url)
+                        except Exception:
+                            pass  # tabla puede no tener constraint o columnas distintas
+
+                emitted += 1
+                logger.info("Corte CC: %s-%s-%s ingestada (%d chunks)", tipo, numero, anio, len(chunks))
+
+                await asyncio.sleep(2)  # throttle
+
+            except Exception as e:
+                failed += 1
+                errors.append(f"{tipo}-{numero}-{anio}: {str(e)[:120]}")
+                logger.exception("Error ingesting %s-%s-%s", tipo, numero, anio)
+
+        # Cerrar cliente
+        try:
+            await source_obj.close()
+        except Exception:
+            pass
+
+        # Update ingest_run
+        if run_id:
+            try:
+                async with pool.acquire() as conn:
+                    import json as _json
+                    await conn.execute("""
+                        UPDATE ingest_runs
+                        SET completed_at = now(),
+                            docs_processed = $1, docs_failed = $2, docs_skipped = $3,
+                            cost_usd = $4,
+                            stats_jsonb = $5::jsonb
+                        WHERE id = $6
+                    """, emitted, failed, skipped,
+                        round(emitted * 0.01, 4),  # rough estimate $0.01/sentencia
+                        _json.dumps({"errors": errors[:20], "job_id": job_id}),
+                        run_id)
+            except Exception as e:
+                logger.warning("ingest_run update fallo: %s", e)
+
+        logger.info("Corte CC bulk: emitted=%d skipped=%d failed=%d", emitted, skipped, failed)
+
+    asyncio.create_task(_bulk_ingest_bg())
+
+    return {
+        "job_id": job_id,
+        "source": "corte_cc",
+        "total_sentencias": len(DEFAULT_SENTENCIAS),
+        "status": "started",
+        "message": f"Ingesta de {len(DEFAULT_SENTENCIAS)} sentencias Corte CC en background. Verificar /admin/pipeline/inventory en 2-3 minutos.",
+    }
+
+
 @router.post("/run-scraper")
 async def run_scraper(
     source: str = Query(..., regex="^(colombia_compra|defensoria|icbf|minjusticia|mintrabajo)$"),

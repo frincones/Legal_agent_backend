@@ -115,6 +115,61 @@ def _sse(event: str, data: Any) -> bytes:
     return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
 
 
+async def _retrieve_rag_context(
+    pool,
+    query: str,
+    materia: str | None,
+    top_k: int = 5,
+) -> list[dict[str, Any]]:
+    """
+    Vector search sobre chunks de la BD para enriquecer el contexto del LLM.
+    Devuelve top_k chunks ordenados por similarity.
+    """
+    try:
+        # Embed la query usando OpenAI
+        client = get_openai_client()
+        emb_response = await client.embeddings.create(
+            model="text-embedding-3-small",
+            input=query[:8000],
+        )
+        query_emb = emb_response.data[0].embedding
+        # Convertir embedding a formato pgvector string '[v1,v2,...]'
+        emb_str = "[" + ",".join(str(x) for x in query_emb) + "]"
+
+        async with pool.acquire() as conn:
+            # Buscar en chunks (vector similarity cosine)
+            # Join con documents para obtener metadata (source, title)
+            rows = await conn.fetch("""
+                SELECT
+                    c.content AS chunk_text,
+                    c.metadata AS chunk_metadata,
+                    d.title AS doc_title,
+                    d.source AS doc_source,
+                    d.doc_type AS doc_type,
+                    1 - (c.embedding <=> $1::vector) AS similarity
+                FROM chunks c
+                JOIN documents d ON d.id = c.document_id
+                WHERE c.embedding IS NOT NULL
+                ORDER BY c.embedding <=> $1::vector
+                LIMIT $2
+            """, emb_str, top_k)
+
+            return [
+                {
+                    "text": r["chunk_text"][:2000],
+                    "title": r["doc_title"],
+                    "source": r["doc_source"],
+                    "doc_type": r["doc_type"],
+                    "similarity": float(r["similarity"]),
+                }
+                for r in rows
+                if r["similarity"] is not None and float(r["similarity"]) > 0.3
+            ]
+    except Exception as e:
+        logger.warning("RAG retrieval failed (continuing without context): %s", e)
+        return []
+
+
 async def _generate_section_streaming(
     client,
     intent: str,
@@ -124,9 +179,11 @@ async def _generate_section_streaming(
     section_title: str,
     section_order: int,
     previous_sections: dict[str, str],
+    rag_context: list[dict[str, Any]] | None = None,
 ) -> AsyncIterator[tuple[str, str]]:
     """
     Generate one section streaming token-by-token using OpenAI gpt-4o-mini.
+    Now with RAG context from chunks table for higher quality output.
     Yields (event_type, content) tuples:
       ('delta', text)
       ('done', final_content)
@@ -137,12 +194,26 @@ async def _generate_section_streaming(
         "citas la Constitución Política de 1991, Código Civil, Código Sustantivo del "
         "Trabajo, Ley 100 de 1993, Código General del Proceso, y sentencias relevantes "
         "de la Corte Constitucional cuando aplique. Usas un tono formal apropiado para "
-        "presentar ante autoridades judiciales colombianas."
+        "presentar ante autoridades judiciales colombianas. "
+        "IMPORTANTE: cuando se te proporcione CONTEXTO LEGAL relevante (jurisprudencia, "
+        "normas), DEBES citarlo correctamente en tu redacción. NUNCA inventes citas; "
+        "solo usa las que aparecen en el CONTEXTO o las que conoces con certeza."
     )
 
     previous_context = "\n\n".join(
         f"## {k}\n{v[:500]}" for k, v in previous_sections.items() if v
     )
+
+    # Formatear RAG context para el prompt
+    rag_block = ""
+    if rag_context:
+        rag_lines = ["CONTEXTO LEGAL RELEVANTE (extraído de la base de conocimiento):"]
+        for i, ctx in enumerate(rag_context, 1):
+            src = ctx.get("source", "?")
+            title = (ctx.get("title") or "")[:80]
+            text = ctx.get("text", "")[:800]
+            rag_lines.append(f"\n[{i}] Fuente: {src} - {title}\n{text}\n")
+        rag_block = "\n".join(rag_lines)
 
     user_prompt = f"""Estás redactando un documento legal colombiano.
 
@@ -154,17 +225,22 @@ BRIEF DEL CASO:
 
 MATERIA: {materia or 'general'}
 
+{rag_block}
+
 SECCIONES ANTERIORES (contexto):
 {previous_context or '(ninguna aún)'}
 
 REDACTA SOLO LA SIGUIENTE SECCIÓN:
 {section_order}. {section_title}
 
-Redacta la sección de forma profesional, completa y técnica.
-NO escribas el título de la sección (ya está arriba).
-NO escribas las otras secciones, solo esta.
-Para datos faltantes del caso, usa placeholders como [NOMBRE_DEMANDANTE], [FECHA], etc.
-Si citas normas o sentencias, usa el formato exacto: "Art. 49 CN", "Ley 100 de 1993", "T-760 de 2008".
+INSTRUCCIONES:
+- Redacta la sección de forma profesional, completa y técnica.
+- USA EL CONTEXTO LEGAL ARRIBA cuando sea relevante para citar normas/jurisprudencia.
+- NO escribas el título de la sección (ya está arriba).
+- NO escribas las otras secciones, solo esta.
+- Para datos faltantes del caso, usa placeholders como [NOMBRE_DEMANDANTE], [FECHA], etc.
+- Si citas normas o sentencias, usa el formato exacto: "Art. 49 CN", "Ley 100 de 1993", "T-760 de 2008".
+- Sé técnico, formal y exhaustivo. Mínimo 3 párrafos sustantivos.
 """
 
     accumulated = ""
@@ -255,6 +331,17 @@ async def _stream_generation(
             "total_sections": len(plan),
         })
 
+        # RAG: buscar contexto relevante para esta seccion especifica
+        rag_query = f"{req.intent} {section['title']} {req.materia or ''} {req.user_brief[:200]}"
+        rag_context = await _retrieve_rag_context(
+            pool=storage.pool,
+            query=rag_query,
+            materia=req.materia,
+            top_k=4,
+        )
+        if rag_context:
+            logger.info("RAG: %d chunks recuperados para %s", len(rag_context), section["key"])
+
         content = ""
         async for event_type, payload in _generate_section_streaming(
             client=client,
@@ -265,6 +352,7 @@ async def _stream_generation(
             section_title=section["title"],
             section_order=section["order"],
             previous_sections=previous,
+            rag_context=rag_context,
         ):
             if event_type == "delta":
                 yield _sse("section_delta", {
