@@ -107,6 +107,25 @@ def _chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> list[s
     return chunks
 
 
+async def _fetch_via_scrape_do(url: str) -> tuple[bytes, str]:
+    """Fetch via Scrape.do proxy para sources con WAF/anti-bot."""
+    import os
+    token = os.getenv("SCRAPE_DO_TOKEN", "")
+    if not token:
+        raise Exception("SCRAPE_DO_TOKEN no configurado")
+    import urllib.parse
+    encoded_url = urllib.parse.quote(url, safe="")
+    proxy_url = f"http://api.scrape.do/?token={token}&url={encoded_url}"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+        r = await client.get(proxy_url)
+        r.raise_for_status()
+        return r.content, r.headers.get("content-type", "text/html")
+
+
+# Sources que requieren proxy (WAF/anti-bot bloquea Railway)
+SOURCES_NEED_PROXY = {"mintrabajo", "ccb"}
+
+
 @router.post("/ingest-url")
 async def ingest_url(
     req: IngestURLRequest,
@@ -115,27 +134,38 @@ async def ingest_url(
     """
     Ingesta 1 URL real: descarga + extract + chunk + embed + persist.
     Devuelve resultado detallado.
+    Si source requiere proxy (mintrabajo, ccb), usa Scrape.do.
     """
     storage = await get_storage()
     pool = storage.pool
 
-    # 1. Descargar
+    # 1. Descargar (con proxy si el source lo requiere)
+    use_proxy = req.source in SOURCES_NEED_PROXY
     try:
-        async with httpx.AsyncClient(
-            timeout=HTTP_TIMEOUT,
-            follow_redirects=True,
-            headers={"User-Agent": USER_AGENT},
-        ) as client:
-            resp = await client.get(req.url)
-            if resp.status_code != 200:
-                return {
-                    "ok": False,
-                    "stage": "fetch",
-                    "error": f"HTTP {resp.status_code}",
-                    "url": req.url,
-                }
-            content_bytes = resp.content
-            content_type = resp.headers.get("content-type", "")
+        if use_proxy:
+            try:
+                content_bytes, content_type = await _fetch_via_scrape_do(req.url)
+            except Exception as e:
+                # Fallback a fetch directo si proxy falla
+                logger.warning("Scrape.do fallo para %s, fallback directo: %s", req.source, e)
+                use_proxy = False
+
+        if not use_proxy:
+            async with httpx.AsyncClient(
+                timeout=HTTP_TIMEOUT,
+                follow_redirects=True,
+                headers={"User-Agent": USER_AGENT},
+            ) as client:
+                resp = await client.get(req.url)
+                if resp.status_code != 200:
+                    return {
+                        "ok": False,
+                        "stage": "fetch",
+                        "error": f"HTTP {resp.status_code}",
+                        "url": req.url,
+                    }
+                content_bytes = resp.content
+                content_type = resp.headers.get("content-type", "")
     except Exception as e:
         return {"ok": False, "stage": "fetch", "error": str(e)[:200], "url": req.url}
 
@@ -226,46 +256,87 @@ async def ingest_url(
 # ─── Batch endpoint para testear multiple sources de una vez ─────────
 
 SOURCE_TEST_PAYLOADS = [
+    # ─── GRUPO 1: Ya validadas (5 que funcionaron) ───
     {
         "source": "defensoria",
         "url": "https://www.defensoria.gov.co/documents/20123/3783083/Cartilla-Medio-Ambiente-08-04-2026.pdf",
-        "doc_type": "cartilla",
-        "title": "Cartilla Medio Ambiente - Defensoria del Pueblo",
+        "doc_type": "cartilla", "title": "Cartilla Medio Ambiente - Defensoria",
         "materia": "constitucional",
     },
     {
         "source": "icbf",
         "url": "https://www.icbf.gov.co/system/files/procesos/pt3.rc_protocolo_general_de_servicio_y_atencion_al_ciudadano_v2.pdf",
-        "doc_type": "protocolo",
-        "title": "Protocolo General Servicio y Atencion Ciudadano - ICBF",
+        "doc_type": "protocolo", "title": "Protocolo Atencion Ciudadano - ICBF",
         "materia": "familia",
     },
     {
         "source": "corte_suprema",
         "url": "https://cortesuprema.gov.co/sala-de-casacion-civil-y-agraria-relatoria-responsabilidad-civil-1886-2024/",
-        "doc_type": "relatoria",
-        "title": "Relatoria Responsabilidad Civil 1886-2024 - CSJ Sala Civil",
+        "doc_type": "relatoria", "title": "Relatoria Responsabilidad Civil 1886-2024 - CSJ",
         "materia": "civil",
     },
     {
         "source": "dian",
         "url": "https://normograma.dian.gov.co/dian/",
-        "doc_type": "compilacion_juridica",
-        "title": "Compilacion Juridica DIAN - portal indice",
+        "doc_type": "compilacion_juridica", "title": "Compilacion Juridica DIAN",
         "materia": "tributario",
-    },
-    {
-        "source": "mintrabajo",
-        "url": "https://www.mintrabajo.gov.co/normatividad/leyes",
-        "doc_type": "indice_normativo",
-        "title": "Indice Leyes - Ministerio del Trabajo",
-        "materia": "laboral",
     },
     {
         "source": "minjusticia",
         "url": "https://www.minjusticia.gov.co/programas-co/MASC",
-        "doc_type": "portal_masc",
-        "title": "Portal MASC - Conciliacion y Arbitraje",
+        "doc_type": "portal_masc", "title": "Portal MASC Conciliacion y Arbitraje",
+        "materia": "civil",
+    },
+    # ─── GRUPO 2: Con proxy SCRAPE_DO ───
+    {
+        "source": "mintrabajo",
+        "url": "https://www.mintrabajo.gov.co/normatividad/leyes",
+        "doc_type": "indice_normativo", "title": "Indice Leyes Ministerio del Trabajo",
+        "materia": "laboral",
+    },
+    {
+        "source": "ccb",
+        "url": "https://bibliotecadigital.ccb.org.co/",
+        "doc_type": "portal_biblioteca", "title": "Biblioteca Digital CCB",
+        "materia": "comercial",
+    },
+    # ─── GRUPO 3: URLs nuevas encontradas ───
+    {
+        "source": "jep",
+        "url": "https://www.jep.gov.co/Normativa/Paginas/Normograma.aspx",
+        "doc_type": "normograma", "title": "Normograma JEP - Jurisdiccion Especial Paz",
+        "materia": "constitucional",
+    },
+    {
+        "source": "diario_oficial",
+        "url": "https://www.imprenta.gov.co/diario-oficial",
+        "doc_type": "portal_diario", "title": "Diario Oficial - Imprenta Nacional",
+        "materia": "administrativo",
+    },
+    {
+        "source": "consejo_estado",
+        "url": "https://www.consejodeestado.gov.co/jurisprudencia/",
+        "doc_type": "jurisprudencia", "title": "Jurisprudencia Consejo de Estado",
+        "materia": "administrativo",
+    },
+    {
+        "source": "colombia_compra",
+        "url": "https://www.colombiacompra.gov.co/wp-content/uploads/2025/05/Cartilla_Acuerdos_Marco-2026_FEB.pdf",
+        "doc_type": "cartilla", "title": "Cartilla Acuerdos Marco 2026 - Colombia Compra",
+        "materia": "administrativo",
+    },
+    # ─── GRUPO 4: HF Datasets (descarga via API) ───
+    {
+        "source": "hf_datasets",
+        "url": "https://huggingface.co/datasets/Manuel/sentencias-corte-cons-colombia-1992-2021",
+        "doc_type": "dataset_metadata", "title": "HF Dataset Sentencias Corte CC 1992-2021 (23,750 docs)",
+        "materia": "constitucional",
+    },
+    # ─── GRUPO 5: OAI-PMH ───
+    {
+        "source": "repos_universitarios",
+        "url": "https://repositorio.uniandes.edu.co/server/oai/request?verb=ListRecords&metadataPrefix=oai_dc&set=com_1992_52150",
+        "doc_type": "oai_records", "title": "OAI Records - Uniandes Derecho",
         "materia": "civil",
     },
 ]
