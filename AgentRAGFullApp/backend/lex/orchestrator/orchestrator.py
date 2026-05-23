@@ -380,6 +380,44 @@ class Orchestrator:
             if section_content_acc:
                 previous_sections_summary += f"\n[{section_title}]: " + " ".join(section_content_acc)[:600]
 
+        # ===== STAGE: CITATION VERIFY + DEROGATION =====
+        verification_results: list[dict] = []
+        derogation_results: list[dict] = []
+        if citations_collected and self.pool is not None:
+            yield sse("citation_verify_started", {"total": len(citations_collected)})
+            try:
+                from lex.verify import CitationVerifier, DerogationVerifier
+                citation_verifier = CitationVerifier(self.client, self.pool)
+                derogation_verifier = DerogationVerifier(self.pool)
+                for cit in citations_collected:
+                    ref = cit.get("ref", "")
+                    ctype = cit.get("type", "norma")
+                    cv = await citation_verifier.verify(ref, ctype)
+                    verification_results.append({
+                        "ref": ref, "type": ctype,
+                        "verified": cv.verified, "chunk_id": cv.chunk_id,
+                        "similarity": cv.similarity,
+                    })
+                    yield SSEEvent.citation_verify(
+                        citation=ref, found=cv.verified,
+                        chunk_id=cv.chunk_id, similarity=cv.similarity,
+                    )
+                    if ctype == "norma":
+                        dc = await derogation_verifier.check(ref)
+                        derogation_results.append({
+                            "norma": ref, "vigente": dc.vigente,
+                            "derogada_por": dc.derogada_por,
+                        })
+                        yield SSEEvent.derogation_check(
+                            norma=ref, vigente=dc.vigente, derogada_por=dc.derogada_por,
+                        )
+                yield sse("citation_verify_done", {
+                    "total": len(citations_collected),
+                    "verified": sum(1 for v in verification_results if v.get("verified")),
+                })
+            except Exception as e:
+                logger.warning("citation/derogation stage failed: %s", e)
+
         # ===== Persistir bloques en BD (best-effort) =====
         if self.blocks_repo:
             try:
@@ -399,18 +437,29 @@ class Orchestrator:
         # gpt-4o ~$2.50/1M input + $10/1M output
         estimated_cost = round(0.005 + 0.003 * len(plan), 4)
 
-        audit_payload = {
-            "generation_id": generation_id,
-            "template_id": classification.doc_type,
-            "duration_seconds": duration_seconds,
-            "total_blocks": len(all_blocks),
-            "citations": citations_collected,
-            "doc_type": classification.doc_type,
-            "jurisdiccion": classification.jurisdiccion,
-            "materia": classification.materia,
-            "extracted_fields_count": len(extracted_data),
-            "missing_fields": extraction.missing_fields if extraction else [],
-        }
+        # Build consolidated audit report (M4)
+        from lex.verify import build_audit_report
+        audit_payload = build_audit_report(
+            generation_id=generation_id,
+            template_id=classification.doc_type,
+            duration_seconds=duration_seconds,
+            cost_usd=estimated_cost,
+            classification={
+                "doc_type": classification.doc_type,
+                "jurisdiccion": classification.jurisdiccion,
+                "materia": classification.materia,
+                "confidence": classification.confidence,
+            },
+            extraction={
+                "extracted_fields_count": len(extracted_data),
+                "missing_fields": extraction.missing_fields if extraction else [],
+            },
+            calculations=calculations,
+            citations=citations_collected,
+            citation_verifications=verification_results,
+            derogation_checks=derogation_results,
+            total_blocks=len(all_blocks),
+        )
 
         if self.audit_repo:
             try:

@@ -77,6 +77,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("Sprint L-DOC auto_migrate failed (non-fatal): %s", e)
 
+    # Sprint M4: start worker auto-ingest (background task)
+    try:
+        from lex.hybrid import start_auto_ingest_worker
+        await start_auto_ingest_worker(storage.pool, interval_seconds=300)
+        logger.info("auto_ingest_worker started (300s tick)")
+    except Exception as e:
+        logger.warning("auto_ingest_worker start failed (non-fatal): %s", e)
+
     # Sprint M2: seed template_catalog desde lex/templates registry (idempotente)
     try:
         from lex.templates import registry as _tpl_registry
