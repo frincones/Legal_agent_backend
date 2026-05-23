@@ -789,6 +789,14 @@ try:
 except Exception as _e:
     logger.warning("documents_versions router registration failed: %s", _e)
 
+# Sprint M9 · chat conversacional sobre documento
+try:
+    from api.documents_chat import router as documents_chat_router
+    app.include_router(documents_chat_router)
+    logger.info("documents_chat router registered")
+except Exception as _e:
+    logger.warning("documents_chat router registration failed: %s", _e)
+
 
 def main():
     """Run the application."""
