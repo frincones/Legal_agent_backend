@@ -193,36 +193,74 @@ async def _generate_section_streaming(
     system_prompt = (
         "Eres un ABOGADO LITIGANTE SENIOR colombiano con más de 20 años de experiencia "
         "en redacción de documentos forenses. Tu redacción debe ser EQUIVALENTE a la de "
-        "un memorial presentado por un bufete top de Bogotá ante la Corte Suprema o un "
-        "Juzgado del Circuito.\n\n"
+        "un memorial presentado por un bufete top de Bogotá ante la Corte Suprema, la Sala "
+        "Laboral de la CSJ o un Juzgado del Circuito. El output será exportado a .docx con "
+        "formato forense (Times New Roman 12pt, justificado, márgenes 3cm), por lo tanto "
+        "redacta limpiamente en MARKDOWN respetando esta sintaxis:\n"
+        "  - `## TÍTULO DE SECCIÓN ROMANO` para la sección principal (ej. `## I. PARTES DEL PROCESO`)\n"
+        "  - `### Subsección` para sub-bloques\n"
+        "  - Párrafos normales separados por línea en blanco\n"
+        "  - **negritas** para nombres normativos, conceptos clave y montos\n"
+        "  - Listas numeradas `1. Texto` para hechos y pretensiones\n"
+        "  - Tablas markdown `| Concepto | Fórmula | Valor |` para liquidaciones\n\n"
         "ESTÁNDARES OBLIGATORIOS DE CALIDAD:\n"
         "1. Tono solemne, formal y respetuoso: usa 'Honorable señor Juez', 'comedidamente "
         "solicito', 'respetuosamente expongo', 'por medio del presente memorial', "
         "'me permito poner en conocimiento de su despacho'.\n"
-        "2. Citas ESPECÍFICAS Y EXACTAS con artículo, ley, año:\n"
+        "2. Citas ESPECÍFICAS Y EXACTAS con artículo, ley, año, **MAGISTRADO PONENTE y "
+        "número de radicación** cuando se trate de jurisprudencia:\n"
         "   - 'el artículo 64 del Código Sustantivo del Trabajo, modificado por el "
         "     artículo 28 de la Ley 789 de 2002'\n"
-        "   - 'la sentencia T-760 de 2008, M.P. Manuel José Cepeda Espinosa'\n"
+        "   - 'la sentencia **SL1430-2022**, M.P. **Iván Mauricio Lenis Gómez**, Sala de "
+        "Casación Laboral CSJ'\n"
+        "   - 'la sentencia **C-1507/2000**, M.P. **José Gregorio Hernández Galindo**, "
+        "Corte Constitucional'\n"
+        "   - 'la sentencia **C-016/1998**, M.P. **Fabio Morón Díaz**'\n"
+        "   - 'la sentencia **T-760 de 2008**, M.P. **Manuel José Cepeda Espinosa**'\n"
         "   - 'el artículo 13 de la Constitución Política de 1991'\n"
-        "3. Razonamiento jurídico CONCATENADO: silogismo (norma → hecho → conclusión).\n"
+        "3. Razonamiento jurídico CONCATENADO con SILOGISMO explícito: primero la norma o "
+        "precedente (premisa mayor), luego el hecho del caso (premisa menor), finalmente la "
+        "conclusión jurídica. Cita siempre la ratio decidendi cuando uses jurisprudencia.\n"
         "4. Cuando hay cálculos económicos (cesantías, intereses, indemnización), MUESTRA "
-        "LA FÓRMULA EXACTA con los valores. Ej: 'la indemnización corresponde a 30 días de "
-        "salario por el primer año y 20 días adicionales por cada año siguiente, conforme "
-        "al artículo 64 del CST: ([SALARIO] / 30) × (30 + 20 × ([AÑOS]-1)) = $[MONTO]'.\n"
-        "5. Usa numeración romana en pretensiones (PRIMERA, SEGUNDA, TERCERA...) y arábiga "
-        "en hechos (1., 2., 3...).\n"
-        "6. NUNCA inventes citas o jurisprudencia. Solo usa lo que aparece en el CONTEXTO "
-        "LEGAL provisto, o normas básicas que CONOZCAS CON CERTEZA (CN/91, CST, CCom, CC, "
-        "Ley 100/93, CGP, Ley 1010/06).\n"
+        "**TABLA MARKDOWN** con la fórmula y valor exacto. Ejemplo:\n"
+        "   | Concepto | Fórmula legal | Valor |\n"
+        "   |---|---|---|\n"
+        "   | Cesantías Art. 249 CST | (Salario × días trabajados) / 360 | $[MONTO] |\n"
+        "   | Intereses cesantías Art. 1 Ley 52/75 | Cesantías × 12% × días/360 | $[MONTO] |\n"
+        "   | Indemnización Art. 64 CST | 30 días + 20×(años-1) sobre salario diario | $[MONTO] |\n"
+        "   | Sanción moratoria Art. 65 CST | Salario diario × días en mora | $[MONTO] |\n"
+        "5. Usa numeración romana en pretensiones (`**PRIMERA.**`, `**SEGUNDA.**`, "
+        "`**TERCERA.**`...) y separa **Pretensiones declarativas** de **Pretensiones de "
+        "condena** cuando aplique. Numeración arábiga en hechos (`1.`, `2.`, `3.`...) con "
+        "fechas concretas o placeholders entre corchetes.\n"
+        "6. NUNCA inventes citas o jurisprudencia. PRIORIZA el CONTEXTO LEGAL provisto. "
+        "Si necesitas una sentencia que NO está en el contexto, usa ÚNICAMENTE las que "
+        "aparezcan en esta lista verificada (jurisprudencia hito que conoces con certeza):\n"
+        "   - **C-1507/2000** M.P. José Gregorio Hernández Galindo (estabilidad reforzada)\n"
+        "   - **C-016/1998** M.P. Fabio Morón Díaz (contrato realidad / Art. 24 CST)\n"
+        "   - **T-760/2008** M.P. Manuel José Cepeda Espinosa (derecho a la salud)\n"
+        "   - **SL1430-2022** M.P. Iván Mauricio Lenis Gómez (indemnización Art. 64 CST)\n"
+        "   - **SL2832-2020** M.P. Clara Cecilia Dueñas Quevedo (sanción moratoria)\n"
+        "   - **SU-449/2020** M.P. Diana Fajardo Rivera (estabilidad reforzada en salud)\n"
+        "   Para normas, usa con certeza: CN/91, CST (Decreto 2663/50), Ley 50/90, Ley "
+        "100/93, Decreto 1072/2015, CGP (Ley 1564/12), Ley 1010/06, CC, CCom, CPACA.\n"
         "7. Estructura cada sección con sub-numerales si es necesario (1.1, 1.2, etc.).\n"
-        "8. Redacción extensa y exhaustiva: NO seas escueto. Cada sección debe tener entre "
-        "5 y 12 párrafos sustantivos, salvo encabezado y firma.\n"
-        "9. Cuando uses placeholders, usa formato consistente: [NOMBRE_DEMANDANTE], "
-        "[CC_DEMANDANTE], [FECHA_INGRESO], [SALARIO_MENSUAL], etc.\n"
-        "10. Para demandas laborales SIEMPRE menciona: contrato (Art. 22 CST), salario "
-        "(Art. 127 CST), cesantías (Art. 249 CST), intereses cesantías (Art. 99 Ley 50/90), "
-        "prima de servicios (Art. 306 CST), vacaciones (Art. 186 CST), indemnización despido "
-        "sin justa causa (Art. 64 CST) y sanción moratoria si aplica (Art. 65 CST).\n"
+        "8. Redacción EXTENSA y EXHAUSTIVA. NO seas escueto. Mínimos por sección:\n"
+        "   - Hechos: 12-18 hechos numerados con fecha y monto\n"
+        "   - Pretensiones: 6-10 pretensiones (declarativas + de condena)\n"
+        "   - Fundamentos de derecho: 6-10 párrafos con normas + jurisprudencia citadas\n"
+        "   - Razonamiento jurídico: silogismo explícito de mínimo 4 párrafos\n"
+        "   - Cálculos: tabla completa con todos los conceptos laborales\n"
+        "   - Resto: 5-8 párrafos sustantivos\n"
+        "9. Cuando uses placeholders, usa formato consistente entre corchetes: "
+        "[NOMBRE_DEMANDANTE], [CC_DEMANDANTE], [FECHA_INGRESO], [FECHA_DESPIDO], "
+        "[SALARIO_MENSUAL], [CARGO], [EMPRESA_DEMANDADA], [NIT_DEMANDADA], etc.\n"
+        "10. Para demandas laborales SIEMPRE menciona y cita literalmente cuando aplique: "
+        "contrato (Art. 22 y 23 CST), salario (Art. 127 CST), cesantías (Art. 249 CST), "
+        "intereses cesantías (Art. 1 Ley 52/75 y Art. 99 Ley 50/90), prima de servicios "
+        "(Art. 306 CST), vacaciones (Art. 186 CST), indemnización por despido sin justa "
+        "causa (Art. 64 CST modificado por Art. 28 Ley 789/02), sanción moratoria (Art. 65 "
+        "CST), estabilidad reforzada cuando aplique (Art. 26 Ley 361/97).\n"
     )
 
     previous_context = "\n\n".join(
@@ -439,10 +477,60 @@ async def _stream_generation(
         "issues": [] if unique_citations else ["No se detectaron citas en el documento"],
     })
 
+    # Polish pass final: gpt-4o relee el documento completo y devuelve versión pulida
+    # con coherencia, transiciones, citas correctas y formato consistente.
+    polished_md: str | None = None
+    try:
+        full_md_draft = "\n\n".join(
+            f"## {title}\n\n{content}" for title, content in all_content
+        )
+        if len(full_md_draft) > 800:  # solo polish si hay contenido sustantivo
+            yield _sse("polish_started", {"model": "gpt-4o", "draft_chars": len(full_md_draft)})
+            polish_system = (
+                "Eres editor senior de un bufete top de Bogotá. Recibirás un memorial "
+                "legal completo en markdown. Tu tarea es PULIRLO sin agregar contenido "
+                "ficticio: corregir errores de redacción, mejorar transiciones entre "
+                "secciones, asegurar que TODAS las pretensiones (PRIMERA, SEGUNDA...) "
+                "estén numeradas correctamente, que cada hecho tenga su fecha, que las "
+                "citas jurisprudenciales incluyan M.P. y radicación, y que los cálculos "
+                "estén en tablas markdown. NO inventes nuevas sentencias ni normas, solo "
+                "pule lo que ya existe. Devuelve el documento completo pulido en markdown."
+            )
+            polish_user = (
+                f"DOCUMENTO BORRADOR (tipo: {doc_type}):\n\n{full_md_draft}\n\n"
+                "Devuelve el documento completo PULIDO en markdown. NO incluyas explicación, "
+                "solo el documento final."
+            )
+            try:
+                polish_resp = await client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": polish_system},
+                        {"role": "user", "content": polish_user},
+                    ],
+                    temperature=0.15,
+                    max_tokens=8000,
+                )
+                polished_md = polish_resp.choices[0].message.content or None
+                if polished_md and len(polished_md) > 500:
+                    yield _sse("polish_done", {
+                        "polished_chars": len(polished_md),
+                        "delta_chars": len(polished_md) - len(full_md_draft),
+                    })
+                else:
+                    polished_md = None
+            except Exception as pe:
+                logger.warning("Polish pass failed (using draft): %s", pe)
+                yield _sse("polish_done", {"polished_chars": 0, "error": str(pe)[:120]})
+    except Exception as e:
+        logger.warning("Polish pass exception (non-fatal): %s", e)
+
     # Persistir como matter_document si hay matter_id
     matter_document_id: str | None = None
     try:
-        full_md = "\n\n".join(f"## {title}\n\n{content}" for title, content in all_content)
+        full_md = polished_md or "\n\n".join(
+            f"## {title}\n\n{content}" for title, content in all_content
+        )
         if req.matter_id:
             async with storage.pool.acquire() as conn:
                 row = await conn.fetchrow("""
@@ -454,11 +542,23 @@ async def _stream_generation(
     except Exception as e:
         logger.warning("Persist matter_document failed: %s", e)
 
+    # Emit final consolidated document (polished if available, else concat)
+    final_md = polished_md or "\n\n".join(
+        f"## {title}\n\n{content}" for title, content in all_content
+    )
+    yield _sse("final_document", {
+        "content_md": final_md,
+        "polished": polished_md is not None,
+        "total_chars": len(final_md),
+    })
+
     total_seconds = round(time.monotonic() - started_at, 1)
     yield _sse("done", {
         "generation_id": generation_id,
         "matter_document_id": matter_document_id,
         "total_seconds": total_seconds,
+        "total_chars": len(final_md),
+        "polished": polished_md is not None,
     })
 
 
