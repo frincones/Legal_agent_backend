@@ -781,6 +781,14 @@ try:
 except Exception as _e:
     logger.warning("templates_v2 router registration failed: %s", _e)
 
+# Sprint M6 · regenerate-section + versions
+try:
+    from api.documents_versions import router as documents_versions_router
+    app.include_router(documents_versions_router)
+    logger.info("documents_versions router registered")
+except Exception as _e:
+    logger.warning("documents_versions router registration failed: %s", _e)
+
 
 def main():
     """Run the application."""
