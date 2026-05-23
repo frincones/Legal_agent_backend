@@ -35,8 +35,10 @@ from lex.blocks.schema import (
     TitleBlock,
 )
 from lex.orchestrator.stages.block_generator import generate_section_blocks
+from lex.orchestrator.stages.calculadora import run_calculadora
 from lex.orchestrator.stages.classifier import classify
 from lex.orchestrator.stages.data_extractor import extract
+from lex.orchestrator.stages.hunters_stage import run_template_hunters
 from lex.storage import AuditRepo, BlocksRepo
 
 logger = logging.getLogger(__name__)
@@ -208,10 +210,56 @@ class Orchestrator:
         )
         extracted_data = extraction.extracted_fields if extraction else {}
 
-        # ===== STAGE 3-6 (M3-M4): calculadora, hunters, derogation =====
-        # Placeholder M1: skip. M3 los insertará aquí.
+        # ===== STAGE 3: CALCULADORA (Python puro, cero LLM) =====
         calculations: dict[str, Any] = {}
+        if template and template.calculadora:
+            yield sse("calculation_started", {"calculadora": template.calculadora})
+            try:
+                calc_result = run_calculadora(template.calculadora, extracted_data)
+                if calc_result:
+                    calculations = calc_result
+                    # Resumen para timeline
+                    conceptos_summary = {}
+                    if "conceptos" in calc_result:
+                        for k, v in calc_result["conceptos"].items():
+                            if isinstance(v, dict) and "valor" in v:
+                                conceptos_summary[v.get("concepto", k)] = f"${v['valor']:,.0f}"
+                    elif "valor" in calc_result:
+                        conceptos_summary[calc_result.get("concepto", "valor")] = f"${calc_result['valor']:,.0f}"
+                    yield SSEEvent.calculation_done(
+                        conceptos=conceptos_summary,
+                        total=calc_result.get("total"),
+                    )
+                else:
+                    yield SSEEvent.calculation_done(conceptos={}, total=None)
+            except Exception as e:
+                logger.warning("calculadora stage failed: %s", e)
+                yield SSEEvent.calculation_done(conceptos={}, total=None)
+
+        # ===== STAGE 4: HUNTERS (RAG multi-query paralelo) =====
         jurisprudencia: list[dict] = []
+        if template and template.hunters:
+            yield sse("hunters_started", {"queries_count": len(template.hunters)})
+            try:
+                jurisprudencia = await run_template_hunters(template, self.client, self.pool)
+                for hit in jurisprudencia[:10]:  # emitir solo top 10 al timeline
+                    yield SSEEvent.jurisprudence_query(
+                        query=hit.get("query_origen", ""),
+                        hits=[{
+                            "id": hit.get("id"),
+                            "mp": hit.get("mp"),
+                            "similarity": hit.get("similarity"),
+                            "doc_title": hit.get("doc_title"),
+                        }],
+                        hunter=hit.get("corte", "general"),
+                    )
+                yield sse("hunters_done", {
+                    "total_hits": len(jurisprudencia),
+                    "sentencias": sum(1 for h in jurisprudencia if h.get("id")),
+                })
+            except Exception as e:
+                logger.warning("hunters stage failed: %s", e)
+                yield sse("hunters_done", {"total_hits": 0, "error": str(e)[:120]})
 
         # ===== STAGE 7: BLOCK GENERATOR (por sección, streaming) =====
         all_blocks: list[dict[str, Any]] = []
