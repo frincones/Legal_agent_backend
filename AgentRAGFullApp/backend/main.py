@@ -70,12 +70,35 @@ async def lifespan(app: FastAPI):
     storage = await get_storage(config.storage)
     logger.info("Storage initialized: %s", config.storage.provider)
 
-    # Sprint L-DOC: auto-apply migrations idempotente
+    # Sprint L-DOC + Sprint M: auto-apply migrations idempotente
     try:
         from storage.auto_migrate import run_sprint_l_doc_migrations
         await run_sprint_l_doc_migrations(storage.pool)
     except Exception as e:
         logger.warning("Sprint L-DOC auto_migrate failed (non-fatal): %s", e)
+
+    # Sprint M2: seed template_catalog desde lex/templates registry (idempotente)
+    try:
+        from lex.templates import registry as _tpl_registry
+        import json as _json
+        async with storage.pool.acquire() as conn:
+            for t in _tpl_registry.list_all():
+                await conn.execute("""
+                    INSERT INTO template_catalog
+                        (id, version, jurisdiccion, nombre, forensic_style, definition, is_active)
+                    VALUES ($1, $2, $3, $4, $5, $6::jsonb, true)
+                    ON CONFLICT (id, version) DO UPDATE
+                        SET jurisdiccion = EXCLUDED.jurisdiccion,
+                            nombre = EXCLUDED.nombre,
+                            forensic_style = EXCLUDED.forensic_style,
+                            definition = EXCLUDED.definition,
+                            is_active = true
+                """, t.id, t.version, t.jurisdiccion, t.nombre,
+                     t.forensic_structure.style,
+                     _json.dumps(t.to_dict(), ensure_ascii=False))
+        logger.info("template_catalog seeded: %d templates", len(_tpl_registry.list_all()))
+    except Exception as e:
+        logger.warning("template_catalog seed failed (non-fatal): %s", e)
 
     # Pre-warm OpenAI connection to eliminate cold-start latency on first request
     await _prewarm_openai()
@@ -741,6 +764,14 @@ try:
     logger.info("documents_generate_v2 router registered (flag check at request time)")
 except Exception as _e:
     logger.warning("documents_generate_v2 router registration failed: %s", _e)
+
+# Sprint M2 · GET /v1/templates (TemplateDef catalog)
+try:
+    from api.templates_v2 import router as templates_v2_router
+    app.include_router(templates_v2_router)
+    logger.info("templates_v2 router registered")
+except Exception as _e:
+    logger.warning("templates_v2 router registration failed: %s", _e)
 
 
 def main():

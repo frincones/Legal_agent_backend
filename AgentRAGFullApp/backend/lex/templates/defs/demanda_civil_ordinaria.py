@@ -1,0 +1,60 @@
+"""TemplateDef · Demanda Civil Ordinaria (CGP Art. 368+)."""
+from lex.templates.base import (
+    DetailProfile, ForensicStructure, HunterQuery, Rule, SectionDef, TemplateDef,
+)
+
+TEMPLATE = TemplateDef(
+    id="demanda_civil_ordinaria",
+    nombre="Demanda Civil Ordinaria",
+    jurisdiccion="civil",
+    materia="proceso declarativo civil",
+    description="Demanda Civil Ordinaria conforme CGP (Ley 1564/2012)",
+    sections_plan=[
+        SectionDef("encabezado", "Encabezado", 1, roman=None),
+        SectionDef("partes", "PARTES", 2, roman="I",
+                   expected_blocks=["subsection", "paragraph"]),
+        SectionDef("competencia", "COMPETENCIA Y CUANTÍA", 3, roman="II"),
+        SectionDef("hechos", "HECHOS", 4, roman="III",
+                   expected_blocks=["hecho"],
+                   section_instruction="Genera 8-15 hechos con fechas y referencias documentales."),
+        SectionDef("pretensiones", "PRETENSIONES", 5, roman="IV",
+                   expected_blocks=["pretension"]),
+        SectionDef("fundamentos_derecho", "FUNDAMENTOS DE DERECHO", 6, roman="V",
+                   expected_blocks=["paragraph", "norma_citada", "jurisprudencia"]),
+        SectionDef("razonamiento", "RAZONAMIENTO JURÍDICO", 7, roman="VI",
+                   expected_blocks=["silogismo", "paragraph"]),
+        SectionDef("liquidacion", "ESTIMACIÓN DE LA CUANTÍA Y LIQUIDACIÓN", 8, roman="VII",
+                   expected_blocks=["paragraph", "calc_step", "table"]),
+        SectionDef("pruebas", "PRUEBAS", 9, roman="VIII",
+                   expected_blocks=["subsection", "list_item"]),
+        SectionDef("anexos", "ANEXOS", 10, roman="IX", expected_blocks=["list_item"]),
+        SectionDef("notificaciones", "NOTIFICACIONES", 11, roman="X"),
+        SectionDef("juramento", "JURAMENTO", 12, roman=None, expected_blocks=["juramento"]),
+        SectionDef("firma", "Firma", 13, roman=None, expected_blocks=["firma"]),
+    ],
+    hunters=[
+        HunterQuery("CGP demanda declarativa civil requisitos Art. 82", "sala_civil_csj", top_k=3),
+        HunterQuery("intereses moratorios civiles Art. 884 CCom indexación", "sala_civil_csj", top_k=2),
+        HunterQuery("indemnización daños y perjuicios responsabilidad civil contractual", "sala_civil_csj", top_k=3),
+    ],
+    validation_rules=[
+        Rule.has_section("partes"),
+        Rule.has_section("hechos"),
+        Rule.has_section("pretensiones"),
+        Rule.min_hechos(8),
+        Rule.min_pretensiones(4),
+    ],
+    detail_profile=DetailProfile(
+        min_paragraphs_per_section=4, min_hechos=8, min_pretensiones=6,
+        require_silogismo=True, require_calculos=True, require_juramento=True,
+        require_pretensiones_romanas=True, jurisprudencia_min=2, normas_min=4,
+        tone="solemne_forense",
+    ),
+    forensic_structure=ForensicStructure(style="demanda", pretensiones_label="PRIMERA"),
+    required_data={
+        "demandante_nombre": "str", "demandante_cc": "str",
+        "demandado_nombre": "str", "pretension_principal": "str",
+        "monto_reclamado": "number", "fecha_hechos": "date YYYY-MM-DD", "ciudad": "str",
+    },
+    calculadora="lex.calc.civil:intereses_moratorios_indexacion",
+)

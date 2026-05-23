@@ -105,15 +105,36 @@ class GenerationRequest:
 
 
 def _resolve_plan(doc_type: str) -> list[dict[str, Any]]:
-    """Fallback al plan más cercano si no hay específico para este doc_type."""
+    """Resuelve plan desde TemplateDef registry (M2) con fallback al hardcoded (M1)."""
+    # M2: usar registry de TemplateDef
+    try:
+        from lex.templates import registry as _tpl_registry
+        tpl = _tpl_registry.get(doc_type)
+        if tpl is not None:
+            return [
+                {"key": s.key, "title": s.title, "order": s.order, "roman": s.roman}
+                for s in tpl.sections_plan
+            ]
+    except Exception:
+        logger.exception("template registry lookup failed for %s", doc_type)
+
+    # Fallback M1 hardcoded
     if doc_type in SECTIONS_PLAN_BY_TYPE:
         return SECTIONS_PLAN_BY_TYPE[doc_type]
-    # Heurística de fallback
     if doc_type.startswith("demanda_"):
         return SECTIONS_PLAN_BY_TYPE["demanda_laboral_ordinaria"]
     if doc_type.startswith("contrato_"):
         return SECTIONS_PLAN_BY_TYPE["contrato_arrendamiento"]
     return SECTIONS_PLAN_BY_TYPE["tutela"]
+
+
+def _resolve_template(doc_type: str):
+    """Devuelve el TemplateDef si existe."""
+    try:
+        from lex.templates import registry as _tpl_registry
+        return _tpl_registry.get(doc_type)
+    except Exception:
+        return None
 
 
 class Orchestrator:
@@ -144,6 +165,7 @@ class Orchestrator:
             classification.doc_type = req.doc_type
 
         plan = _resolve_plan(classification.doc_type)
+        template = _resolve_template(classification.doc_type)
 
         yield SSEEvent.classification_done(
             doc_type=classification.doc_type,
@@ -152,13 +174,17 @@ class Orchestrator:
             confidence=classification.confidence,
         )
 
+        template_selected_meta = {
+            "id": classification.doc_type,
+            "name": template.nombre if template else classification.doc_type.replace("_", " ").title(),
+            "jurisdiccion": template.jurisdiccion if template else classification.jurisdiccion,
+            "description": template.description if template else "",
+            "from_registry": template is not None,
+        }
+
         yield SSEEvent.meta(
             generation_id=generation_id,
-            template_selected={
-                "id": classification.doc_type,
-                "name": classification.doc_type.replace("_", " ").title(),
-                "jurisdiccion": classification.jurisdiccion,
-            },
+            template_selected=template_selected_meta,
             sections_plan=[
                 {"key": s["key"], "title": s["title"], "order": s["order"], "roman": s.get("roman")}
                 for s in plan
@@ -207,11 +233,22 @@ class Orchestrator:
         yield SSEEvent.block_emit("title", title_b.model_dump())
         yield SSEEvent.block_done(title_b.block_id)
 
+        # Map de section_instruction y expected_blocks por section_key (si hay template)
+        section_meta: dict[str, dict] = {}
+        if template:
+            for s in template.sections_plan:
+                section_meta[s.key] = {
+                    "instruction": s.section_instruction or "",
+                    "expected_blocks": s.expected_blocks,
+                }
+
         for section in plan:
             section_key = section["key"]
             section_order = section["order"]
             section_title = section["title"]
             roman = section.get("roman")
+            extra_instr = section_meta.get(section_key, {}).get("instruction", "")
+            expected_blocks = section_meta.get(section_key, {}).get("expected_blocks", [])
 
             yield SSEEvent.section_started(section_key, section_order, len(plan))
 
@@ -247,6 +284,8 @@ class Orchestrator:
                     previous_sections_summary=previous_sections_summary[-2000:],
                     calculations=calculations,
                     jurisprudencia=jurisprudencia,
+                    section_instruction=extra_instr,
+                    expected_blocks=expected_blocks,
                 ):
                     block_order += 1
                     payload = {

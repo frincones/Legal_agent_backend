@@ -107,6 +107,8 @@ async def generate_section_blocks(
     rag_context: list[dict] | None = None,
     calculations: dict[str, Any] | None = None,
     jurisprudencia: list[dict] | None = None,
+    section_instruction: str = "",
+    expected_blocks: list[str] | None = None,
 ) -> AsyncIterator[Block]:
     """Genera bloques tipados para una sección. Yield Block uno por uno."""
     model = _model_for_section(section_key)
@@ -119,6 +121,10 @@ async def generate_section_blocks(
         f"BRIEF: {brief}",
         f"DATOS EXTRAÍDOS: {json.dumps(extracted_data, ensure_ascii=False)}",
     ]
+    if section_instruction:
+        ctx_parts.append(f"INSTRUCCIÓN ESPECÍFICA DE LA SECCIÓN: {section_instruction}")
+    if expected_blocks:
+        ctx_parts.append(f"BLOQUES PRIORITARIOS A USAR: {', '.join(expected_blocks)}")
     if calculations:
         ctx_parts.append(f"CÁLCULOS DETERMINÍSTICOS:\n{json.dumps(calculations, ensure_ascii=False, indent=2)}")
     if jurisprudencia:
