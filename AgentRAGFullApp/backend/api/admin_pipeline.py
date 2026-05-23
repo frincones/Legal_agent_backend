@@ -755,6 +755,77 @@ async def run_scraper(
     }
 
 
+@router.get("/debug-counts")
+async def debug_counts(
+    _claims: dict = Depends(_require_session),
+) -> dict[str, Any]:
+    """
+    Debug: count crudo de tablas + last 10 documentos source='corte_cc'
+    Para diagnosticar discrepancias entre /inventory cache y BD real.
+    """
+    storage = await get_storage()
+    pool = storage.pool
+
+    async with pool.acquire() as conn:
+        # Counts globales
+        results: dict[str, Any] = {}
+        for q in [
+            ("documents_total", "SELECT count(*) FROM documents"),
+            ("documents_corte_cc", "SELECT count(*) FROM documents WHERE source = 'corte_cc'"),
+            ("chunks_total", "SELECT count(*) FROM chunks"),
+            ("chunks_with_embedding", "SELECT count(*) FROM chunks WHERE embedding IS NOT NULL"),
+            ("jurisprudencia_total", "SELECT count(*) FROM jurisprudencia"),
+            ("user_templates_total", "SELECT count(*) FROM user_templates"),
+            ("template_candidates_total", "SELECT count(*) FROM template_candidates"),
+            ("ingest_runs_total", "SELECT count(*) FROM ingest_runs"),
+            ("ingest_runs_corte_cc", "SELECT count(*) FROM ingest_runs WHERE source = 'corte_cc'"),
+            ("leyes_normas_total", "SELECT count(*) FROM leyes_normas"),
+        ]:
+            try:
+                results[q[0]] = await conn.fetchval(q[1])
+            except Exception as e:
+                results[q[0]] = f"error: {str(e)[:100]}"
+
+        # Last 15 documents (recent)
+        try:
+            rows = await conn.fetch("""
+                SELECT id, title, source, doc_type
+                FROM documents
+                ORDER BY id DESC
+                LIMIT 15
+            """)
+            results["documents_recent"] = [
+                {"id": str(r["id"])[:8], "title": r["title"], "source": r["source"], "doc_type": r["doc_type"]}
+                for r in rows
+            ]
+        except Exception as e:
+            results["documents_recent"] = f"error: {e}"
+
+        # Last 5 ingest_runs
+        try:
+            rows = await conn.fetch("""
+                SELECT source, started_at, completed_at, docs_processed, docs_failed, triggered_by
+                FROM ingest_runs
+                ORDER BY started_at DESC
+                LIMIT 5
+            """)
+            results["ingest_runs_recent"] = [
+                {
+                    "source": r["source"],
+                    "started_at": r["started_at"].isoformat() if r["started_at"] else None,
+                    "completed_at": r["completed_at"].isoformat() if r["completed_at"] else None,
+                    "docs_processed": r["docs_processed"],
+                    "docs_failed": r["docs_failed"],
+                    "triggered_by": r["triggered_by"],
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            results["ingest_runs_recent"] = f"error: {e}"
+
+    return results
+
+
 @router.get("/logs")
 async def get_pipeline_logs(
     _claims: dict = Depends(_require_session),
