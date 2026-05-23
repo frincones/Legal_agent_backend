@@ -725,13 +725,22 @@ try:
 except Exception as _e:
     logger.warning("admin_ingest_url router registration failed: %s", _e)
 
-# Sprint L-DOC · POST /v1/documents/generate (SSE)
+# Sprint L-DOC · POST /v1/documents/generate (SSE v1)
 try:
     from api.documents_generate import router as documents_generate_router
     app.include_router(documents_generate_router)
     logger.info("documents_generate router registered")
 except Exception as _e:
     logger.warning("documents_generate router registration failed: %s", _e)
+
+# Sprint M · POST /v1/documents/v2/generate (block-level SSE v2)
+# Feature flag FLAG_DOCGEN_V2 controla disponibilidad (default OFF en prod hasta validar)
+try:
+    from api.documents_generate_v2 import router as documents_generate_v2_router
+    app.include_router(documents_generate_v2_router)
+    logger.info("documents_generate_v2 router registered (flag check at request time)")
+except Exception as _e:
+    logger.warning("documents_generate_v2 router registration failed: %s", _e)
 
 
 def main():

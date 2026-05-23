@@ -1,0 +1,192 @@
+"""SSE event factories tipadas para Document Generation v3.1.
+
+Cada función devuelve bytes (la línea SSE formateada listo para yield).
+Los nombres de evento son contrato fijo con el frontend.
+"""
+from __future__ import annotations
+
+import json
+from typing import Any, Literal
+
+EventName = Literal[
+    # Pipeline lifecycle
+    "meta",
+    "classification_started",
+    "classification_done",
+    "template_loaded",
+    "extraction_started",
+    "extraction_done",
+    "calculation_started",
+    "calculation_done",
+    "hunters_started",
+    "jurisprudence_query",
+    "hunters_done",
+    "derogation_started",
+    "derogation_check",
+    "derogation_done",
+    # Block streaming
+    "section_started",
+    "block_emit",
+    "block_streaming",
+    "block_done",
+    "section_done",
+    # Verification
+    "citation_verify_started",
+    "citation_verify",
+    "citation_verify_done",
+    # Polish + QA
+    "polish_started",
+    "polish_done",
+    "qa_started",
+    "qa_done",
+    # Docx
+    "docx_built",
+    # Final
+    "audit_report",
+    "done",
+    "error",
+]
+
+
+def sse(event: EventName, data: Any) -> bytes:
+    """Formatea un evento SSE como bytes listos para yield."""
+    payload = json.dumps(data, ensure_ascii=False, default=str)
+    return f"event: {event}\ndata: {payload}\n\n".encode("utf-8")
+
+
+def keepalive() -> bytes:
+    """Línea keepalive para evitar timeout de proxies."""
+    return b": keepalive\n\n"
+
+
+class SSEEvent:
+    """Helper class para emitir eventos con estructura consistente."""
+
+    @staticmethod
+    def meta(generation_id: str, template_selected: dict, sections_plan: list[dict],
+             estimated_seconds: int) -> bytes:
+        return sse("meta", {
+            "generation_id": generation_id,
+            "template_selected": template_selected,
+            "sections_plan": sections_plan,
+            "estimated_seconds": estimated_seconds,
+        })
+
+    @staticmethod
+    def classification_done(doc_type: str, jurisdiccion: str, materia: str,
+                            confidence: float) -> bytes:
+        return sse("classification_done", {
+            "doc_type": doc_type,
+            "jurisdiccion": jurisdiccion,
+            "materia": materia,
+            "confidence": confidence,
+        })
+
+    @staticmethod
+    def extraction_done(extracted_fields: dict, missing_fields: list[str]) -> bytes:
+        return sse("extraction_done", {
+            "extracted_fields": extracted_fields,
+            "missing_fields": missing_fields,
+        })
+
+    @staticmethod
+    def calculation_done(conceptos: dict, total: float | None = None) -> bytes:
+        return sse("calculation_done", {
+            "conceptos": conceptos,
+            "total": total,
+        })
+
+    @staticmethod
+    def jurisprudence_query(query: str, hits: list[dict], hunter: str) -> bytes:
+        return sse("jurisprudence_query", {
+            "query": query,
+            "hits": hits,
+            "hunter": hunter,
+        })
+
+    @staticmethod
+    def derogation_check(norma: str, vigente: bool, derogada_por: str | None = None) -> bytes:
+        return sse("derogation_check", {
+            "norma": norma,
+            "vigente": vigente,
+            "derogada_por": derogada_por,
+        })
+
+    @staticmethod
+    def section_started(section_key: str, order: int, total: int) -> bytes:
+        return sse("section_started", {
+            "section_key": section_key,
+            "order": order,
+            "total_sections": total,
+        })
+
+    @staticmethod
+    def block_emit(section_key: str, block: dict) -> bytes:
+        return sse("block_emit", {
+            "section_key": section_key,
+            "block": block,
+        })
+
+    @staticmethod
+    def block_streaming(block_id: str, run_delta: dict) -> bytes:
+        return sse("block_streaming", {
+            "block_id": block_id,
+            "run_delta": run_delta,
+        })
+
+    @staticmethod
+    def block_done(block_id: str) -> bytes:
+        return sse("block_done", {"block_id": block_id})
+
+    @staticmethod
+    def section_done(section_key: str) -> bytes:
+        return sse("section_done", {"section_key": section_key})
+
+    @staticmethod
+    def citation_verify(citation: str, found: bool, chunk_id: str | None = None,
+                        similarity: float | None = None) -> bytes:
+        return sse("citation_verify", {
+            "citation": citation,
+            "found": found,
+            "chunk_id": chunk_id,
+            "similarity": similarity,
+        })
+
+    @staticmethod
+    def polish_started(model: str, draft_chars: int) -> bytes:
+        return sse("polish_started", {"model": model, "draft_chars": draft_chars})
+
+    @staticmethod
+    def polish_done(polished_chars: int, delta_chars: int = 0,
+                    error: str | None = None) -> bytes:
+        payload = {"polished_chars": polished_chars, "delta_chars": delta_chars}
+        if error:
+            payload["error"] = error
+        return sse("polish_done", payload)
+
+    @staticmethod
+    def qa_done(passed: bool, score: float, issues: list[str]) -> bytes:
+        return sse("qa_done", {"passed": passed, "score": score, "issues": issues})
+
+    @staticmethod
+    def docx_built(url: str, size_kb: int) -> bytes:
+        return sse("docx_built", {"url": url, "size_kb": size_kb})
+
+    @staticmethod
+    def audit_report(audit: dict) -> bytes:
+        return sse("audit_report", audit)
+
+    @staticmethod
+    def done(generation_id: str, matter_document_id: str | None,
+             duration_seconds: float, cost_usd: float, total_blocks: int) -> bytes:
+        return sse("done", {
+            "generation_id": generation_id,
+            "matter_document_id": matter_document_id,
+            "duration_seconds": duration_seconds,
+            "cost_usd": cost_usd,
+            "total_blocks": total_blocks,
+        })
+
+    @staticmethod
+    def error(stage: str, message: str) -> bytes:
+        return sse("error", {"stage": stage, "message": message})
