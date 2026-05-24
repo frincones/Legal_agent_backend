@@ -89,24 +89,36 @@ REGLAS DE CALIDAD:
 8. Cada sección debe tener 5-12 bloques sustantivos (excepto encabezado/firma)
 9. Usa placeholders entre corchetes: [NOMBRE_DEMANDANTE], [FECHA_INGRESO], etc, si faltan datos
 
-REGLA CRÍTICA — BLOQUES TIPADOS PARA CITAS (OBLIGATORIO):
+REGLA CRÍTICA — NORMAS COMO BLOQUE TIPADO (OBLIGATORIO):
    ✗ MAL: {"type": "paragraph", "runs": [{"text": "Conforme al artículo 64 del CST, se debe..."}]}
    ✓ BIEN (dos bloques separados):
        1) {"type": "norma_citada", "norma": "Art. 64 CST",
            "contenido": [{"text": "El empleador que despida sin justa causa..."}], "verified": false}
        2) {"type": "paragraph", "runs": [{"text": "Conforme a la norma citada, se debe..."}]}
 
-   Lo MISMO con jurisprudencia:
-   ✗ MAL: paragraph con "la sentencia SL1430-2022 M.P. Iván Lenis sostuvo..."
-   ✓ BIEN:
-       {"type": "jurisprudencia", "id": "SL1430-2022", "mp": "Iván Mauricio Lenis Gómez",
-        "corte": "CSJ Sala Laboral", "fecha": "2022",
-        "ratio": [{"text": "cuando el empleador opta por terminar unilateralmente..."}], "verified": false}
+   Cada vez que menciones una norma específica (Art. X de Y, Ley N/AAAA, Decreto N/AAAA)
+   DEBES emitir un bloque norma_citada separado ADEMÁS del párrafo de contexto.
 
-   REGLA ABSOLUTA: cada vez que menciones una norma específica (Art. X de Y, Ley N/AAAA,
-   Decreto N/AAAA) o una sentencia (SL/SC/SP/SU/T/C-NNN/AAAA), DEBES emitir un bloque
-   norma_citada o jurisprudencia separado ADEMÁS del párrafo de contexto. El verifier
-   solo cuenta citas que vienen como bloques tipados.
+REGLA CRÍTICA — JURISPRUDENCIA SOLO DESDE CONTEXTO (ANTI-ALUCINACIÓN):
+   La jurisprudencia (SL/SC/SP/SU/T/C/STC/STL-NNN/AAAA) SOLO puede citarse si aparece
+   textualmente en el CONTEXTO LEGAL provisto en este prompt (sección JURISPRUDENCIA).
+
+   ✗ PROHIBIDO inventar SL1430-2022, T-760/2008, C-1507/2000 desde memoria del modelo
+   ✗ PROHIBIDO emitir bloque jurisprudencia con datos no presentes en el contexto
+       (el verifier hace live fetch a CSJ/Corte CC; si no encuentra la sentencia,
+        marca la cita como SOSPECHOSA = alucinación = baja Citation Existence Rate)
+
+   ✓ PERMITIDO: copiar EXACTAMENTE id, mp, corte y ratio de las sentencias listadas
+     en el CONTEXTO LEGAL recibido.
+
+   ✓ PERMITIDO: si el contexto no trae jurisprudencia relevante, usar referencia
+     genérica SIN emitir bloque jurisprudencia tipado, ej:
+       "conforme a la reiterada jurisprudencia de la Sala de Casación Laboral CSJ"
+       "según pacífica doctrina constitucional sobre la materia"
+       "como ha sostenido la jurisprudencia laboral colombiana"
+
+   El verifier sólo valida (✅) las citas reales del corpus. Las inventadas obtienen ❌.
+   Es mejor OMITIR cita que inventar.
 
 REGLA — CÁLCULOS NUMÉRICOS:
    Si el CONTEXTO incluye "CÁLCULOS DETERMINÍSTICOS" (de calc/laboral.py), USA esos números
