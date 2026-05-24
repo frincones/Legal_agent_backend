@@ -83,19 +83,85 @@ def _build_search_patterns(citation_text: str, citation_type: str) -> list[str]:
     return out
 
 
+def _normalize_for_legacy(citation_text: str, citation_type: str) -> str:
+    """Convierte cita formato agente v2 → formato verifier legacy.
+
+    'Art. 64 CST' → 'CST' (legacy resuelve el código completo)
+    'Ley 50 de 1990' → 'LEY 50/1990'
+    'SL1430-2022' → 'SL-1430/2022'
+    """
+    text = citation_text.strip()
+    upper = text.upper()
+
+    if citation_type == "jurisprudencia":
+        m = re.match(r"\s*(STC|STL|STP|SU|SC|SL|SP|CE|T|C|A)[\s\-]*(\d{1,5})[\s/\-]+(?:DE\s+)?(\d{2,4})\s*$", upper)
+        if m:
+            return f"{m.group(1)}-{m.group(2)}/{m.group(3)}"
+        return text
+
+    if re.search(r"\b(CST|C\.S\.T\.|CODIGO\s+SUSTANTIVO)", upper):
+        return "CST"
+    if re.search(r"\b(CGP|CODIGO\s+GENERAL\s+DEL\s+PROCESO)\b", upper):
+        return "CGP"
+    if re.search(r"\b(CCO|C\.CO\.|CODIGO\s+(?:DE\s+)?COMERCIO)\b", upper):
+        return "C.CO."
+    if re.search(r"\bCODIGO\s+CIVIL\b", upper) or re.search(r"\bC\.C\.\b", upper):
+        return "C.C."
+
+    m_ley = re.search(r"LEY\s+(\d+)\s*(?:DE\s+|/)\s*(\d{2,4})", upper)
+    if m_ley:
+        return f"LEY {m_ley.group(1)}/{m_ley.group(2)}"
+    m_dec = re.search(r"DECRETO\s+(\d+)\s*(?:DE\s+|/)\s*(\d{2,4})", upper)
+    if m_dec:
+        return f"DECRETO {m_dec.group(1)}/{m_dec.group(2)}"
+
+    return text
+
+
 class CitationVerifier:
     def __init__(self, client, pool: asyncpg.Pool, threshold: float = 0.5):
         self.client = client
         self.pool = pool
-        self.threshold = threshold  # bajado a 0.5 (sprint M9)
+        self.threshold = threshold
 
     async def verify(
         self,
         citation_text: str,
         citation_type: str = "norma",
     ) -> CitationVerifyResult:
-        """Verifica vía substring match primero, embedding como fallback."""
-        # 1) Substring match (ILIKE) sobre chunks.content + documents.title
+        """Verificación en cascada (Sprint M9):
+        1. utils.citation_verifier (cache → BD → live fetch a Senado/Corte CC/CSJ)
+        2. Substring match en chunks (corpus local)
+        3. Embedding similarity (fallback)
+        """
+        # 1) LEGACY VERIFIER MADURO con HOT-FETCH a fuentes oficiales
+        try:
+            from utils.citation_verifier import verify_citation as _legacy_verify
+            normalized = _normalize_for_legacy(citation_text, citation_type)
+            lr = await _legacy_verify(self.pool, normalized)
+            if lr and lr.estado in ("verificada", "superada"):
+                return CitationVerifyResult(
+                    citation_text=citation_text,
+                    citation_type=citation_type,
+                    verified=True,
+                    chunk_id=lr.juris_id or lr.norma_id,
+                    similarity=1.0,
+                    derogada=(lr.estado == "superada"),
+                    method=f"legacy:{lr.source}",
+                )
+            if lr and lr.estado == "sospechosa":
+                # Live fetch confirmó soft-404 = alta probabilidad de alucinación
+                return CitationVerifyResult(
+                    citation_text=citation_text,
+                    citation_type=citation_type,
+                    verified=False,
+                    method=f"legacy:{lr.source}:sospechosa",
+                )
+            # 'no_encontrada' o 'error' → continúa a fallbacks
+        except Exception as e:
+            logger.warning("legacy verify failed for %s: %s", citation_text, e)
+
+        # 2) Substring match (ILIKE) sobre chunks.content + documents.title
         patterns = _build_search_patterns(citation_text, citation_type)
         try:
             async with self.pool.acquire() as conn:
