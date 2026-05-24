@@ -159,7 +159,48 @@ class CitationVerifier:
                     titulo=lr.titulo or lr.rubro,
                 )
             if lr and lr.estado == "sospechosa":
-                # Live fetch soft-404 = NO se pudo confirmar (warning ⚠️, no error rojo)
+                # PASADA 1.5: para sentencias CSJ (SL/SC/SP/STC/STL/STP) intentar
+                # scraper RSS directo antes de marcar como sospechosa
+                if citation_type == "jurisprudencia" and re.match(
+                    r"^\s*(SL|SC|SP|STC|STL|STP)", citation_text.upper()
+                ):
+                    try:
+                        from legal_sources.csj_source import search_csj
+                        csj = await search_csj(citation_text)
+                        if csj and csj.get("match_type") == "exact":
+                            # Match exacto: el ref aparece literal en CSJ
+                            return CitationVerifyResult(
+                                citation_text=citation_text,
+                                citation_type=citation_type,
+                                verified=True,
+                                similarity=1.0,
+                                method="csj_rss_exact",
+                                estado="verificada",
+                                fuente_url=csj.get("fuente_url"),
+                                titulo=csj.get("titulo"),
+                            )
+                        if csj:
+                            # Solo mención fuzzy en CSJ search = no confiable
+                            # Probable alucinación (formato parcialmente reconocible)
+                            return CitationVerifyResult(
+                                citation_text=citation_text,
+                                citation_type=citation_type,
+                                verified=False,
+                                method="csj_rss_mention",
+                                estado="no_encontrada",
+                            )
+                        # RSS feed VACÍO = alucinación confirmada
+                        return CitationVerifyResult(
+                            citation_text=citation_text,
+                            citation_type=citation_type,
+                            verified=False,
+                            method="csj_rss_empty",
+                            estado="no_encontrada",
+                        )
+                    except Exception as e:
+                        logger.warning("CSJ RSS failed for %s: %s", citation_text, e)
+
+                # Sin scraper directo (Corte CC ya intentó) = warning amarillo
                 return CitationVerifyResult(
                     citation_text=citation_text,
                     citation_type=citation_type,
