@@ -60,6 +60,35 @@ class VerificationAgent:
         # 1. NORMALIZATION
         from utils.citation_verifier import parse_citation_ref
         parsed = parse_citation_ref(citation_text)
+
+        # M15: si el parser regex falla, intentar LLM normalizer como último recurso
+        if not parsed and self.client is not None:
+            try:
+                from lex.verify.llm_normalizer import llm_normalize_citation
+                llm_result = await llm_normalize_citation(citation_text, self.client, self.pool)
+                if llm_result and llm_result.get("kind") not in (None, "unknown"):
+                    # Re-construir cita canónica y re-parsear
+                    kind = llm_result["kind"]
+                    tipo = llm_result.get("tipo", "")
+                    numero = llm_result.get("numero")
+                    anio = llm_result.get("anio")
+                    if kind == "jurisprudencia" and tipo and numero and anio:
+                        reconstructed = f"{tipo}-{numero}/{anio}"
+                    elif kind in ("ley", "decreto") and numero and anio:
+                        reconstructed = f"{tipo or kind.upper()} {numero}/{anio}"
+                    elif kind == "codigo_articulo" and tipo and numero:
+                        reconstructed = f"Art. {numero} {tipo}"
+                    elif kind == "codigo" and tipo:
+                        reconstructed = tipo
+                    else:
+                        reconstructed = None
+                    if reconstructed:
+                        parsed = parse_citation_ref(reconstructed)
+                        if parsed:
+                            logger.info("LLM normalizer recovered %r -> %r", citation_text, reconstructed)
+            except Exception as e:
+                logger.warning("LLM normalizer fallback failed: %s", e)
+
         if not parsed:
             return VerificationVerdict(
                 citation_text=citation_text,

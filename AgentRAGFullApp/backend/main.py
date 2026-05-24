@@ -797,6 +797,14 @@ try:
 except Exception as _e:
     logger.warning("documents_chat router registration failed: %s", _e)
 
+# Sprint M15 · admin métricas de verificación
+try:
+    from api.admin_citations import router as admin_citations_router
+    app.include_router(admin_citations_router)
+    logger.info("admin_citations router registered")
+except Exception as _e:
+    logger.warning("admin_citations router registration failed: %s", _e)
+
 
 def main():
     """Run the application."""
