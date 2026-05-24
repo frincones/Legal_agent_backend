@@ -397,6 +397,10 @@ class Orchestrator:
                         "ref": ref, "type": ctype,
                         "verified": cv.verified, "chunk_id": cv.chunk_id,
                         "similarity": cv.similarity,
+                        "estado": getattr(cv, "estado", "verificada" if cv.verified else "no_encontrada"),
+                        "method": cv.method,
+                        "fuente_url": getattr(cv, "fuente_url", None),
+                        "titulo": getattr(cv, "titulo", None),
                     })
                     yield SSEEvent.citation_verify(
                         citation=ref, found=cv.verified,

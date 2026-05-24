@@ -33,6 +33,10 @@ class CitationVerifyResult:
     similarity: float | None = None
     derogada: bool | None = None
     method: str = "rag"
+    # M10: estado más rico para UX (verificada/sospechosa/no_encontrada)
+    estado: str = "no_encontrada"  # 'verificada' | 'superada' | 'sospechosa' | 'no_encontrada'
+    fuente_url: str | None = None
+    titulo: str | None = None
 
 
 def _build_search_patterns(citation_text: str, citation_type: str) -> list[str]:
@@ -135,6 +139,8 @@ class CitationVerifier:
         3. Embedding similarity (fallback)
         """
         # 1) LEGACY VERIFIER MADURO con HOT-FETCH a fuentes oficiales
+        # Chain: cache → BD jurisprudencia/leyes_normas → live fetch (Corte CC,
+        # CSJ via web_search, Senado, Función Pública)
         try:
             from utils.citation_verifier import verify_citation as _legacy_verify
             normalized = _normalize_for_legacy(citation_text, citation_type)
@@ -148,14 +154,18 @@ class CitationVerifier:
                     similarity=1.0,
                     derogada=(lr.estado == "superada"),
                     method=f"legacy:{lr.source}",
+                    estado=lr.estado,
+                    fuente_url=lr.fuente_url,
+                    titulo=lr.titulo or lr.rubro,
                 )
             if lr and lr.estado == "sospechosa":
-                # Live fetch confirmó soft-404 = alta probabilidad de alucinación
+                # Live fetch soft-404 = NO se pudo confirmar (warning ⚠️, no error rojo)
                 return CitationVerifyResult(
                     citation_text=citation_text,
                     citation_type=citation_type,
                     verified=False,
-                    method=f"legacy:{lr.source}:sospechosa",
+                    method=f"legacy:{lr.source}",
+                    estado="sospechosa",
                 )
             # 'no_encontrada' o 'error' → continúa a fallbacks
         except Exception as e:

@@ -99,26 +99,32 @@ REGLA CRÍTICA — NORMAS COMO BLOQUE TIPADO (OBLIGATORIO):
    Cada vez que menciones una norma específica (Art. X de Y, Ley N/AAAA, Decreto N/AAAA)
    DEBES emitir un bloque norma_citada separado ADEMÁS del párrafo de contexto.
 
-REGLA CRÍTICA — JURISPRUDENCIA SOLO DESDE CONTEXTO (ANTI-ALUCINACIÓN):
-   La jurisprudencia (SL/SC/SP/SU/T/C/STC/STL-NNN/AAAA) SOLO puede citarse si aparece
-   textualmente en el CONTEXTO LEGAL provisto en este prompt (sección JURISPRUDENCIA).
+REGLA CRÍTICA — JURISPRUDENCIA TIPADA (OBLIGATORIO CITAR):
+   Cuando hay precedente relevante DEBES citarlo como bloque tipado:
+   ✓ {"type": "jurisprudencia", "id": "SL1430-2022", "mp": "Iván Mauricio Lenis Gómez",
+      "corte": "CSJ Sala Laboral", "fecha": "2022",
+      "ratio": [{"text": "cuando el empleador opta por terminar unilateralmente..."}], "verified": false}
 
-   ✗ PROHIBIDO inventar SL1430-2022, T-760/2008, C-1507/2000 desde memoria del modelo
-   ✗ PROHIBIDO emitir bloque jurisprudencia con datos no presentes en el contexto
-       (el verifier hace live fetch a CSJ/Corte CC; si no encuentra la sentencia,
-        marca la cita como SOSPECHOSA = alucinación = baja Citation Existence Rate)
+   PRIORIDAD: usa primero la jurisprudencia del CONTEXTO LEGAL (RAG hunter).
+   Si necesitas más precedentes que NO están en el contexto, puedes citarlos —
+   el agente tiene un VERIFICADOR EN TIEMPO REAL que va a validar contra:
+     - BD interna de jurisprudencia
+     - Live fetch a Corte Constitucional (corteconstitucional.gov.co)
+     - Live fetch a CSJ (cortesuprema.gov.co)
+     - Live fetch a Consejo de Estado (consejodeestado.gov.co)
+     - Web search restricted a dominios oficiales
+     - SUIN Senado (leyes, decretos)
+   Cada cita queda con badge ✅ verified o ❌ sospechosa según la validación real.
 
-   ✓ PERMITIDO: copiar EXACTAMENTE id, mp, corte y ratio de las sentencias listadas
-     en el CONTEXTO LEGAL recibido.
+   Por lo tanto: CITA con confianza precedentes que conozcas con CERTEZA
+   (sentencias hito, doctrina pacífica). El verifier dirá si son reales.
 
-   ✓ PERMITIDO: si el contexto no trae jurisprudencia relevante, usar referencia
-     genérica SIN emitir bloque jurisprudencia tipado, ej:
-       "conforme a la reiterada jurisprudencia de la Sala de Casación Laboral CSJ"
-       "según pacífica doctrina constitucional sobre la materia"
-       "como ha sostenido la jurisprudencia laboral colombiana"
-
-   El verifier sólo valida (✅) las citas reales del corpus. Las inventadas obtienen ❌.
-   Es mejor OMITIR cita que inventar.
+   IDs estables conocidos para Colombia:
+   - T-760/2008 M.P. Manuel José Cepeda Espinosa (derecho a la salud)
+   - C-016/1998 M.P. Fabio Morón Díaz (contrato realidad Art. 24 CST)
+   - C-1507/2000 M.P. José Gregorio Hernández Galindo (estabilidad reforzada)
+   - SU-449/2020 M.P. Diana Fajardo Rivera (estabilidad reforzada salud)
+   - Sentencias SL- de la Sala Laboral CSJ sobre indemnización Art. 64
 
 REGLA — CÁLCULOS NUMÉRICOS:
    Si el CONTEXTO incluye "CÁLCULOS DETERMINÍSTICOS" (de calc/laboral.py), USA esos números
