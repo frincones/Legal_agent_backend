@@ -61,3 +61,17 @@ class BaseTool(ABC):
             confidence=0.0,
             error_message=str(error)[:200],
         )
+
+    def _ensure_fuente_url(self, result: ToolResult, parsed) -> ToolResult:
+        """M17: garantiza fuente_url si el tool hit pero no asignó URL.
+
+        Llamado por subclases al final de run() para garantizar el contrato:
+        "todo tool hit DEBE tener fuente_url no null".
+        """
+        if result.status == "hit" and not result.fuente_url:
+            try:
+                from utils.citation_url_builder import build_canonical_url
+                result.fuente_url = build_canonical_url(parsed)
+            except Exception:
+                pass
+        return result

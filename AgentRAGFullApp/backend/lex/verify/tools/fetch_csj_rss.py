@@ -37,7 +37,7 @@ class FetchCSJRss(BaseTool):
 
             mt = r.get("match_type", "mention")
             confidence = 0.92 if mt == "exact" else 0.7
-            return ToolResult(
+            result = ToolResult(
                 tool_name=self.name,
                 status="hit",
                 confidence=confidence,
@@ -50,6 +50,7 @@ class FetchCSJRss(BaseTool):
                 },
                 duration_ms=int((time.time() - started) * 1000),
             )
+            return self._ensure_fuente_url(result, parsed)
         except Exception as e:
             logger.warning("FetchCSJRss failed for %s: %s", parsed.normalized, e)
             return self._build_error(e)

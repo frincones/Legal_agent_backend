@@ -468,17 +468,29 @@ class Orchestrator:
                 legacy_results: list[dict] = []
                 if not USE_AGENT or SHADOW:
                     citation_verifier = CitationVerifier(self.client, self.pool)
+                    # M17: garantizar fuente_url incluso en path legacy
+                    from utils.citation_url_builder import guarantee_fuente_url
+                    from utils.citation_verifier import parse_citation_ref
                     for cit in citations_collected:
                         ref = cit.get("ref", "")
                         ctype = cit.get("type", "norma")
                         cv = await citation_verifier.verify(ref, ctype)
+                        existing_url = getattr(cv, "fuente_url", None)
+                        # Garantía M17: si verificada o derogada, debe haber URL
+                        parsed = parse_citation_ref(ref)
+                        guaranteed = guarantee_fuente_url(parsed, existing_url) if parsed else existing_url
                         legacy_results.append({
                             "ref": ref, "type": ctype,
                             "verified": cv.verified, "chunk_id": cv.chunk_id,
                             "similarity": cv.similarity,
                             "estado": getattr(cv, "estado", "verificada" if cv.verified else "no_encontrada"),
                             "method": cv.method,
-                            "fuente_url": getattr(cv, "fuente_url", None),
+                            "fuente_url": guaranteed,
+                            "fuente_url_original": guaranteed,
+                            "fuente_url_vigente": None,
+                            "url_http_status": None,
+                            "url_validated": False,
+                            "is_derogada": getattr(cv, "estado", None) == "superada",
                             "titulo": getattr(cv, "titulo", None),
                         })
 

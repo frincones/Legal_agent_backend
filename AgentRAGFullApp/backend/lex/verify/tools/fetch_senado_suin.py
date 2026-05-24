@@ -40,7 +40,7 @@ class FetchSenadoSuin(BaseTool):
                     duration_ms=int((time.time() - started) * 1000),
                 )
 
-            return ToolResult(
+            result = ToolResult(
                 tool_name=self.name,
                 status="hit",
                 confidence=0.96,
@@ -52,6 +52,7 @@ class FetchSenadoSuin(BaseTool):
                 },
                 duration_ms=int((time.time() - started) * 1000),
             )
+            return self._ensure_fuente_url(result, parsed)
         except Exception as e:
             logger.warning("FetchSenadoSuin failed for %s: %s", parsed.normalized, e)
             return self._build_error(e)

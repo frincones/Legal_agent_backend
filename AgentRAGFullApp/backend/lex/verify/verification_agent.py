@@ -117,7 +117,66 @@ class VerificationAgent:
         verdict = self.accumulator.compute_verdict(evidence, citation_type)
         verdict.duration_ms = int((time.time() - started) * 1000)
 
-        # 5. PERSISTENCE
+        # 5. M17 GUARANTEE FUENTE_URL: si no hay url, intentar canónica + web search
+        if verdict.verified and not verdict.fuente_url:
+            try:
+                from utils.citation_url_builder import build_canonical_url
+                verdict.fuente_url = build_canonical_url(parsed)
+            except Exception:
+                pass
+
+            if not verdict.fuente_url:
+                # Último recurso: web search restringido a oficiales
+                try:
+                    from lex.verify.tools.fetch_web_search_official import FetchWebSearchOfficial
+                    ws_tool = FetchWebSearchOfficial(pool=self.pool, client=self.client)
+                    ws_result = await ws_tool.run(parsed)
+                    if ws_result.fuente_url:
+                        verdict.fuente_url = ws_result.fuente_url
+                        verdict.sources_tried.append("fetch_web_search_official")
+                except Exception as e:
+                    logger.warning("web_search fallback failed: %s", e)
+
+            if not verdict.fuente_url:
+                # Si seguimos sin URL, generar fallback Google CSE
+                try:
+                    from utils.citation_url_builder import build_search_fallback_url
+                    verdict.fuente_url = build_search_fallback_url(parsed)
+                except Exception:
+                    pass
+
+        # 6. M17 DEROGADA: construir fuente_url_vigente si superada
+        verdict.fuente_url_original = verdict.fuente_url
+        if verdict.estado == "superada":
+            try:
+                from utils.citation_url_builder import build_derogada_url
+                # Buscar derogada_por en check_derogation evidence
+                for tr in tool_results:
+                    if tr.tool_name == "check_derogation":
+                        derogada_por = tr.raw_evidence.get("derogada_por") if tr.raw_evidence else None
+                        if derogada_por:
+                            verdict.fuente_url_vigente = build_derogada_url(derogada_por)
+                            break
+            except Exception as e:
+                logger.warning("derogada vigente URL failed: %s", e)
+
+        # 7. M17 HEAD VALIDATION (solo para verified=true con URL canónica/oficial)
+        if verdict.verified and verdict.fuente_url and "google.com/search" not in verdict.fuente_url:
+            try:
+                from utils.url_validator import validate_url_responsive
+                is_valid, status_code = await validate_url_responsive(verdict.fuente_url, self.pool)
+                verdict.url_http_status = status_code
+                verdict.url_validated = is_valid
+                if not is_valid:
+                    # Si HEAD falla, fallback a Google search (siempre responde)
+                    from utils.citation_url_builder import build_search_fallback_url
+                    fallback = build_search_fallback_url(parsed)
+                    verdict.fuente_url = fallback
+                    logger.info("HEAD failed for %s, using search fallback", citation_text)
+            except Exception as e:
+                logger.warning("HEAD validation failed: %s", e)
+
+        # 8. PERSISTENCE
         await self._persist(parsed, cache_key, verdict, tool_results)
 
         return verdict

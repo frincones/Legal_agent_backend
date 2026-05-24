@@ -58,7 +58,7 @@ class LookupArticuloChunks(BaseTool):
                 row = await conn.fetchrow(sql, *params)
 
             if row:
-                return ToolResult(
+                result = ToolResult(
                     tool_name=self.name,
                     status="hit",
                     confidence=0.90,
@@ -67,6 +67,7 @@ class LookupArticuloChunks(BaseTool):
                     raw_evidence={"match": "ilike_in_chunks"},
                     duration_ms=int((time.time() - started) * 1000),
                 )
+                return self._ensure_fuente_url(result, parsed)
             # No encontrado con filtro de código — intentar sin filtro
             async with self.pool.acquire() as conn:
                 row2 = await conn.fetchrow(
@@ -80,7 +81,7 @@ class LookupArticuloChunks(BaseTool):
                     f"%artículo {art_num}%",
                 )
             if row2:
-                return ToolResult(
+                result = ToolResult(
                     tool_name=self.name,
                     status="hit",
                     confidence=0.65,  # bajo porque no se filtró por código
@@ -89,6 +90,7 @@ class LookupArticuloChunks(BaseTool):
                     raw_evidence={"match": "ilike_no_code_filter"},
                     duration_ms=int((time.time() - started) * 1000),
                 )
+                return self._ensure_fuente_url(result, parsed)
 
             return ToolResult(
                 tool_name=self.name,

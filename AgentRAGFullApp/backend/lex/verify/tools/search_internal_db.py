@@ -48,7 +48,7 @@ class SearchInternalDB(BaseTool):
                 "codigo_articulo:bd_codigo_known", "codigo_articulo:cache"
             ):
                 conf = 0.99 if vr.source == "cache" else 0.95
-                return ToolResult(
+                result = ToolResult(
                     tool_name=self.name,
                     status="hit",
                     confidence=conf,
@@ -63,6 +63,7 @@ class SearchInternalDB(BaseTool):
                     },
                     duration_ms=int((time.time() - started) * 1000),
                 )
+                return self._ensure_fuente_url(result, parsed)
             return ToolResult(
                 tool_name=self.name,
                 status="miss",

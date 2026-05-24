@@ -64,6 +64,11 @@ class VerificationVerdict:
     sources_tried: list[str] = field(default_factory=list)
     duration_ms: int = 0
     similarity: Optional[float] = None
+    # M17: garantía de fuente_url + derogada con 2 links
+    fuente_url_original: Optional[str] = None  # la norma citada (puede ser derogada)
+    fuente_url_vigente: Optional[str] = None   # la que reemplaza (solo si superada)
+    url_http_status: Optional[int] = None       # 200, 404, etc.
+    url_validated: bool = False                 # HEAD check pasó
 
     def to_audit_dict(self) -> dict:
         """Schema compatible con `verification_results` del orchestrator."""
@@ -76,6 +81,11 @@ class VerificationVerdict:
             "estado": self.estado,
             "method": self.method,
             "fuente_url": self.fuente_url,
+            "fuente_url_original": self.fuente_url_original,
+            "fuente_url_vigente": self.fuente_url_vigente,
+            "url_http_status": self.url_http_status,
+            "url_validated": self.url_validated,
+            "is_derogada": self.derogada,
             "titulo": self.titulo,
         }
 
