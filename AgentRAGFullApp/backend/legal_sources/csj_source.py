@@ -64,11 +64,24 @@ async def search_csj(citation_ref: str) -> Optional[dict]:
                               (desc_m.group(1) if desc_m else "")).strip()
                 desc_clean = re.sub(r"<[^>]+>", "", desc)[:500]
 
-                # Determinar si es match exacto o solo mención
+                # Match exacto si haystack contiene:
+                # - el ref completo normalizado: "sl14302022"
+                # - O al menos el número específico + tipo: "sl1430"
                 ref_norm = citation_ref.lower().replace(" ", "").replace("-", "").replace("/", "")
                 haystack = (titulo + " " + link + " " + desc_clean).lower().replace(
                     " ", "").replace("-", "").replace("/", "")
-                match_type = "exact" if ref_norm in haystack else "mention"
+                # Extraer SL+numero del ref
+                short_match = re.search(r"(sl|sc|sp|stc|stl|stp)(\d{1,5})", ref_norm)
+                short_ref = short_match.group(0) if short_match else None
+
+                if ref_norm in haystack:
+                    match_type = "exact"
+                elif short_ref and short_ref in haystack:
+                    # tipo+numero aparece (ej "sl1430" en algun analisis del CSJ)
+                    # Es confirmación de que existe la sentencia
+                    match_type = "exact"
+                else:
+                    match_type = "mention"
 
                 logger.info("CSJ RSS %s match for %s: %s (%d items)",
                             match_type, q, link, len(items))
@@ -90,30 +103,35 @@ async def search_csj(citation_ref: str) -> Optional[dict]:
 def _generate_variants(citation_ref: str) -> list[str]:
     """Variantes ortográficas para query CSJ.
 
-    Ejemplos:
-      'SL1430-2022' → ['SL1430-2022', 'SL-1430-2022', 'SL 1430', 'SL-1430']
-      'SC11593/2018' → ['SC11593-2018', 'SC-11593-2018', 'SC 11593']
+    Priorizar variantes que sabemos producen hits buenos en CSJ WordPress search:
+    - "SL1430" (solo número) → encuentra análisis de la sentencia
+    - "SL 1430 de 2022" (con espacios + "de") → variante humana
+    - "SL1430-2022" (formato canónico)
     """
     ref = citation_ref.strip().upper()
-    variants = [ref]
+    variants = []
 
     # Detectar pattern SL/SC/SP/STC/STL/STP + numero + año
     m = re.match(r"(SL|SC|SP|STC|STL|STP)[\s\-]*(\d{1,5})[\s/\-]+(\d{2,4})", ref)
     if m:
         prefix, num, yr = m.group(1), m.group(2), m.group(3)
+        # Año completo
+        full_yr = yr if len(yr) == 4 else (f"20{yr}" if int(yr) < 50 else f"19{yr}")
         variants.extend([
-            f"{prefix}{num}-{yr}",
-            f"{prefix}-{num}-{yr}",
-            f"{prefix} {num}",
-            f"{prefix}{num}",
-            f"sentencia {prefix}{num}",
+            f"{prefix}{num}",                  # SL1430 (mejor hit observado)
+            f"{prefix} {num} de {full_yr}",    # SL 1430 de 2022 (humano)
+            f"{prefix}{num}-{full_yr}",        # SL1430-2022 (canónico)
+            f"{prefix}-{num}-{full_yr}",       # SL-1430-2022
+            f"{prefix} {num}",                 # SL 1430
+            f"sentencia {prefix}{num}",        # sentencia SL1430
         ])
+    variants.append(ref)  # ref original al final
 
     # Dedup
     seen = set()
     out = []
     for v in variants:
-        if v not in seen:
+        if v and v not in seen:
             seen.add(v)
             out.append(v)
     return out

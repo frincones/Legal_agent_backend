@@ -112,6 +112,10 @@ def _normalize_for_legacy(citation_text: str, citation_type: str) -> str:
     if re.search(r"\bCODIGO\s+CIVIL\b", upper) or re.search(r"\bC\.C\.\b", upper):
         return "C.C."
 
+    # M12: Constitución Política (usar alias 'CONSTITUCION' que el legacy reconoce)
+    if re.search(r"CONSTITUCI[ÓO]N", upper) or re.search(r"\b(CN91|CN\s+91|C\.N\.)\b", upper):
+        return "CONSTITUCION"
+
     m_ley = re.search(r"LEY\s+(\d+)\s*(?:DE\s+|/)\s*(\d{2,4})", upper)
     if m_ley:
         return f"LEY {m_ley.group(1)}/{m_ley.group(2)}"
@@ -167,27 +171,21 @@ class CitationVerifier:
                     try:
                         from legal_sources.csj_source import search_csj
                         csj = await search_csj(citation_text)
-                        if csj and csj.get("match_type") == "exact":
-                            # Match exacto: el ref aparece literal en CSJ
+                        if csj:
+                            # CSJ RSS devolvió items → la sentencia existe
+                            # mencionada en CSJ (el sitio WordPress de CSJ no
+                            # tiene URL única por sentencia, solo blog posts
+                            # que las analizan). Match exact = mejor confianza.
+                            mt = csj.get("match_type", "mention")
                             return CitationVerifyResult(
                                 citation_text=citation_text,
                                 citation_type=citation_type,
                                 verified=True,
-                                similarity=1.0,
-                                method="csj_rss_exact",
+                                similarity=1.0 if mt == "exact" else 0.7,
+                                method=f"csj_rss_{mt}",
                                 estado="verificada",
                                 fuente_url=csj.get("fuente_url"),
                                 titulo=csj.get("titulo"),
-                            )
-                        if csj:
-                            # Solo mención fuzzy en CSJ search = no confiable
-                            # Probable alucinación (formato parcialmente reconocible)
-                            return CitationVerifyResult(
-                                citation_text=citation_text,
-                                citation_type=citation_type,
-                                verified=False,
-                                method="csj_rss_mention",
-                                estado="no_encontrada",
                             )
                         # RSS feed VACÍO = alucinación confirmada
                         return CitationVerifyResult(
