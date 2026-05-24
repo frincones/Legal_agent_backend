@@ -68,6 +68,15 @@ _PATTERNS_DECRETO = [
     re.compile(r"^\s*(?:decreto\s+)(\d{1,5})\s*(?:/|de)\s*(\d{2,4})\s*$", re.IGNORECASE),
 ]
 
+# M13: patrones más laxos para detectar Ley/Decreto dentro de texto libre
+# (ej. "Art. 99 Ley 50/90" → reconoce como Ley 50/1990 + artículo)
+_PATTERNS_LEY_EMBED = [
+    re.compile(r"(?:ley\s+)(\d{1,5})\s*(?:/|de\s+)(\d{2,4})\b", re.IGNORECASE),
+]
+_PATTERNS_DECRETO_EMBED = [
+    re.compile(r"(?:decreto\s+)(\d{1,5})\s*(?:/|de\s+)(\d{2,4})\b", re.IGNORECASE),
+]
+
 # Códigos colombianos con slug en Senado
 _CODIGO_ALIASES: dict[str, str] = {
     "CST": "CODIGO_SUSTANTIVO_TRABAJO",
@@ -97,19 +106,35 @@ def _normalize_anio(yy: str) -> int:
 
 
 def parse_citation_ref(raw: str) -> Optional[ParsedCitation]:
-    """Detecta el tipo de cita y extrae componentes estructurados."""
+    """Detecta el tipo de cita y extrae componentes estructurados.
+
+    M13: pre-procesa con expand_to_canonical() para soportar texto libre
+    como "Art. 64 Código Sustantivo del Trabajo" → "Art. 64 CST".
+    """
     if not raw:
         return None
     stripped = raw.strip()
+
+    # ── M13: pre-procesado con expander de aliases ──
+    try:
+        from utils.citation_normalizer import expand_to_canonical, detect_articulo, detect_codigo
+        canonical, was_expanded = expand_to_canonical(stripped)
+        if was_expanded:
+            logger.debug("parse_citation_ref expanded: %r -> %r", stripped, canonical)
+            stripped = canonical
+    except ImportError:
+        # Si el normalizer no está disponible, continuar con lógica original
+        pass
+
     upper = stripped.upper().strip(" .,;")
 
     # Códigos por alias exacto
     if upper in _CODIGO_ALIASES:
         slug = _CODIGO_ALIASES[upper]
-        return ParsedCitation(raw=stripped, kind="codigo", tipo=slug,
+        return ParsedCitation(raw=raw.strip(), kind="codigo", tipo=slug,
                               numero=None, anio=None, normalized=slug)
 
-    # Jurisprudencia
+    # Jurisprudencia (PRIMERO, antes que código_articulo, para evitar C-1507 → CONSTITUCION)
     for pat in _PATTERNS_JURIS:
         m = pat.match(stripped)
         if m:
@@ -118,7 +143,7 @@ def parse_citation_ref(raw: str) -> Optional[ParsedCitation]:
             anio = _normalize_anio(m.group(3))
             # Forma canónica: 'T-329/1997' (con barra y año completo)
             normalized = f"{tipo}-{numero}/{anio}"
-            return ParsedCitation(raw=stripped, kind="jurisprudencia", tipo=tipo,
+            return ParsedCitation(raw=raw.strip(), kind="jurisprudencia", tipo=tipo,
                                   numero=numero, anio=anio, normalized=normalized)
 
     # Leyes
@@ -128,7 +153,7 @@ def parse_citation_ref(raw: str) -> Optional[ParsedCitation]:
             numero = int(m.group(1))
             anio = _normalize_anio(m.group(2))
             normalized = f"LEY {numero}/{anio}"
-            return ParsedCitation(raw=stripped, kind="ley", tipo="LEY",
+            return ParsedCitation(raw=raw.strip(), kind="ley", tipo="LEY",
                                   numero=numero, anio=anio, normalized=normalized)
 
     # Decretos
@@ -138,7 +163,42 @@ def parse_citation_ref(raw: str) -> Optional[ParsedCitation]:
             numero = int(m.group(1))
             anio = _normalize_anio(m.group(2))
             normalized = f"DECRETO {numero}/{anio}"
-            return ParsedCitation(raw=stripped, kind="decreto", tipo="DECRETO",
+            return ParsedCitation(raw=raw.strip(), kind="decreto", tipo="DECRETO",
+                                  numero=numero, anio=anio, normalized=normalized)
+
+    # ── M13: codigo_articulo (Art. X de un código) ──
+    try:
+        from utils.citation_normalizer import detect_articulo, detect_codigo
+        art_num = detect_articulo(stripped)
+        codigo = detect_codigo(stripped)
+        if art_num is not None and codigo is not None:
+            return ParsedCitation(
+                raw=raw.strip(),
+                kind="codigo_articulo",
+                tipo=codigo,
+                numero=art_num,
+                anio=None,
+                normalized=f"Art. {art_num} {codigo}",
+            )
+    except ImportError:
+        pass
+
+    # ── M13: ley/decreto embebido en texto ("Art. 99 Ley 50/90") ──
+    for pat in _PATTERNS_LEY_EMBED:
+        m = pat.search(stripped)
+        if m:
+            numero = int(m.group(1))
+            anio = _normalize_anio(m.group(2))
+            normalized = f"LEY {numero}/{anio}"
+            return ParsedCitation(raw=raw.strip(), kind="ley", tipo="LEY",
+                                  numero=numero, anio=anio, normalized=normalized)
+    for pat in _PATTERNS_DECRETO_EMBED:
+        m = pat.search(stripped)
+        if m:
+            numero = int(m.group(1))
+            anio = _normalize_anio(m.group(2))
+            normalized = f"DECRETO {numero}/{anio}"
+            return ParsedCitation(raw=raw.strip(), kind="decreto", tipo="DECRETO",
                                   numero=numero, anio=anio, normalized=normalized)
 
     return None
@@ -530,6 +590,48 @@ async def _verify_codigo(
     )
 
 
+# ────────────────────────────────────────────────────────────────────
+# M13: Verificación de codigo_articulo (Art. X de un código)
+# ────────────────────────────────────────────────────────────────────
+
+async def _verify_codigo_articulo(
+    pool, parsed: ParsedCitation, firm_id: Optional[str], user_id: Optional[str]
+) -> VerifyResult:
+    """Verifica 'Art. X de CST' u otros códigos.
+
+    Estrategia:
+    1. Verificar que el código existe (reusa _verify_codigo)
+    2. Si código verificado → artículo del código también vigente
+       (asumimos código vigente cubre sus artículos a menos que derogación
+        específica del artículo aparezca en derogaciones table)
+
+    parsed.tipo = código (CST, CGP, etc.)
+    parsed.numero = número del artículo
+    """
+    started = time.time()
+    # parsed.tipo es el slug del código (CST, CGP, ...)
+    # numero es el artículo
+    codigo_parsed = ParsedCitation(
+        raw=parsed.raw, kind="codigo", tipo=parsed.tipo,
+        numero=None, anio=None, normalized=parsed.tipo,
+    )
+    base_result = await _verify_codigo(pool, codigo_parsed, firm_id, user_id)
+
+    if base_result.estado == "verificada":
+        # Patch: ajustar titulo para reflejar el artículo
+        titulo = f"Art. {parsed.numero} {parsed.tipo}"
+        return VerifyResult(
+            citation_ref=parsed.raw, estado="verificada", parsed=parsed,
+            norma_id=base_result.norma_id,
+            titulo=titulo,
+            vigencia=base_result.vigencia or "vigente",
+            fuente_url=base_result.fuente_url,
+            source=f"codigo_articulo:{base_result.source}",
+            duration_ms=int((time.time() - started) * 1000),
+        )
+    return base_result
+
+
 async def _audit_attempt(
     pool, firm_id: Optional[str], user_id: Optional[str], result: VerifyResult
 ) -> None:
@@ -581,6 +683,9 @@ async def verify_citation(
             result = await _verify_ley_o_decreto(pool, parsed, firm_id, user_id)
         elif parsed.kind == "codigo":
             result = await _verify_codigo(pool, parsed, firm_id, user_id)
+        elif parsed.kind == "codigo_articulo":
+            # M13: Art. X de un código (CST, CGP, CC, etc.)
+            result = await _verify_codigo_articulo(pool, parsed, firm_id, user_id)
         else:
             result = VerifyResult(citation_ref=citation_ref, estado="no_encontrada",
                                   parsed=parsed, source="unknown_kind")

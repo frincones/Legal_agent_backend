@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 SPRINT_L_DOC_MIGRATIONS = [
     "2026_05_25_sprint_l_doc.sql",
     "2026_05_26_sprint_m_block_streaming.sql",
+    "2026_05_25_sprint_m14_evidence_columns.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
@@ -41,6 +42,8 @@ EXPECTED_TABLES = {
     "template_catalog",
     "citation_verifications",
     "document_versions",
+    # Sprint M14 (shadow mode + evidence)
+    "verification_shadow_diffs",
 }
 
 
