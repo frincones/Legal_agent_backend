@@ -148,6 +148,71 @@ class Orchestrator:
         self.blocks_repo = BlocksRepo(pool) if pool else None
         self.audit_repo = AuditRepo(pool) if pool else None
 
+    async def _log_shadow_diffs(
+        self,
+        legacy_results: list[dict],
+        agent_results: list[dict],
+        generation_id: str,
+    ) -> None:
+        """M14: registra divergencias entre legacy y nuevo agent en shadow mode."""
+        if not self.pool or not legacy_results or not agent_results:
+            return
+        try:
+            import json as _json
+            # Indexar por ref+type
+            legacy_idx = {(r.get("ref"), r.get("type")): r for r in legacy_results}
+            agent_idx = {(r.get("ref"), r.get("type")): r for r in agent_results}
+            keys = set(legacy_idx) | set(agent_idx)
+
+            async with self.pool.acquire() as conn:
+                for k in keys:
+                    legacy = legacy_idx.get(k, {})
+                    agent = agent_idx.get(k, {})
+                    legacy_state = legacy.get("estado", "missing")
+                    agent_state = agent.get("estado", "missing")
+
+                    if legacy_state == agent_state:
+                        diff_type = "identical"
+                        is_critical = False
+                    elif (legacy_state == "verificada" and agent_state == "no_encontrada") or \
+                         (legacy_state == "no_encontrada" and agent_state == "verificada"):
+                        diff_type = "critical"
+                        is_critical = True
+                    elif "verificada" in (legacy_state, agent_state):
+                        diff_type = "medium"
+                        is_critical = False
+                    else:
+                        diff_type = "minor"
+                        is_critical = False
+
+                    if diff_type == "identical":
+                        continue  # no loggear los iguales
+
+                    await conn.execute(
+                        """
+                        INSERT INTO verification_shadow_diffs
+                          (generation_id, citation_ref, citation_type,
+                           legacy_state, legacy_method, legacy_fuente_url,
+                           agent_state, agent_method, agent_confidence,
+                           agent_fuente_url, is_critical, diff_type)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                        """,
+                        uuid.UUID(generation_id) if generation_id else None,
+                        k[0] or "",
+                        k[1] or "norma",
+                        legacy_state,
+                        legacy.get("method"),
+                        legacy.get("fuente_url"),
+                        agent_state,
+                        agent.get("method"),
+                        agent.get("similarity"),
+                        agent.get("fuente_url"),
+                        is_critical,
+                        diff_type,
+                    )
+        except Exception as e:
+            logger.warning("_log_shadow_diffs failed: %s", e)
+
     async def run(self, req: GenerationRequest) -> AsyncIterator[bytes]:
         """Pipeline completo. Yield bytes SSE."""
         generation_id = str(uuid.uuid4())
@@ -381,32 +446,76 @@ class Orchestrator:
                 previous_sections_summary += f"\n[{section_title}]: " + " ".join(section_content_acc)[:600]
 
         # ===== STAGE: CITATION VERIFY + DEROGATION =====
+        # M14: feature flag USE_VERIFICATION_AGENT controla cuál path se usa.
+        # SHADOW_MODE corre ambos en paralelo y registra divergencias.
+        import os as _os
+        USE_AGENT = _os.getenv("USE_VERIFICATION_AGENT", "0").lower() in ("1", "true")
+        SHADOW = _os.getenv("SHADOW_MODE", "0").lower() in ("1", "true")
+
         verification_results: list[dict] = []
         derogation_results: list[dict] = []
         if citations_collected and self.pool is not None:
-            yield sse("citation_verify_started", {"total": len(citations_collected)})
+            yield sse("citation_verify_started", {
+                "total": len(citations_collected),
+                "use_agent": USE_AGENT,
+                "shadow_mode": SHADOW,
+            })
             try:
                 from lex.verify import CitationVerifier, DerogationVerifier
-                citation_verifier = CitationVerifier(self.client, self.pool)
                 derogation_verifier = DerogationVerifier(self.pool)
-                for cit in citations_collected:
-                    ref = cit.get("ref", "")
-                    ctype = cit.get("type", "norma")
-                    cv = await citation_verifier.verify(ref, ctype)
-                    verification_results.append({
-                        "ref": ref, "type": ctype,
-                        "verified": cv.verified, "chunk_id": cv.chunk_id,
-                        "similarity": cv.similarity,
-                        "estado": getattr(cv, "estado", "verificada" if cv.verified else "no_encontrada"),
-                        "method": cv.method,
-                        "fuente_url": getattr(cv, "fuente_url", None),
-                        "titulo": getattr(cv, "titulo", None),
-                    })
-                    yield SSEEvent.citation_verify(
-                        citation=ref, found=cv.verified,
-                        chunk_id=cv.chunk_id, similarity=cv.similarity,
+
+                # ── Path LEGACY (siempre se calcula si flag off o shadow on) ──
+                legacy_results: list[dict] = []
+                if not USE_AGENT or SHADOW:
+                    citation_verifier = CitationVerifier(self.client, self.pool)
+                    for cit in citations_collected:
+                        ref = cit.get("ref", "")
+                        ctype = cit.get("type", "norma")
+                        cv = await citation_verifier.verify(ref, ctype)
+                        legacy_results.append({
+                            "ref": ref, "type": ctype,
+                            "verified": cv.verified, "chunk_id": cv.chunk_id,
+                            "similarity": cv.similarity,
+                            "estado": getattr(cv, "estado", "verificada" if cv.verified else "no_encontrada"),
+                            "method": cv.method,
+                            "fuente_url": getattr(cv, "fuente_url", None),
+                            "titulo": getattr(cv, "titulo", None),
+                        })
+
+                # ── Path AGENT (M14) ──
+                agent_results: list[dict] = []
+                if USE_AGENT:
+                    from lex.verify.verification_agent import VerificationAgent
+                    agent = VerificationAgent(
+                        self.client, self.pool,
+                        firm_id=req.firm_id, user_id=None,
                     )
-                    if ctype == "norma":
+                    verdicts = await agent.verify_batch(citations_collected)
+                    agent_results = [v.to_audit_dict() for v in verdicts]
+
+                # ── Decidir cuál ganara según flags ──
+                if USE_AGENT and SHADOW:
+                    # Ambos corrieron: legacy gana (seguridad), agent solo se loguea
+                    verification_results = legacy_results
+                    await self._log_shadow_diffs(legacy_results, agent_results, generation_id)
+                elif USE_AGENT:
+                    verification_results = agent_results
+                else:
+                    verification_results = legacy_results
+
+                # Emitir eventos SSE individuales (compat con frontend)
+                for v in verification_results:
+                    yield SSEEvent.citation_verify(
+                        citation=v.get("ref", ""),
+                        found=v.get("verified", False),
+                        chunk_id=v.get("chunk_id"),
+                        similarity=v.get("similarity"),
+                    )
+
+                # Derogation (independiente, una sola vez)
+                for cit in citations_collected:
+                    if cit.get("type") == "norma":
+                        ref = cit.get("ref", "")
                         dc = await derogation_verifier.check(ref)
                         derogation_results.append({
                             "norma": ref, "vigente": dc.vigente,
@@ -415,9 +524,11 @@ class Orchestrator:
                         yield SSEEvent.derogation_check(
                             norma=ref, vigente=dc.vigente, derogada_por=dc.derogada_por,
                         )
+
                 yield sse("citation_verify_done", {
                     "total": len(citations_collected),
                     "verified": sum(1 for v in verification_results if v.get("verified")),
+                    "path": "agent" if (USE_AGENT and not SHADOW) else ("shadow" if SHADOW else "legacy"),
                 })
             except Exception as e:
                 logger.warning("citation/derogation stage failed: %s", e)
