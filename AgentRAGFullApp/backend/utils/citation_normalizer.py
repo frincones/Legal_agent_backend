@@ -55,9 +55,11 @@ _EXTENDED_ALIASES: list[tuple[re.Pattern, str]] = [
     # Civil
     (re.compile(r"\bc[oó]digo\s+civil\b", re.IGNORECASE), "C.C."),
 
-    # Penal
+    # Penal (incluye "CP" sin puntos — alias técnico oficial)
     (re.compile(r"\bc[oó]digo\s+penal\b", re.IGNORECASE), "C.P."),
     (re.compile(r"\bC\.\s*P\.\b"), "C.P."),
+    # M16: 'CN' sin puntos como Constitución (uso común del LLM)
+    (re.compile(r"(?<![A-Z])CN(?![A-Z0-9])"), "CONSTITUCION"),
 
     # Otros códigos
     (re.compile(r"\bestatuto\s+tributario\b", re.IGNORECASE), "ET"),
@@ -149,16 +151,26 @@ def detect_codigo(raw: str) -> Optional[str]:
             return alias
     # Aliases cortos directos (incluyendo formas con puntos)
     upper = raw.upper()
-    # Orden: más largos primero (CONSTITUCION antes que CST)
+    # Orden: más largos primero (CONSTITUCION antes que CST, CPACA antes que CP)
     short_aliases = [
         "CONSTITUCION", "CPACA", "CPTSS", "CST", "CGP", "CPP", "CPC",
         "ET", "CIA", "CSS",
         "C.CO.", "C.C.", "C.P.",
+        # M16: aliases sin puntos comunes en redacción del LLM
+        "CCO", "CC", "CP", "CN",
     ]
     for short in short_aliases:
         pattern = re.escape(short)
         # No usar \b porque puntos no cuentan como word boundary
-        # Usar lookahead/lookbehind con no-word-char
         if re.search(rf"(?:^|[^A-Z0-9])({pattern})(?:[^A-Z0-9]|$)", upper):
+            # Normalizar variantes sin puntos a versión con puntos del legacy
+            if short == "CCO":
+                return "C.CO."
+            if short == "CC":
+                return "C.C."
+            if short == "CP":
+                return "C.P."
+            if short == "CN":
+                return "CONSTITUCION"
             return short
     return None
