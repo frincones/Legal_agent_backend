@@ -25,7 +25,8 @@ async def validate_url_responsive(url: str, pool=None) -> Tuple[bool, Optional[i
     if not url:
         return False, None
 
-    cache_key = f"head:{hashlib.sha256(url.encode()).hexdigest()[:32]}"
+    # v2 prefix: invalida cache viejo cuando se cambia la lista de candidatos
+    cache_key = f"head:v2:{hashlib.sha256(url.encode()).hexdigest()[:32]}"
 
     # Cache lookup
     if pool is not None:
