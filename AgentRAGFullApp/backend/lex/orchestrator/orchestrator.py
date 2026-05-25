@@ -525,13 +525,34 @@ class Orchestrator:
                     )
 
                 # Derogation (independiente, una sola vez)
+                # M17.b: enriquecer cada entrada con fuente_url + (si derogada) fuente_url_vigente
+                from utils.citation_url_builder import build_url_candidates, build_search_fallback_url
+                from utils.url_validator import find_valid_url
+                from utils.citation_verifier import parse_citation_ref as _parse
                 for cit in citations_collected:
                     if cit.get("type") == "norma":
                         ref = cit.get("ref", "")
                         dc = await derogation_verifier.check(ref)
+                        # Construir URL validada para la norma
+                        parsed_norma = _parse(ref)
+                        fuente_url = None
+                        if parsed_norma:
+                            cands = build_url_candidates(parsed_norma)
+                            valid, _ = await find_valid_url(cands, self.pool)
+                            fuente_url = valid or (cands[0] if cands else build_search_fallback_url(parsed_norma))
+                        # Si derogada, URL vigente
+                        fuente_url_vigente = None
+                        if not dc.vigente and dc.derogada_por:
+                            parsed_v = _parse(dc.derogada_por)
+                            if parsed_v:
+                                cands_v = build_url_candidates(parsed_v)
+                                valid_v, _ = await find_valid_url(cands_v, self.pool)
+                                fuente_url_vigente = valid_v or (cands_v[0] if cands_v else None)
                         derogation_results.append({
                             "norma": ref, "vigente": dc.vigente,
                             "derogada_por": dc.derogada_por,
+                            "fuente_url": fuente_url,
+                            "fuente_url_vigente": fuente_url_vigente,
                         })
                         yield SSEEvent.derogation_check(
                             norma=ref, vigente=dc.vigente, derogada_por=dc.derogada_por,
