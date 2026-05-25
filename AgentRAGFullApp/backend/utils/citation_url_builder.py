@@ -26,20 +26,45 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-# ID en Función Pública (DAFP) → URL más estable que secretariasenado
-# Validados con curl HEAD HTTP 200 mayo 2026
+# IDs en Función Pública (DAFP) → norma.php?i={id}
+# VALIDADOS con GET + body inspection mayo 2026 (size>20KB y sin "norma_error.php"):
+#   CONSTITUCION i=4125   → 1.2MB   OK
+#   C.P.         i=6388   → 605KB   OK
+#   C.CO.        i=41102  → 1.2MB   OK
+#   CGP          i=48425  → 1MB     OK
+#   CPACA        i=41249  → 622KB   OK
+#   CPP          i=14787  → 613KB   OK
+# CST y C.C. NO existen en Función Pública (todos los IDs probados → soft 404).
 _FP_NORMA_ID = {
     "CONSTITUCION": 4125,
-    "CST":          33104,
-    "C.P.":         6388,    # Código Penal (Ley 599/2000)
-    "C.C.":         39535,   # Código Civil
-    "C.CO.":        14790,   # Código de Comercio (Decreto 410/1971)
-    "CGP":          48425,   # Ley 1564/2012
-    "CPACA":        41249,   # Ley 1437/2011
-    "CPP":          14787,   # Ley 906/2004
+    "C.P.":         6388,
+    "C.CO.":        41102,
+    "CGP":          48425,
+    "CPACA":        41249,
+    "CPP":          14787,
 }
 
-# Slugs de codigos en secretariasenado (fallback, server intermitente)
+# IDs Función Pública para Leyes comunes (validados GET + body inspection).
+# Cuando "Ley N/YYYY" coincide aquí, se prefiere FP sobre Senado (server lento).
+_FP_LEY_ID: dict[tuple[int, int], int] = {
+    (50, 1990):   281,
+    (100, 1993):  5248,
+    (361, 1997):  343,
+    (712, 2001):  4486,    # CPTSS (verificar)
+    (789, 2002):  6778,
+    (1010, 2006): 18843,
+    (1437, 2011): 41249,   # CPACA
+    (1564, 2012): 48425,   # CGP
+}
+
+# Slugs ICBF (mirror oficial gov.co) — fuente primary para CST y C.C.
+# Validados con GET (>117KB, contenido real)
+_CODIGO_ICBF_SLUG = {
+    "CST":          "codigo_sustantivo_trabajo_pr001",
+    "C.C.":         "codigo_civil",
+}
+
+# Slugs secretariasenado.gov.co (fallback — server intermitente / timeouts)
 _CODIGO_URL_SLUG = {
     "CST":          "codigo_sustantivo_trabajo",
     "C.P.":         "codigo_penal",
@@ -49,11 +74,6 @@ _CODIGO_URL_SLUG = {
     "CPACA":        "ley_1437_2011",
     "CPTSS":        "ley_712_2001",
     "CPP":          "ley_906_2004",
-}
-
-# Slugs ICBF (mirror oficial gov.co alternativo)
-_CODIGO_ICBF_SLUG = {
-    "CST":          "codigo_sustantivo_trabajo_pr001",
 }
 
 
@@ -91,40 +111,45 @@ def build_url_candidates(parsed) -> list[str]:
         return candidates
 
     # ── CÓDIGOS (CST, C.P., C.C., C.CO., CGP, CPACA, CPP) ──
-    if kind in ("codigo", "codigo_articulo") and tipo in _CODIGO_URL_SLUG:
+    if kind in ("codigo", "codigo_articulo") and tipo in (
+        set(_FP_NORMA_ID) | set(_CODIGO_ICBF_SLUG) | set(_CODIGO_URL_SLUG)
+    ):
         anchor = f"#{numero}" if (kind == "codigo_articulo" and numero) else ""
-        # Primary: Función Pública (estable)
-        if tipo in _FP_NORMA_ID:
-            fp_id = _FP_NORMA_ID[tipo]
-            candidates.append(
-                f"https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i={fp_id}{anchor}"
-            )
-        # Alt 1: ICBF mirror (algunos códigos)
+        # Primary: ICBF si está disponible (para CST/C.C. es la única opción real)
         if tipo in _CODIGO_ICBF_SLUG:
             slug = _CODIGO_ICBF_SLUG[tipo]
             candidates.append(
                 f"https://www.icbf.gov.co/cargues/avance/docs/{slug}.html"
             )
-        # Alt 2: Senado (server intermitente, último recurso)
-        slug = _CODIGO_URL_SLUG[tipo]
-        candidates.append(
-            f"https://www.secretariasenado.gov.co/senado/basedoc/{slug}.html{anchor}"
-        )
+        # Si está en Función Pública (códigos con ID validado), agregar también
+        if tipo in _FP_NORMA_ID:
+            fp_id = _FP_NORMA_ID[tipo]
+            candidates.append(
+                f"https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i={fp_id}{anchor}"
+            )
+        # Senado (server intermitente, último recurso)
+        if tipo in _CODIGO_URL_SLUG:
+            slug = _CODIGO_URL_SLUG[tipo]
+            candidates.append(
+                f"https://www.secretariasenado.gov.co/senado/basedoc/{slug}.html{anchor}"
+            )
         return candidates
 
     # ── LEY ──
     if kind == "ley" and numero and anio:
-        # Primary: Senado (cuando responde)
+        # Primary: Función Pública si tenemos ID validado (URL directa con contenido real)
+        fp_id = _FP_LEY_ID.get((numero, anio))
+        if fp_id:
+            candidates.append(
+                f"https://www.funcionpublica.gov.co/eva/gestornormativo/norma.php?i={fp_id}"
+            )
+        # Alt 1: Senado (oficial; responde intermitente)
         candidates.append(
             f"https://www.secretariasenado.gov.co/senado/basedoc/ley_{numero:04d}_{anio}.html"
         )
-        # Alt: Función Pública search
+        # Alt 2: Función Pública busqueda (siempre responde, no es URL directa)
         candidates.append(
             f"https://www.funcionpublica.gov.co/eva/gestornormativo/gestornormativo.php?action=fichaaa&search=Ley+{numero}+de+{anio}"
-        )
-        # Alt: SUIN-Juriscol search
-        candidates.append(
-            f"https://www.suin-juriscol.gov.co/index.html?q=Ley+{numero}+{anio}"
         )
         return candidates
 

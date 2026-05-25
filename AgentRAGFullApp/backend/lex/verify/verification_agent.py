@@ -32,8 +32,8 @@ TTL_BY_KIND = {
 
 
 def _build_cache_key(parsed) -> str:
-    # m17b prefix: invalida cache de verdicts viejos (sin url_validated/candidates)
-    parts = ["m17b", parsed.kind]
+    # m17d prefix: invalida cache de verdicts (GET + soft 404 + ICBF primary)
+    parts = ["m17d", parsed.kind]
     if parsed.tipo:
         parts.append(parsed.tipo.upper())
     if parsed.numero is not None:
