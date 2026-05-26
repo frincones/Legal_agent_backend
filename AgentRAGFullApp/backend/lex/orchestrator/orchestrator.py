@@ -525,29 +525,41 @@ class Orchestrator:
                     )
 
                 # Derogation (independiente, una sola vez)
-                # M17.b: enriquecer cada entrada con fuente_url + (si derogada) fuente_url_vigente
+                # M18: usar norma_url_index (cache compartido) + SmartSearchTool fallback
                 from utils.citation_url_builder import build_url_candidates, build_search_fallback_url
                 from utils.url_validator import find_valid_url
                 from utils.citation_verifier import parse_citation_ref as _parse
+                from utils.norma_url_index import lookup_norma_url
+
+                async def _resolve_url_for_norma(parsed_obj):
+                    """M18: cascade -> norma_url_index -> patterns -> Google fallback."""
+                    if not parsed_obj:
+                        return None
+                    # 1. Cache compartido norma_url_index
+                    indexed = await lookup_norma_url(parsed_obj, self.pool)
+                    if indexed and indexed.fuente_url and indexed.url_validated:
+                        return indexed.fuente_url
+                    # 2. Patterns + HEAD cascade
+                    cands = build_url_candidates(parsed_obj)
+                    if cands:
+                        valid, _ = await find_valid_url(cands, self.pool)
+                        if valid:
+                            return valid
+                        return cands[0]
+                    # 3. Último recurso: Google search honesto
+                    return build_search_fallback_url(parsed_obj)
+
                 for cit in citations_collected:
                     if cit.get("type") == "norma":
                         ref = cit.get("ref", "")
                         dc = await derogation_verifier.check(ref)
-                        # Construir URL validada para la norma
                         parsed_norma = _parse(ref)
-                        fuente_url = None
-                        if parsed_norma:
-                            cands = build_url_candidates(parsed_norma)
-                            valid, _ = await find_valid_url(cands, self.pool)
-                            fuente_url = valid or (cands[0] if cands else build_search_fallback_url(parsed_norma))
+                        fuente_url = await _resolve_url_for_norma(parsed_norma)
                         # Si derogada, URL vigente
                         fuente_url_vigente = None
                         if not dc.vigente and dc.derogada_por:
                             parsed_v = _parse(dc.derogada_por)
-                            if parsed_v:
-                                cands_v = build_url_candidates(parsed_v)
-                                valid_v, _ = await find_valid_url(cands_v, self.pool)
-                                fuente_url_vigente = valid_v or (cands_v[0] if cands_v else None)
+                            fuente_url_vigente = await _resolve_url_for_norma(parsed_v)
                         derogation_results.append({
                             "norma": ref, "vigente": dc.vigente,
                             "derogada_por": dc.derogada_por,

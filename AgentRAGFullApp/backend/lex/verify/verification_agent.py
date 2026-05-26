@@ -17,6 +17,7 @@ import uuid
 
 from lex.verify.evidence_accumulator import EvidenceAccumulator, VerificationVerdict
 from lex.verify.tool_dispatcher import ToolDispatcher
+from lex.verify.judge_agent import JudgeAgent
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +33,8 @@ TTL_BY_KIND = {
 
 
 def _build_cache_key(parsed) -> str:
-    # m17d prefix: invalida cache de verdicts (GET + soft 404 + ICBF primary)
-    parts = ["m17d", parsed.kind]
+    # m18 prefix: invalida cache (M18: index lookup + judge + provenance)
+    parts = ["m18", parsed.kind]
     if parsed.tipo:
         parts.append(parsed.tipo.upper())
     if parsed.numero is not None:
@@ -53,6 +54,12 @@ class VerificationAgent:
         self.user_id = user_id
         self.dispatcher = ToolDispatcher(pool=pool, client=client, max_concurrent=max_concurrent)
         self.accumulator = EvidenceAccumulator()
+        # M18: Judge para validación adversarial. Disabled si no hay client.
+        # Se puede deshabilitar globalmente con JUDGE_AGENT_ENABLED=false
+        import os
+        judge_env = os.getenv("JUDGE_AGENT_ENABLED", "true").lower()
+        judge_enabled = (judge_env in ("true", "1", "yes")) and (client is not None)
+        self.judge = JudgeAgent(client=client, enabled=judge_enabled)
 
     async def verify(self, citation_text: str, citation_type: str = "norma") -> VerificationVerdict:
         """Verifica una sola cita. Retorna verdict completo."""
@@ -101,7 +108,7 @@ class VerificationAgent:
                 duration_ms=int((time.time() - started) * 1000),
             )
 
-        # 2. CACHE GATE
+        # 2. CACHE GATE (verdict cache TTL por kind)
         cache_key = _build_cache_key(parsed)
         cached = await self._cache_get(cache_key)
         if cached:
@@ -117,6 +124,13 @@ class VerificationAgent:
         evidence = self.accumulator.collect(citation_text, tool_results)
         verdict = self.accumulator.compute_verdict(evidence, citation_type)
         verdict.duration_ms = int((time.time() - started) * 1000)
+
+        # 4.1 M18: propagar provenance + snippet del best_hit al verdict
+        best_hit = evidence.best_hit()
+        if best_hit:
+            verdict.discovered_by = best_hit.discovered_by
+            verdict.snippet = best_hit.snippet
+            verdict.query_used = best_hit.query_used
 
         # 5. M17 GUARANTEE FUENTE_URL + HEAD CASCADE
         # Estrategia: para cada cita verificada, probar TODOS los candidatos
@@ -181,6 +195,98 @@ class VerificationAgent:
             except Exception as e:
                 logger.warning("derogada vigente URL failed: %s", e)
 
+        # 7. M18: JUDGE AGENT — validación adversarial del verdict
+        if verdict.verified and self.judge.enabled:
+            try:
+                judge_out = await self.judge.judge(
+                    citation_text=citation_text,
+                    parsed=parsed,
+                    verdict=verdict,
+                    tool_results=tool_results,
+                )
+                verdict.judge_action = judge_out.action
+                verdict.judge_rationale = judge_out.rationale
+
+                if judge_out.action == "reject":
+                    # Judge rechaza el verdict → marcar como no encontrada
+                    logger.info(
+                        "Judge REJECTED %r: %s",
+                        citation_text, judge_out.rationale,
+                    )
+                    verdict.estado = "no_encontrada"
+                    verdict.verified = False
+                    verdict.confidence = min(verdict.confidence, 0.3)
+                elif judge_out.action == "refine" and judge_out.next_query and not verdict.judge_retried:
+                    # Re-buscar con next_query usando SmartSearchTool
+                    logger.info(
+                        "Judge requested REFINE for %r: query=%r",
+                        citation_text, judge_out.next_query[:80],
+                    )
+                    verdict.judge_retried = True
+                    try:
+                        from lex.verify.tools.smart_search import SmartSearchTool
+                        # Construir parsed temporal con normalized override
+                        smart = SmartSearchTool(pool=self.pool, client=self.client)
+                        # Reusar mismo parsed pero con query custom inyectado en raw_evidence
+                        # (smart_search lo recibe via parsed.normalized si está set)
+                        original_normalized = getattr(parsed, "normalized", None)
+                        try:
+                            parsed.normalized = judge_out.next_query
+                        except Exception:
+                            pass
+                        retry_result = await smart.run(parsed)
+                        # Restore
+                        try:
+                            if original_normalized is not None:
+                                parsed.normalized = original_normalized
+                        except Exception:
+                            pass
+
+                        if retry_result.is_hit and retry_result.fuente_url:
+                            # Validar URL del retry
+                            from utils.url_validator import validate_url_responsive
+                            is_valid, status_code = await validate_url_responsive(
+                                retry_result.fuente_url, self.pool
+                            )
+                            if is_valid:
+                                verdict.fuente_url = retry_result.fuente_url
+                                verdict.titulo = retry_result.titulo or verdict.titulo
+                                verdict.snippet = retry_result.snippet or verdict.snippet
+                                verdict.discovered_by = retry_result.discovered_by
+                                verdict.url_validated = True
+                                verdict.url_http_status = status_code
+                                verdict.query_used = judge_out.next_query
+                                tool_results.append(retry_result)
+                    except Exception as e:
+                        logger.warning("judge refine retry failed: %s", e)
+                else:
+                    # action=accept → ajustar confidence con el del Judge si difiere
+                    if abs(judge_out.confidence_adjusted - verdict.confidence) > 0.05:
+                        verdict.confidence = judge_out.confidence_adjusted
+            except Exception as e:
+                logger.warning("JudgeAgent stage failed (continuing): %s", e)
+
+        # 7.5 M18: persistir en norma_url_index si tenemos URL validada
+        if verdict.url_validated and verdict.fuente_url and verdict.verified:
+            try:
+                from utils.norma_url_index import persist_norma_url
+                await persist_norma_url(
+                    parsed=parsed,
+                    pool=self.pool,
+                    fuente_url=verdict.fuente_url,
+                    discovered_by=verdict.discovered_by or "verification_agent",
+                    titulo=verdict.titulo,
+                    snippet=verdict.snippet,
+                    vigencia="derogada" if verdict.derogada else "vigente",
+                    url_validated=True,
+                    url_http_status=verdict.url_http_status,
+                    confidence=verdict.confidence,
+                    query_used=verdict.query_used,
+                    revalidate_days=(90 if verdict.derogada else 7),
+                )
+            except Exception as e:
+                logger.debug("norma_url_index persist (post-verdict) failed: %s", e)
+
         # 8. PERSISTENCE
         await self._persist(parsed, cache_key, verdict, tool_results)
 
@@ -235,6 +341,18 @@ class VerificationAgent:
                 "titulo": verdict.titulo,
                 "chunk_id": verdict.chunk_id,
                 "derogada": verdict.derogada,
+                # M17
+                "fuente_url_original": verdict.fuente_url_original,
+                "fuente_url_vigente": verdict.fuente_url_vigente,
+                "url_http_status": verdict.url_http_status,
+                "url_validated": verdict.url_validated,
+                # M18
+                "discovered_by": verdict.discovered_by,
+                "snippet": verdict.snippet,
+                "judge_action": verdict.judge_action,
+                "judge_rationale": verdict.judge_rationale,
+                "judge_retried": verdict.judge_retried,
+                "query_used": verdict.query_used,
             }
             async with self.pool.acquire() as conn:
                 await conn.execute(
@@ -308,4 +426,16 @@ class VerificationAgent:
             chunk_id=cached.get("chunk_id"),
             derogada=cached.get("derogada", False),
             sources_tried=["cache"],
+            # M17
+            fuente_url_original=cached.get("fuente_url_original"),
+            fuente_url_vigente=cached.get("fuente_url_vigente"),
+            url_http_status=cached.get("url_http_status"),
+            url_validated=cached.get("url_validated", False),
+            # M18
+            discovered_by=cached.get("discovered_by"),
+            snippet=cached.get("snippet"),
+            judge_action=cached.get("judge_action"),
+            judge_rationale=cached.get("judge_rationale"),
+            judge_retried=cached.get("judge_retried", False),
+            query_used=cached.get("query_used"),
         )

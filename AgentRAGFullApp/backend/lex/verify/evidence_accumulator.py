@@ -69,6 +69,13 @@ class VerificationVerdict:
     fuente_url_vigente: Optional[str] = None   # la que reemplaza (solo si superada)
     url_http_status: Optional[int] = None       # 200, 404, etc.
     url_validated: bool = False                 # HEAD check pasó
+    # M18: provenance + Judge
+    discovered_by: Optional[str] = None         # 'brave_search'|'internal_db'|'pattern'|...
+    snippet: Optional[str] = None               # evidencia mostrada al usuario
+    judge_action: Optional[str] = None          # 'accept'|'refine'|'reject'
+    judge_rationale: Optional[str] = None       # explicación auditable
+    judge_retried: bool = False                 # si JudgeAgent forzó refine
+    query_used: Optional[str] = None            # query enviado a search engine
 
     def to_audit_dict(self) -> dict:
         """Schema compatible con `verification_results` del orchestrator."""
@@ -87,6 +94,13 @@ class VerificationVerdict:
             "url_validated": self.url_validated,
             "is_derogada": self.derogada,
             "titulo": self.titulo,
+            # M18: provenance + judge
+            "discovered_by": self.discovered_by,
+            "snippet": self.snippet,
+            "judge_action": self.judge_action,
+            "judge_rationale": self.judge_rationale,
+            "judge_retried": self.judge_retried,
+            "query_used": self.query_used,
         }
 
 

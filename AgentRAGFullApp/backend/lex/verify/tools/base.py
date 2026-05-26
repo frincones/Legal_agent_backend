@@ -26,6 +26,25 @@ class ToolResult:
     def is_hit(self) -> bool:
         return self.status == "hit"
 
+    # M18: provenance helpers (extraen campos de raw_evidence)
+    @property
+    def discovered_by(self) -> str:
+        """Origen del hit. Default a tool_name si no especificado."""
+        ev = self.raw_evidence or {}
+        return ev.get("discovered_by") or self.tool_name
+
+    @property
+    def snippet(self) -> Optional[str]:
+        """Snippet textual que confirma la cita (si tool lo extrajo)."""
+        ev = self.raw_evidence or {}
+        return ev.get("snippet")
+
+    @property
+    def query_used(self) -> Optional[str]:
+        """Query enviado al search engine (si aplica)."""
+        ev = self.raw_evidence or {}
+        return ev.get("query") or ev.get("query_used")
+
 
 class BaseTool(ABC):
     """Interfaz uniforme. Subclases implementan `run()`."""

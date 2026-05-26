@@ -18,6 +18,7 @@ from lex.verify.tools.fetch_csj_rss import FetchCSJRss
 from lex.verify.tools.fetch_senado_suin import FetchSenadoSuin
 from lex.verify.tools.lookup_articulo_chunks import LookupArticuloChunks
 from lex.verify.tools.check_derogation import CheckDerogation
+from lex.verify.tools.smart_search import SmartSearchTool
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +47,17 @@ class ToolDispatcher:
     def dispatch(self, parsed) -> list[BaseTool]:
         """Decide qué tools invocar según el kind + tipo de la cita.
 
-        Estrategia:
-        - SIEMPRE consultar BD interna primero (cache)
+        Estrategia M18:
+        - SIEMPRE incluir SearchInternalDB (cache BD)
+        - SIEMPRE incluir SmartSearchTool (norma_url_index lookup + Brave fallback)
         - Live fetch a fuente oficial específica según corte
         - check_derogation para normativas (no jurisprudencia)
         """
         if parsed.kind == "jurisprudencia":
-            tools = [self._get_tool(SearchInternalDB)]
+            tools = [
+                self._get_tool(SearchInternalDB),
+                self._get_tool(SmartSearchTool),  # M18: índice + Brave para descubrir URL real
+            ]
             if parsed.tipo in CC_TIPOS:
                 tools.append(self._get_tool(FetchCorteCC))
             elif parsed.tipo in CSJ_TIPOS:
@@ -65,6 +70,7 @@ class ToolDispatcher:
         if parsed.kind in ("ley", "decreto"):
             return [
                 self._get_tool(SearchInternalDB),
+                self._get_tool(SmartSearchTool),  # M18: descubre URL Función Pública/SUIN
                 self._get_tool(FetchSenadoSuin),
                 self._get_tool(CheckDerogation),
             ]
@@ -72,17 +78,22 @@ class ToolDispatcher:
         if parsed.kind == "codigo_articulo":
             return [
                 self._get_tool(LookupArticuloChunks),
+                self._get_tool(SmartSearchTool),  # M18: URL real del código
                 self._get_tool(SearchInternalDB),
             ]
 
         if parsed.kind == "codigo":
             return [
                 self._get_tool(SearchInternalDB),
+                self._get_tool(SmartSearchTool),  # M18: URL real del código
                 self._get_tool(CheckDerogation),
             ]
 
-        # Default: solo BD interna
-        return [self._get_tool(SearchInternalDB)]
+        # Default: BD interna + SmartSearchTool como descubridor genérico
+        return [
+            self._get_tool(SearchInternalDB),
+            self._get_tool(SmartSearchTool),
+        ]
 
     async def execute_all(self, parsed, tools: list[BaseTool]) -> list[ToolResult]:
         """Ejecuta tools en paralelo con semáforo limitante."""
