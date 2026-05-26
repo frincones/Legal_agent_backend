@@ -25,33 +25,54 @@ JUDGE_MAX_TOKENS = 200
 JUDGE_TEMPERATURE = 0.0
 
 
-JUDGE_SYSTEM_PROMPT = """Eres un auditor adversarial de citas legales colombianas.
-Tu trabajo es VALIDAR si el verdict propuesto por el sistema de verificación es defendible o tiene gaps.
+JUDGE_SYSTEM_PROMPT = """Eres un auditor experto en derecho colombiano que VALIDA si una cita legal está bien sustentada por la evidencia de las tools.
 
-CHECKLIST (todos deben pasar para sufficient=true):
-1. La URL apunta a un dominio oficial gov.co
-2. El título/snippet del resultado coincide con la cita (no es página genérica de error)
-3. Al menos un tool retornó evidencia (snippet, título o chunk) que confirma la cita
-4. No hay contradicción mayor entre tools (BD dice X, search dice Y)
-5. Si es jurisprudencia: corte correcta + tipo válido + año plausible
-6. Si es norma (ley/decreto): número y año coinciden con la evidencia
+REGLAS CRITICAS (lee con cuidado, evita falsos rechazos):
+
+1. CODIGOS NO TIENEN AÑO. CST, C.P., C.C., C.CO., CN/CONSTITUCION, CGP, CPACA, CPP, CPP son códigos.
+   NO rechazar por "falta año" o "falta numero ley". Son códigos consolidados.
+
+2. CUALQUIER dominio que termine en .gov.co es OFICIAL. Acepta como válido:
+   funcionpublica.gov.co, secretariasenado.gov.co, corteconstitucional.gov.co,
+   cortesuprema.gov.co, ramajudicial.gov.co, suin-juriscol.gov.co, icbf.gov.co,
+   alcaldiabogota.gov.co, cancilleria.gov.co, mintrabajo.gov.co, dian.gov.co,
+   minsalud.gov.co, mineducacion.gov.co, etc. TODOS son oficiales.
+
+3. Para JURISPRUDENCIA, basta con que la URL apunte al sitio oficial de la corte
+   AUN SI es página de búsqueda/relatoria. Ejemplo: cortesuprema.gov.co/sala-laboral-relatoria
+   es válida para confirmar existencia de la sentencia. NO rechaces por "no es el PDF".
+
+4. Si el snippet menciona la sentencia/norma (aunque sea de pasada), HAY evidencia.
+
+5. La URL fue VALIDADA con HTTP 200 + body check (la tool ya lo verificó). Confía en eso.
+
+SUGERENCIA DE CORRECCIONES (NUEVO - importante):
+Si DETECTAS que la cita parece INCORRECTA pero podrías sugerir la cita correcta,
+pon `suggested_correction` con la cita correcta. Ejemplos:
+  - "SU-440/2021" no es sobre estabilidad laboral (es de identidad de género).
+    suggested_correction: "SU-049/2017" o "SU-087/2022".
+  - "Ley 1280 de 2009" es licencia por luto, NO madre cabeza familia.
+    suggested_correction: "Ley 82 de 1993" + "Ley 1232 de 2008".
+Esto NO bloquea la verificación. El usuario verá la sugerencia en el AuditPanel.
 
 ACCIONES:
-- "accept"  : verdict es defendible. Cierra la verificación.
-- "refine"  : evidencia insuficiente pero hay info útil. Sugiere next_query para re-buscar.
-- "reject"  : evidencia contradictoria o nula. Marcar como no_encontrada.
+- "accept": evidencia suficiente. Por defecto. Usa esto en 90% de los casos.
+- "refine": SOLO si la URL devuelta NO tiene relación alguna con la cita Y sabes mejor query.
+- "reject": SOLO si la cita es claramente inexistente o fabricada (raro).
 
 Output JSON estricto:
 {
   "sufficient": true|false,
   "confidence_adjusted": 0.0-1.0,
-  "missing": ["..."],
   "action": "accept"|"refine"|"reject",
   "next_query": "..." | null,
-  "rationale": "1-2 frases explicando la decisión"
+  "rationale": "1-2 frases concisas",
+  "suggested_correction": "cita corregida si aplica" | null,
+  "legal_note": "nota sobre vigencia/modificaciones si aplica" | null
 }
 
-Responde SOLO con el JSON. Sin markdown, sin comentarios."""
+Responde SOLO con el JSON, sin markdown, sin comentarios fuera del JSON.
+Por defecto sé permisivo (action=accept) — solo rechaza con evidencia clara."""
 
 
 @dataclass
@@ -66,6 +87,9 @@ class JudgeOutput:
     raw_response: Optional[str] = None
     duration_ms: int = 0
     error: Optional[str] = None
+    # M18.c: capacidades nuevas estilo Claude
+    suggested_correction: Optional[str] = None  # "SU-440/2021" → "SU-087/2022"
+    legal_note: Optional[str] = None            # "Ley 1010 art 18 modificado por Ley 2209/2022"
 
     def to_dict(self) -> dict:
         return {
@@ -75,6 +99,8 @@ class JudgeOutput:
             "action": self.action,
             "next_query": self.next_query,
             "rationale": self.rationale,
+            "suggested_correction": self.suggested_correction,
+            "legal_note": self.legal_note,
         }
 
 
@@ -214,6 +240,13 @@ class JudgeAgent:
             if not isinstance(missing, list):
                 missing = []
 
+            suggested_corr = parsed_out.get("suggested_correction")
+            if suggested_corr and not isinstance(suggested_corr, str):
+                suggested_corr = None
+            legal_note = parsed_out.get("legal_note")
+            if legal_note and not isinstance(legal_note, str):
+                legal_note = None
+
             return JudgeOutput(
                 sufficient=bool(parsed_out.get("sufficient", True)),
                 confidence_adjusted=conf_adj,
@@ -221,6 +254,8 @@ class JudgeAgent:
                 action=action,
                 next_query=next_query[:300] if next_query else None,
                 rationale=str(parsed_out.get("rationale", ""))[:400],
+                suggested_correction=suggested_corr[:200] if suggested_corr else None,
+                legal_note=legal_note[:400] if legal_note else None,
                 raw_response=raw[:1000],
                 duration_ms=int((time.time() - started) * 1000),
             )

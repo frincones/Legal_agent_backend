@@ -76,6 +76,9 @@ class VerificationVerdict:
     judge_rationale: Optional[str] = None       # explicación auditable
     judge_retried: bool = False                 # si JudgeAgent forzó refine
     query_used: Optional[str] = None            # query enviado a search engine
+    # M18.c: capacidades nuevas
+    suggested_correction: Optional[str] = None  # "SU-440/21" → "SU-087/22"
+    legal_note: Optional[str] = None            # "modificado por Ley 2209/2022"
 
     def to_audit_dict(self) -> dict:
         """Schema compatible con `verification_results` del orchestrator."""
@@ -101,6 +104,9 @@ class VerificationVerdict:
             "judge_rationale": self.judge_rationale,
             "judge_retried": self.judge_retried,
             "query_used": self.query_used,
+            # M18.c: smart corrections
+            "suggested_correction": self.suggested_correction,
+            "legal_note": self.legal_note,
         }
 
 

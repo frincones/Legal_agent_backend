@@ -206,6 +206,9 @@ class VerificationAgent:
                 )
                 verdict.judge_action = judge_out.action
                 verdict.judge_rationale = judge_out.rationale
+                # M18.c: propagar suggested_correction + legal_note al verdict
+                verdict.suggested_correction = judge_out.suggested_correction
+                verdict.legal_note = judge_out.legal_note
 
                 if judge_out.action == "reject":
                     # Judge rechaza el verdict → marcar como no encontrada
@@ -295,14 +298,41 @@ class VerificationAgent:
     async def verify_batch(self, citations: list[dict]) -> list[VerificationVerdict]:
         """Verifica batch de citas en paralelo.
 
+        M18.c: dedup por (ref, type). Si la misma cita aparece N veces
+        (ej. "Art. 64 CST" repetido en 5 bloques), solo verifica 1 vez
+        y retorna el mismo verdict para todas las apariciones.
+
         citations: list de dicts con keys {ref, type, block_id?}
         """
+        # 1) Identificar citas únicas
+        seen: dict[tuple[str, str], int] = {}    # (ref, type) → idx único
+        unique_to_verify: list[dict] = []
+        index_map: list[int] = []                # citations[i] → unique_idx
+        for cit in citations:
+            ref = (cit.get("ref") or "").strip()
+            ctype = (cit.get("type") or "norma").strip()
+            key = (ref, ctype)
+            if key not in seen:
+                seen[key] = len(unique_to_verify)
+                unique_to_verify.append(cit)
+            index_map.append(seen[key])
+
+        # 2) Verificar SOLO las únicas en paralelo
         async def _one(cit):
             return await self.verify(
                 citation_text=cit.get("ref", ""),
                 citation_type=cit.get("type", "norma"),
             )
-        return await asyncio.gather(*[_one(c) for c in citations])
+        unique_verdicts = await asyncio.gather(*[_one(c) for c in unique_to_verify])
+
+        # 3) Reconstruir lista completa reusando verdicts (dedup ratio log)
+        if len(citations) > len(unique_to_verify):
+            logger.info(
+                "verify_batch dedup: %d citas -> %d únicas (-%d redundantes)",
+                len(citations), len(unique_to_verify),
+                len(citations) - len(unique_to_verify),
+            )
+        return [unique_verdicts[idx] for idx in index_map]
 
     async def _cache_get(self, key: str) -> dict | None:
         """Lookup en external_fetch_cache."""
@@ -375,7 +405,24 @@ class VerificationAgent:
             logger.warning("cache_persist failed: %s", e)
 
         # Audit
+        # M18.c FIX: el check constraint ref_type acepta solo
+        # ('jurisprudencia','ley','decreto','codigo'). Mapear 'norma',
+        # 'codigo_articulo' o vacíos al equivalente válido para evitar
+        # violaciones de check constraint que rompen el INSERT.
         try:
+            VALID_REF_TYPES = {"jurisprudencia", "ley", "decreto", "codigo"}
+            # Preferir parsed.kind (más específico) → mapear a valor válido
+            raw_kind = (parsed.kind or "").lower() if parsed else ""
+            if raw_kind == "codigo_articulo":
+                ref_type_db = "codigo"
+            elif raw_kind in VALID_REF_TYPES:
+                ref_type_db = raw_kind
+            elif verdict.citation_type and verdict.citation_type.lower() in VALID_REF_TYPES:
+                ref_type_db = verdict.citation_type.lower()
+            else:
+                # Fallback seguro
+                ref_type_db = "ley"
+
             tool_results_json = [
                 {
                     "tool": t.tool_name,
@@ -400,7 +447,7 @@ class VerificationAgent:
                     uuid.UUID(self.firm_id) if self.firm_id else None,
                     uuid.UUID(self.user_id) if self.user_id else None,
                     verdict.citation_text,
-                    verdict.citation_type,
+                    ref_type_db,
                     verdict.estado,
                     verdict.method,
                     verdict.duration_ms,
