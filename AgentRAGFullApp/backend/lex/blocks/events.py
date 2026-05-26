@@ -45,6 +45,8 @@ EventName = Literal[
     "audit_report",
     "done",
     "error",
+    # M18.d: Agent thought stream — narración en vivo estilo Claude
+    "agent_thought",
 ]
 
 
@@ -190,3 +192,26 @@ class SSEEvent:
     @staticmethod
     def error(stage: str, message: str) -> bytes:
         return sse("error", {"stage": stage, "message": message})
+
+    @staticmethod
+    def agent_thought(
+        message: str,
+        kind: str = "info",          # info|tool_call|tool_result|correction|warning|success
+        tool: str | None = None,     # 'brave_search'|'judge'|'corte_cc'|...
+        ref: str | None = None,      # citation_ref si aplica
+        url: str | None = None,      # URL relevante
+        suggestion: str | None = None,  # correccion propuesta
+    ) -> bytes:
+        """M18.d: narración del agente en vivo estilo Claude.
+
+        El frontend renderiza estos como mensajes secuenciales en el
+        ThoughtStream panel, dándole al usuario visibilidad del razonamiento.
+        """
+        return sse("agent_thought", {
+            "kind": kind,
+            "message": message[:600],
+            "tool": tool,
+            "ref": ref,
+            "url": url,
+            "suggestion": suggestion,
+        })

@@ -219,8 +219,45 @@ class Orchestrator:
         started_at = time.monotonic()
         document_id = str(uuid.uuid4())  # M1: documento virtual; M2 vinculará a matter_documents
 
+        # ===== STAGE 0: PRE-FLIGHT CHECK (M18.d / M19.5) =====
+        # Detecta errores legales obvios en el prompt antes de generar.
+        # No bloquea — solo advierte via agent_thought.
+        try:
+            import os as _os_pf
+            preflight_enabled = _os_pf.getenv("PREFLIGHT_CHECK_ENABLED", "true").lower() in ("true", "1", "yes")
+            if preflight_enabled and self.client is not None:
+                from lex.verify.preflight_check import preflight_check
+                yield SSEEvent.agent_thought(
+                    "🔬 Revisando coherencia jurídica del prompt antes de redactar...",
+                    kind="info",
+                )
+                pre_res = await preflight_check(self.client, req.intent, req.user_brief or "")
+                if pre_res.findings:
+                    yield SSEEvent.agent_thought(
+                        f"⚠ Encontré {len(pre_res.findings)} observaciones jurídicas en el prompt:",
+                        kind="warning",
+                    )
+                    for f in pre_res.findings:
+                        kind_map = {"blocker": "error", "warning": "warning", "info": "info"}
+                        yield SSEEvent.agent_thought(
+                            f"  • {f.issue}" + (f"  →  {f.suggestion}" if f.suggestion else ""),
+                            kind=kind_map.get(f.severity, "info"),
+                            suggestion=f.suggestion,
+                        )
+                elif pre_res.overall_assessment and not pre_res.error:
+                    yield SSEEvent.agent_thought(
+                        f"✓ {pre_res.overall_assessment}",
+                        kind="success",
+                    )
+        except Exception as e:
+            logger.warning("preflight stage failed: %s", e)
+
         # ===== STAGE 1: CLASSIFIER =====
         yield sse("classification_started", {"intent_preview": req.intent[:200]})
+        yield SSEEvent.agent_thought(
+            "📋 Analizando solicitud y clasificando tipo de documento legal...",
+            kind="info",
+        )
         try:
             classification = await classify(self.client, req.intent, req.user_brief)
         except Exception as e:
@@ -239,6 +276,10 @@ class Orchestrator:
             jurisdiccion=classification.jurisdiccion,
             materia=classification.materia,
             confidence=classification.confidence,
+        )
+        yield SSEEvent.agent_thought(
+            f"✓ Tipo identificado: **{classification.doc_type}** ({classification.jurisdiccion}, {classification.materia})",
+            kind="success",
         )
 
         template_selected_meta = {
@@ -498,12 +539,37 @@ class Orchestrator:
                 agent_results: list[dict] = []
                 if USE_AGENT:
                     from lex.verify.verification_agent import VerificationAgent
+                    # M18.d: buffer narrations del agente (no podemos yield desde
+                    # callback síncrono — recolectar y emitir después)
+                    thought_buffer: list[dict] = []
+                    def _capture_thought(message: str, kind: str = "info", **extra):
+                        thought_buffer.append({"message": message, "kind": kind, **extra})
+
                     agent = VerificationAgent(
                         self.client, self.pool,
                         firm_id=req.firm_id, user_id=None,
+                        on_thought=_capture_thought,
+                    )
+                    # Narration global antes de empezar
+                    yield SSEEvent.agent_thought(
+                        f"🔎 Iniciando verificación de {len(citations_collected)} citas con cascada multi-fuente (BD interna + Brave Search gov.co + Judge LLM)",
+                        kind="info",
                     )
                     verdicts = await agent.verify_batch(citations_collected)
                     agent_results = [v.to_audit_dict() for v in verdicts]
+                    # Flush buffered narrations al cliente
+                    for thought in thought_buffer:
+                        yield SSEEvent.agent_thought(**thought)
+                    # Resumen final
+                    n_ok = sum(1 for v in verdicts if v.verified)
+                    n_corrections = sum(1 for v in verdicts if v.suggested_correction)
+                    n_notes = sum(1 for v in verdicts if v.legal_note)
+                    yield SSEEvent.agent_thought(
+                        f"✅ Verificación completa: {n_ok}/{len(verdicts)} citas confirmadas"
+                        + (f", {n_corrections} sugerencias de corrección" if n_corrections else "")
+                        + (f", {n_notes} notas de vigencia/modificación" if n_notes else ""),
+                        kind="success",
+                    )
 
                 # ── Decidir cuál ganara según flags ──
                 if USE_AGENT and SHADOW:

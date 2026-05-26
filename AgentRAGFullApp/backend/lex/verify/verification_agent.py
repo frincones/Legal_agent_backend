@@ -47,19 +47,37 @@ def _build_cache_key(parsed) -> str:
 class VerificationAgent:
     """Verificador de citas con cascada determinística + cache."""
 
-    def __init__(self, client, pool, firm_id=None, user_id=None, max_concurrent: int = 4):
+    def __init__(self, client, pool, firm_id=None, user_id=None, max_concurrent: int = 4,
+                 on_thought=None):
+        """
+        Args:
+            on_thought: callable(message, kind, **kwargs) opcional para narration
+                       en vivo. Si None, no emite eventos.
+        """
         self.client = client
         self.pool = pool
         self.firm_id = firm_id
         self.user_id = user_id
         self.dispatcher = ToolDispatcher(pool=pool, client=client, max_concurrent=max_concurrent)
         self.accumulator = EvidenceAccumulator()
+        # M18.d: callback de narration en vivo (estilo Claude)
+        self._on_thought = on_thought
         # M18: Judge para validación adversarial. Disabled si no hay client.
         # Se puede deshabilitar globalmente con JUDGE_AGENT_ENABLED=false
         import os
         judge_env = os.getenv("JUDGE_AGENT_ENABLED", "true").lower()
         judge_enabled = (judge_env in ("true", "1", "yes")) and (client is not None)
         self.judge = JudgeAgent(client=client, enabled=judge_enabled)
+
+    def _thought(self, message: str, kind: str = "info", **extra):
+        """Emite un agent_thought si hay callback registrado. Safe no-op si None."""
+        cb = self._on_thought
+        if cb is None:
+            return
+        try:
+            cb(message=message, kind=kind, **extra)
+        except Exception as e:
+            logger.debug("on_thought callback failed: %s", e)
 
     async def verify(self, citation_text: str, citation_type: str = "norma") -> VerificationVerdict:
         """Verifica una sola cita. Retorna verdict completo."""
@@ -118,6 +136,11 @@ class VerificationAgent:
 
         # 3. TOOL DISPATCH
         tools = self.dispatcher.dispatch(parsed)
+        tool_names = [t.name for t in tools]
+        self._thought(
+            f"🔍 Verificando '{citation_text}' con {len(tools)} fuentes: {', '.join(tool_names)}",
+            kind="tool_call", ref=citation_text,
+        )
         tool_results = await self.dispatcher.execute_all(parsed, tools)
 
         # 4. EVIDENCE ACCUMULATOR
@@ -131,6 +154,16 @@ class VerificationAgent:
             verdict.discovered_by = best_hit.discovered_by
             verdict.snippet = best_hit.snippet
             verdict.query_used = best_hit.query_used
+            # M18.d: narration sobre cómo se descubrió
+            origen_label = {
+                "brave_search": "Brave Search (gov.co)",
+                "internal_db": "BD interna",
+                "smart_search": "índice + Brave",
+            }.get(best_hit.discovered_by, best_hit.discovered_by or "tool")
+            self._thought(
+                f"  ✓ Encontrado vía {origen_label} (confianza {best_hit.confidence:.2f})",
+                kind="tool_result", ref=citation_text, url=best_hit.fuente_url,
+            )
 
         # 5. M17 GUARANTEE FUENTE_URL + HEAD CASCADE
         # Estrategia: para cada cita verificada, probar TODOS los candidatos
@@ -209,6 +242,19 @@ class VerificationAgent:
                 # M18.c: propagar suggested_correction + legal_note al verdict
                 verdict.suggested_correction = judge_out.suggested_correction
                 verdict.legal_note = judge_out.legal_note
+
+                # M18.d: narration de hallazgos del Judge
+                if judge_out.suggested_correction:
+                    self._thought(
+                        f"  💡 Sugerencia legal: '{citation_text}' parece incorrecta. ¿Quizás '{judge_out.suggested_correction}'?",
+                        kind="correction", ref=citation_text,
+                        suggestion=judge_out.suggested_correction,
+                    )
+                if judge_out.legal_note:
+                    self._thought(
+                        f"  ⚖ Nota legal: {judge_out.legal_note}",
+                        kind="warning", ref=citation_text,
+                    )
 
                 if judge_out.action == "reject":
                     # Judge rechaza el verdict → marcar como no encontrada

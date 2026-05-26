@@ -19,6 +19,7 @@ from lex.verify.tools.fetch_senado_suin import FetchSenadoSuin
 from lex.verify.tools.lookup_articulo_chunks import LookupArticuloChunks
 from lex.verify.tools.check_derogation import CheckDerogation
 from lex.verify.tools.smart_search import SmartSearchTool
+from lex.verify.tools.legal_data_hunter import LegalDataHunterTool
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class ToolDispatcher:
         """
         if parsed.kind == "jurisprudencia":
             tools = [
+                self._get_tool(LegalDataHunterTool),  # M19.4: catálogo interno (BD jurisprudencia)
                 self._get_tool(SearchInternalDB),
                 self._get_tool(SmartSearchTool),  # M18: índice + Brave para descubrir URL real
             ]
@@ -69,6 +71,7 @@ class ToolDispatcher:
 
         if parsed.kind in ("ley", "decreto"):
             return [
+                self._get_tool(LegalDataHunterTool),  # M19.4: BD leyes_normas
                 self._get_tool(SearchInternalDB),
                 self._get_tool(SmartSearchTool),  # M18: descubre URL Función Pública/SUIN
                 self._get_tool(FetchSenadoSuin),
@@ -77,6 +80,7 @@ class ToolDispatcher:
 
         if parsed.kind == "codigo_articulo":
             return [
+                self._get_tool(LegalDataHunterTool),  # M19.4: chunks corpus
                 self._get_tool(LookupArticuloChunks),
                 self._get_tool(SmartSearchTool),  # M18: URL real del código
                 self._get_tool(SearchInternalDB),
@@ -84,6 +88,7 @@ class ToolDispatcher:
 
         if parsed.kind == "codigo":
             return [
+                self._get_tool(LegalDataHunterTool),  # M19.4: BD codigos
                 self._get_tool(SearchInternalDB),
                 self._get_tool(SmartSearchTool),  # M18: URL real del código
                 self._get_tool(CheckDerogation),
