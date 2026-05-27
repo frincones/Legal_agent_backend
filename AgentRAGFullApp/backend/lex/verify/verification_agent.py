@@ -356,8 +356,14 @@ class VerificationAgent:
         (ej. "Art. 64 CST" repetido en 5 bloques), solo verifica 1 vez
         y retorna el mismo verdict para todas las apariciones.
 
+        M19.19.B: timeouts duros. Si una cita individual tarda >25s o el batch
+        completo >90s, las pendientes se marcan como verdict "timeout" en lugar
+        de colgar todo el orchestrator. Cada cita tiene logging start/end.
+
         citations: list de dicts con keys {ref, type, block_id?}
         """
+        import time as _time
+
         # 1) Identificar citas únicas
         seen: dict[tuple[str, str], int] = {}    # (ref, type) → idx único
         unique_to_verify: list[dict] = []
@@ -371,13 +377,65 @@ class VerificationAgent:
                 unique_to_verify.append(cit)
             index_map.append(seen[key])
 
-        # 2) Verificar SOLO las únicas en paralelo
-        async def _one(cit):
-            return await self.verify(
+        # 2) Verificar SOLO las únicas en paralelo, CON TIMEOUTS
+        PER_CITATION_TIMEOUT_S = 25.0
+        BATCH_TIMEOUT_S = 90.0
+
+        def _timeout_verdict(cit: dict, reason: str = "timeout") -> VerificationVerdict:
+            return VerificationVerdict(
                 citation_text=cit.get("ref", ""),
                 citation_type=cit.get("type", "norma"),
+                estado="sospechosa",
+                verified=False,
+                confidence=0.0,
+                method=f"verify_{reason}",
+                duration_ms=int(PER_CITATION_TIMEOUT_S * 1000),
+                judge_rationale=f"Verifier no respondió en {PER_CITATION_TIMEOUT_S}s — cita marcada para revisión manual",
             )
-        unique_verdicts = await asyncio.gather(*[_one(c) for c in unique_to_verify])
+
+        async def _one(cit):
+            ref = cit.get("ref", "")
+            ctype = cit.get("type", "norma")
+            t0 = _time.monotonic()
+            logger.info("verify_batch start ref=%r type=%s", ref[:80], ctype)
+            try:
+                v = await asyncio.wait_for(
+                    self.verify(citation_text=ref, citation_type=ctype),
+                    timeout=PER_CITATION_TIMEOUT_S,
+                )
+                dt = (_time.monotonic() - t0) * 1000
+                logger.info(
+                    "verify_batch end   ref=%r verified=%s estado=%s in %.0fms",
+                    ref[:80], v.verified, v.estado, dt,
+                )
+                return v
+            except asyncio.TimeoutError:
+                dt = (_time.monotonic() - t0) * 1000
+                logger.warning(
+                    "verify_batch TIMEOUT ref=%r after %.0fms — fallback verdict",
+                    ref[:80], dt,
+                )
+                return _timeout_verdict(cit, "individual_timeout")
+            except Exception as e:
+                dt = (_time.monotonic() - t0) * 1000
+                logger.warning(
+                    "verify_batch FAILED ref=%r in %.0fms: %s",
+                    ref[:80], dt, e,
+                )
+                return _timeout_verdict(cit, "exception")
+
+        try:
+            unique_verdicts = await asyncio.wait_for(
+                asyncio.gather(*[_one(c) for c in unique_to_verify]),
+                timeout=BATCH_TIMEOUT_S,
+            )
+        except asyncio.TimeoutError:
+            logger.error(
+                "verify_batch BATCH TIMEOUT after %.0fs — %d citas marcadas sospechosas",
+                BATCH_TIMEOUT_S, len(unique_to_verify),
+            )
+            # Fallback global: TODAS las citas únicas como timeout (el orchestrator continúa)
+            unique_verdicts = [_timeout_verdict(c, "batch_timeout") for c in unique_to_verify]
 
         # 3) Reconstruir lista completa reusando verdicts (dedup ratio log)
         if len(citations) > len(unique_to_verify):

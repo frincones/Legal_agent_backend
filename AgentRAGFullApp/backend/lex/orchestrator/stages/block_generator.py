@@ -73,7 +73,7 @@ TIPOS DISPONIBLES:
   "table":           {"header": [...], "rows": [[...]], "has_total_row": true|false},
   "calc_step":       {"label": "...", "formula": "...", "aplicacion": "...", "total": "..."},
   "list_item":       {"kind": "anexo|documental|testimonial|pericial|generic", "num": "1", "runs": [...]},
-  "juramento":       {"text": "...", "norma_ref": "Art. 28 CPTSS"},
+  "juramento":       {"text": "...", "norma_ref": "Art. 206 CGP" /* ver tabla por doc_type abajo */},
   "firma":           {"ciudad_fecha": "...", "nombre": "...", "tp": "...", "cc": "...", "email": "...", "telefono": "..."},
   "blank":           {}
 }
@@ -196,6 +196,26 @@ REGLA — ENCABEZADO FORENSE (sección key="encabezado"):
         {"text": "[NOMBRE_DEMANDADA]", "bold": true},
         {"text": ", con base en los siguientes hechos, pretensiones y fundamentos.", "bold": false}
       ]}
+
+REGLA — JURAMENTO POR ÁREA DEL DERECHO (M19.19.C, OBLIGATORIO):
+Cada jurisdicción tiene su norma de juramento específica. NUNCA uses la norma
+equivocada (sería un error procesal grave). Mapeo obligatorio:
+
+  doc_type / área                            norma_ref del JuramentoBlock
+  ─────────────────────────────────────────  ─────────────────────────────────────
+  CIVIL ordinaria, contratos, ejecutiva,     "Art. 206 CGP (Ley 1564/2012)"
+    declarativos, pertenencia (usucapión),
+    responsabilidad civil
+  LABORAL ordinaria, ejecutiva laboral       "Art. 28 CPTSS"
+  FAMILIA (divorcio, alimentos, custodia)    "Art. 206 CGP (Ley 1564/2012)"
+  ADMINISTRATIVO (nulidad, restablecimiento) "Art. 167 CPACA (Ley 1437/2011)"
+  PENAL (denuncias, querellas)               "Art. 269 CPP (Ley 906/2004)"
+  TUTELA (acción de tutela)                  NO requiere juramento separado (Art. 86 CN)
+  POPULAR / GRUPO                            "Art. 18 Ley 472/1998"
+
+Antes de emitir el JuramentoBlock, identifica la jurisdicción del documento por
+DOC TYPE del contexto y elige norma_ref de la tabla. Si el doc_type es TUTELA,
+NO emitas juramento (es una protesta solemne implícita en el escrito).
 
 REGLA — FIRMA DE APODERADO (sección key="firma"):
    La firma estándar colombiana incluye fórmula de cierre y bloque de identificación.
@@ -395,7 +415,7 @@ async def generate_section_blocks(
                     ):
                         logger.info("dropping signature-like paragraph in section=%s: %r", section_key, flat[:80])
                         continue
-            block = _materialize_block(rb)
+            block = _materialize_block(rb, doc_type=doc_type)
             if block is not None:
                 yield block
         except Exception as e:
@@ -405,6 +425,54 @@ async def generate_section_blocks(
 
 # M19.15.A.2 — strip defensivo de caracteres de validación del output del LLM
 _VALIDATION_MARKERS = ("✓", "✗", "⚠", "ⓘ", "❌", "✅", "✔", "❎")
+
+
+# M19.19.C — mapa autoritativo doc_type → norma de juramento correcta
+# Usado defensivamente cuando el LLM emite una norma equivocada (típico: "Art. 28
+# CPTSS" pegado en demanda civil porque el system prompt antiguo lo tenía como
+# ejemplo). El mapping cubre los doc_types más comunes en el registry de templates.
+_JURAMENTO_NORMA_BY_DOC_TYPE: dict[str, str] = {
+    # Civil — Art. 206 del Código General del Proceso
+    "demanda_civil_ordinaria": "Art. 206 CGP (Ley 1564/2012)",
+    "demanda_ejecutiva_singular": "Art. 206 CGP (Ley 1564/2012)",
+    "demanda_pertenencia": "Art. 206 CGP (Ley 1564/2012)",
+    "pertenencia": "Art. 206 CGP (Ley 1564/2012)",
+    "demanda_responsabilidad_civil": "Art. 206 CGP (Ley 1564/2012)",
+    "demanda_civil_responsabilidad_extracontractual": "Art. 206 CGP (Ley 1564/2012)",
+    "contrato_compraventa": "Art. 206 CGP (Ley 1564/2012)",
+    "contrato_arrendamiento": "Art. 206 CGP (Ley 1564/2012)",
+    "promesa_compraventa": "Art. 206 CGP (Ley 1564/2012)",
+    # Familia — también CGP
+    "demanda_divorcio": "Art. 206 CGP (Ley 1564/2012)",
+    "demanda_alimentos": "Art. 206 CGP (Ley 1564/2012)",
+    "demanda_custodia": "Art. 206 CGP (Ley 1564/2012)",
+    # Laboral — Art. 28 CPTSS
+    "demanda_laboral_ordinaria": "Art. 28 CPTSS",
+    "demanda_laboral": "Art. 28 CPTSS",
+    "demanda_ejecutiva_laboral": "Art. 28 CPTSS",
+    # Administrativo — Art. 167 CPACA
+    "demanda_nulidad_restablecimiento": "Art. 167 CPACA (Ley 1437/2011)",
+    "demanda_simple_nulidad": "Art. 167 CPACA (Ley 1437/2011)",
+    "demanda_reparacion_directa": "Art. 167 CPACA (Ley 1437/2011)",
+    # Constitucional / acciones — sin juramento separado
+    "tutela": "",  # cadena vacía indica "omitir bloque juramento"
+    "accion_tutela": "",
+    "accion_popular": "Art. 18 Ley 472/1998",
+    "accion_grupo": "Art. 18 Ley 472/1998",
+}
+
+
+def _juramento_norma_for_doc_type(doc_type: str | None) -> str | None:
+    """Devuelve la norma autoritativa de juramento para el doc_type.
+
+    Retorna:
+      - str con norma_ref correcta si el doc_type está mapeado.
+      - "" (string vacío) si el doc_type no requiere juramento (tutela).
+      - None si el doc_type es desconocido (mantener lo que dijo el LLM).
+    """
+    if not doc_type:
+        return None
+    return _JURAMENTO_NORMA_BY_DOC_TYPE.get(doc_type.lower().strip())
 
 
 def _strip_validation_markers(text: str) -> str:
@@ -465,8 +533,12 @@ def _clean_cc(val: Any) -> str | None:
     return s or None
 
 
-def _materialize_block(raw: dict) -> Block | None:
-    """Convierte dict crudo del LLM a un Block Pydantic. Defensive parsing."""
+def _materialize_block(raw: dict, doc_type: str | None = None) -> Block | None:
+    """Convierte dict crudo del LLM a un Block Pydantic. Defensive parsing.
+
+    M19.19.C: corrige defensivamente el `norma_ref` del juramento según
+    `doc_type` (un LLM despistado puede emitir Art. 28 CPTSS en demanda civil).
+    """
     btype = raw.get("type")
     if not btype:
         return None
@@ -570,7 +642,32 @@ def _materialize_block(raw: dict) -> Block | None:
                 num=str(raw.get("num", "")), runs=_runs(raw.get("runs", [])),
             )
         if btype == "juramento":
-            return JuramentoBlock(block_id=bid, text=raw.get("text", ""), norma_ref=raw.get("norma_ref"))
+            # M19.19.C — corregir defensivamente norma_ref según doc_type
+            llm_norma = (raw.get("norma_ref") or "").strip()
+            authoritative = _juramento_norma_for_doc_type(doc_type)
+            if authoritative is not None:
+                # doc_type conocido: usar la norma autoritativa
+                if authoritative == "":
+                    # tutela u otro sin juramento → no emitir bloque
+                    logger.info(
+                        "dropping juramento block: doc_type=%r no requiere juramento",
+                        doc_type,
+                    )
+                    return None
+                if llm_norma and llm_norma != authoritative:
+                    logger.info(
+                        "juramento norma_ref corrected: doc_type=%s LLM=%r -> %r",
+                        doc_type, llm_norma[:40], authoritative,
+                    )
+                final_norma = authoritative
+            else:
+                # doc_type desconocido: confiar en el LLM
+                final_norma = llm_norma or None
+            return JuramentoBlock(
+                block_id=bid,
+                text=raw.get("text", ""),
+                norma_ref=final_norma,
+            )
         if btype == "firma":
             # M19.15.A.3/4/5 — sanitización defensiva de campos
             return FirmaBlock(

@@ -178,6 +178,67 @@ class BlocksRepo:
             logger.warning("replace_block_runs failed for %s/%s: %s", document_id, block_id, e)
             return None
 
+    # M19.19.A — insertar un bloque nuevo después de un block_id existente
+    async def insert_block_after(
+        self,
+        document_id: str,
+        after_block_id: str,
+        block_id: str,
+        block_type: str,
+        block_data: dict[str, Any],
+        section_key: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Inserta un bloque nuevo INMEDIATAMENTE después de `after_block_id`.
+
+        Reordena `block_order` de los bloques posteriores (+1) en una sola
+        transacción. Devuelve la fila del bloque insertado, o None si el
+        after_block_id no existe.
+
+        Si `section_key` es None, hereda la sección del bloque ancla.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                async with conn.transaction():
+                    anchor = await conn.fetchrow("""
+                        SELECT generation_id, section_key, block_order
+                        FROM document_blocks
+                        WHERE document_id = $1::uuid AND block_id = $2
+                    """, document_id, after_block_id)
+                    if anchor is None:
+                        return None
+                    target_section = section_key or anchor["section_key"]
+                    target_order = anchor["block_order"] + 1
+                    gen_id = anchor["generation_id"]
+                    # Shift +1 a todos los bloques con block_order >= target_order
+                    await conn.execute("""
+                        UPDATE document_blocks
+                        SET block_order = block_order + 1
+                        WHERE document_id = $1::uuid AND block_order >= $2
+                    """, document_id, target_order)
+                    # Insertar el nuevo bloque
+                    row = await conn.fetchrow("""
+                        INSERT INTO document_blocks
+                            (document_id, generation_id, section_key, block_order,
+                             block_id, block_type, block_data)
+                        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7::jsonb)
+                        RETURNING block_id, section_key, block_order, block_type, block_data
+                    """,
+                        document_id, gen_id, target_section, target_order,
+                        block_id, block_type,
+                        json.dumps(block_data, ensure_ascii=False, default=str),
+                    )
+            return {
+                "block_id": row["block_id"],
+                "section_key": row["section_key"],
+                "block_order": row["block_order"],
+                "block_type": row["block_type"],
+                "block_data": row["block_data"] if isinstance(row["block_data"], dict)
+                              else json.loads(row["block_data"]),
+            }
+        except Exception as e:
+            logger.warning("insert_block_after failed for %s/%s: %s", document_id, after_block_id, e)
+            return None
+
     async def delete_section_blocks(self, document_id: str, section_key: str) -> int:
         """Borra todos los bloques de una sección (para regenerar)."""
         try:

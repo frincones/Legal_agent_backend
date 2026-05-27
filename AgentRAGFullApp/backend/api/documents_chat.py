@@ -100,7 +100,14 @@ Tu tarea es:
         "anchor_after": "3-6 palabras inmediatamente después"},
       {"kind": "update_block", "block_id": "<id>", "new_runs": [{"text": "...", "bold": false}]},
       {"kind": "regenerate_section", "section_key": "hechos|pretensiones|..."},
-      {"kind": "add_block_after", "after_block_id": "<id>", "block": {...}},
+      {"kind": "add_block_after",
+        "after_block_id": "<id existente del bloque después del cual insertar>",
+        "block": {
+          "type": "paragraph|hecho|pretension|list_item|norma_citada|jurisprudencia|juramento|firma|blank|...",
+          "runs": [{"text": "...", "bold": false}],   // para paragraph/hecho/pretension/list_item
+          "section_key": "<misma sección del anchor o nueva>"
+          // campos específicos según el type
+        }},
       {"kind": "info_only"},
       {"kind": "clarify",
         "question": "Pregunta concreta para el usuario",
@@ -337,9 +344,45 @@ Responde con JSON {{"reply": "...", "actions": [...]}}."""
                         blocks_changed += n
                         applied_actions.append({"kind": "regenerate_section", "section_key": section_key, "deleted": n})
             elif kind == "add_block_after":
-                # Simplificado: solo agregar al final si no encontramos after_block_id
-                # TODO M10: insertar en posición específica
-                applied_actions.append({"kind": "add_block_after", "ok": False, "reason": "pending_m10"})
+                # M19.19.A — implementación real (antes era stub pending_m10)
+                after_bid = act.get("after_block_id") or act.get("block_id")
+                new_block_raw = act.get("block") or {}
+                if not after_bid or not isinstance(new_block_raw, dict):
+                    applied_actions.append({
+                        "kind": "add_block_after", "ok": False,
+                        "reason": "missing_after_block_id_or_block",
+                    })
+                    continue
+                btype = new_block_raw.get("type") or "paragraph"
+                # Generar block_id si el LLM no lo dio
+                import uuid as _uuid_addb
+                new_bid = new_block_raw.get("block_id") or f"blk_{_uuid_addb.uuid4().hex[:10]}"
+                # Sanitizar block_data: quitar campos top-level que NO van en block_data
+                bd = {k: v for k, v in new_block_raw.items() if k not in ("block_id",)}
+                bd.setdefault("type", btype)
+                inserted = await repo.insert_block_after(
+                    document_id=document_id,
+                    after_block_id=after_bid,
+                    block_id=new_bid,
+                    block_type=btype,
+                    block_data=bd,
+                    section_key=new_block_raw.get("section_key"),
+                )
+                if inserted is None:
+                    applied_actions.append({
+                        "kind": "add_block_after", "ok": False,
+                        "after_block_id": after_bid,
+                        "reason": "anchor_block_not_found_or_db_error",
+                    })
+                else:
+                    blocks_changed += 1
+                    applied_actions.append({
+                        "kind": "add_block_after",
+                        "after_block_id": after_bid,
+                        "new_block_id": inserted["block_id"],
+                        "block_type": inserted["block_type"],
+                        "ok": True,
+                    })
             elif kind == "info_only":
                 applied_actions.append({"kind": "info_only"})
             elif kind == "propagate_change":
