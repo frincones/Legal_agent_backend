@@ -923,6 +923,24 @@ class Orchestrator:
         except Exception as e:
             logger.debug("inject verdicts into blocks failed (non-fatal): %s", e)
 
+        # M19.15.A.1 — Dedup de bloques firma: si por error se colaron varias,
+        # conservar solo el ÚLTIMO (que está en la sección key="firma").
+        try:
+            firma_indices = [
+                i for i, b in enumerate(all_blocks)
+                if (b.get("block_type") or b.get("block_data", {}).get("type")) == "firma"
+            ]
+            if len(firma_indices) > 1:
+                keep = firma_indices[-1]
+                drop = set(firma_indices[:-1])
+                all_blocks[:] = [b for i, b in enumerate(all_blocks) if i not in drop]
+                logger.info(
+                    "dedup firma blocks: kept index %d, dropped %d duplicates",
+                    keep, len(drop),
+                )
+        except Exception as e:
+            logger.debug("firma dedup failed (non-fatal): %s", e)
+
         # ===== Persistir bloques en BD (best-effort) =====
         if self.blocks_repo:
             try:

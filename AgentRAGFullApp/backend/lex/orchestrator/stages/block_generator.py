@@ -89,6 +89,45 @@ REGLAS DE CALIDAD (FORMATO FORENSE COLOMBIANO):
 8. Cada sección debe tener 5-12 bloques sustantivos (excepto encabezado/firma)
 9. Usa placeholders entre corchetes: [NOMBRE_DEMANDANTE], [FECHA_INGRESO], etc, si faltan datos
 
+REGLAS ESTRICTAS — PROHIBICIONES ABSOLUTAS (M19.15):
+
+A. PROHIBIDO — Caracteres de validación dentro del documento.
+   NUNCA emitas ✓, ✗, ⚠, ⓘ, ❌, ✅ ni "verified" / "verificada" en ningún texto de un bloque.
+   El estado de verificación es METADATA INTERNA del sistema, NO va al documento final.
+   ✗ MAL: {"text": "· Art. 239 CST ✓"}
+   ✗ MAL: {"text": "Ley 1010/2006 ✓ verificada"}
+   ✓ BIEN: {"text": "Art. 239 CST"} (sin marcas)
+
+B. PROHIBIDO — Firma fuera de la sección "firma".
+   El bloque "firma" y los paragraphs "Del Señor Juez," / "Atentamente,"
+   SOLO pueden aparecer en la sección con section_key="firma" (la ÚLTIMA).
+   En cualquier otra sección (encabezado, partes, hechos, pretensiones, fundamentos,
+   liquidacion, pruebas, anexos, notificaciones, etc.), está PROHIBIDO emitir bloques
+   "firma" o paragraphs que contengan "Atentamente", "T.P. del C.S.J.", "_______" (raya
+   de firma), o el nombre del apoderado como firma.
+   Si la sección que se te pide NO es "firma", terminas tu output ANTES de la firma.
+
+C. PROHIBIDO — Cross-section bleeding.
+   La sección que se te pide se identifica con SECCIÓN: N. TÍTULO (key=...) y por la
+   INSTRUCCIÓN ESPECÍFICA. Genera ÚNICAMENTE contenido propio de esa sección.
+   Si te piden "notificaciones", emite SOLO direcciones para notificar a las partes.
+   NUNCA repitas hechos, pretensiones, fundamentos ni liquidación en otra sección.
+   Si te piden "pruebas", NO emitas anexos. Si te piden "anexos", NO emitas pruebas.
+
+D. PROHIBIDO — Subsection con numeración fuera de la sección actual.
+   Si la sección actual tiene roman "VIII", las subsections deben numerarse "8.1",
+   "8.2", "8.3"... NUNCA reuses "1.1" o "2.1" en secciones distintas a I o II.
+   Mapeo: I→1.x, II→2.x, III→3.x, IV→4.x, V→5.x, VI→6.x, VII→7.x, VIII→8.x, IX→9.x.
+
+E. PROHIBIDO — M.P. inventado o "N/A".
+   Si NO conoces el Magistrado Ponente de una sentencia con certeza, OMITE el campo "mp"
+   o NO emitas el bloque "jurisprudencia". NUNCA pongas "N/A", "Desconocido", "(sin datos)"
+   ni inventes un nombre.
+
+F. PROHIBIDO — Repetir info en bullets con normas ya citadas como bloques.
+   Si emites un bloque "norma_citada" para Art. 239 CST, NO emitas adicionalmente
+   un paragraph con "· Art. 239 CST" o "- Art. 239 CST". La cita ya está representada.
+
 REGLA — HECHOS CON BOLD LEAD-IN (OBLIGATORIO):
    Cada "hecho" DEBE iniciar con una frase corta en BOLD (etiqueta temática)
    seguida de un punto y luego el desarrollo del hecho en texto normal.
@@ -159,15 +198,31 @@ REGLA — ENCABEZADO FORENSE (sección key="encabezado"):
       ]}
 
 REGLA — FIRMA DE APODERADO (sección key="firma"):
-   La firma estándar colombiana incluye fórmula de cierre y bloque de identificación:
+   La firma estándar colombiana incluye fórmula de cierre y bloque de identificación.
+   Esta sección debe contener EXACTAMENTE estos bloques (en este orden) y nada más:
    ✓ {"type": "paragraph", "align": "justify", "runs": [{"text": "Del Señor Juez,"}]}
    ✓ {"type": "blank"}
    ✓ {"type": "firma",
-        "ciudad_fecha": "Bogotá D.C., [FECHA]",
+        "ciudad_fecha": "",
         "nombre": "[NOMBRE_APODERADO]",
-        "tp": "__________ del C.S.J.",
-        "cc": "__________ de _________",
-        "email": "[email]", "telefono": "[telefono]"}
+        "tp": "245.678",
+        "cc": "52.345.678",
+        "email": "[email_apoderado]",
+        "telefono": "[telefono_apoderado]"}
+
+   FORMATO ESTRICTO DE CAMPOS DE FIRMA:
+   - "ciudad_fecha": dejar string VACÍO "" — el sistema rellena con ciudad y fecha actual.
+     NO pongas "Bogotá D.C., [FECHA_INGRESO]" ni "[CIUDAD], [FECHA]" — solo "".
+   - "tp": SOLO el número de tarjeta profesional (ej: "245.678"). NO incluyas "T.P. No.",
+     "del C.S.J.", "T.P. ", ni puntos al inicio. El sistema añade los prefijos y sufijos.
+     ✗ MAL: "tp": "T.P. 245.678 del C.S.J."
+     ✓ BIEN: "tp": "245.678"
+   - "cc": SOLO el número de cédula del APODERADO (NO del demandante). NO incluyas
+     "C.C. No.", "de Bogotá", etc. Solo el número con separadores de miles.
+     ✗ MAL: "cc": "[NOMBRE_DEMANDANTE]"
+     ✗ MAL: "cc": "C.C. No. 52.345.678 de Bogotá"
+     ✓ BIEN: "cc": "52.345.678"
+   - "email" y "telefono": valores directos sin etiquetas ni "Email:" / "Tel.:".
 
 REGLA CRÍTICA — NORMAS COMO BLOQUE TIPADO (OBLIGATORIO):
    ✗ MAL: {"type": "paragraph", "runs": [{"text": "Conforme al artículo 64 del CST, se debe..."}]}
@@ -322,6 +377,24 @@ async def generate_section_blocks(
 
     for rb in raw_blocks:
         try:
+            # M19.15.A.1 — no aceptar firma ni "Atentamente"/"Del Señor Juez" fuera de sección "firma"
+            if section_key != "firma":
+                bt = rb.get("type")
+                if bt == "firma":
+                    logger.info("dropping out-of-place firma block in section=%s", section_key)
+                    continue
+                if bt == "paragraph":
+                    runs = rb.get("runs") or []
+                    flat = " ".join(r.get("text", "") if isinstance(r, dict) else str(r) for r in runs).strip()
+                    lower = flat.lower()
+                    if (
+                        "atentamente" in lower
+                        or "del señor juez" in lower
+                        or "_________________" in flat
+                        or "t.p. del c.s.j" in lower
+                    ):
+                        logger.info("dropping signature-like paragraph in section=%s: %r", section_key, flat[:80])
+                        continue
             block = _materialize_block(rb)
             if block is not None:
                 yield block
@@ -330,20 +403,84 @@ async def generate_section_blocks(
             continue
 
 
+# M19.15.A.2 — strip defensivo de caracteres de validación del output del LLM
+_VALIDATION_MARKERS = ("✓", "✗", "⚠", "ⓘ", "❌", "✅", "✔", "❎")
+
+
+def _strip_validation_markers(text: str) -> str:
+    """Quita marcadores de validación (✓, ✗, etc.) y los espacios sobrantes."""
+    if not text:
+        return text
+    s = text
+    for m in _VALIDATION_MARKERS:
+        s = s.replace(m, "")
+    # limpiar "  " y espacios al final de líneas
+    s = " ".join(s.split())
+    return s
+
+
+_PLACEHOLDER_RX = __import__("re").compile(r"\[[A-Z_][A-Z_0-9 ]*\]")
+
+
+def _clean_ciudad_fecha(val: Any) -> str:
+    """M19.15.A.4 — si trae placeholders o vacío, devolver string vacío para que
+    el builder lo rellene con ciudad por defecto + fecha actual."""
+    s = (str(val or "")).strip()
+    if not s or _PLACEHOLDER_RX.search(s):
+        return ""
+    return s
+
+
+def _clean_tp(val: Any) -> str:
+    """M19.15.A.3 — extraer SOLO el número de TP. El builder añade el prefix/suffix."""
+    s = (str(val or "")).strip()
+    if not s:
+        return ""
+    # Quitar prefijos y sufijos típicos que el LLM mete por error
+    import re
+    s = re.sub(r"(?i)\bt\.?p\.?\s*(no\.?|n[º°]\.?)?\s*", "", s)
+    s = re.sub(r"(?i)\s*del\s+c\.?\s*s\.?\s*j\.?\s*$", "", s)
+    s = s.strip()
+    # Si quedó vacío o solo un placeholder, dejar placeholder estándar
+    if not s or _PLACEHOLDER_RX.search(s):
+        return ""
+    return s
+
+
+def _clean_cc(val: Any) -> str | None:
+    """M19.15.A.5 — extraer SOLO el número de C.C. del APODERADO.
+    Rechaza placeholders tipo [NOMBRE_DEMANDANTE] que el LLM mete por error."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    if not s:
+        return None
+    # Si el LLM puso un placeholder de nombre/demandante en lugar de cédula → drop
+    if _PLACEHOLDER_RX.search(s):
+        return None
+    import re
+    s = re.sub(r"(?i)\bc\.?\s*c\.?\s*(no\.?|n[º°]\.?)?\s*", "", s)
+    s = re.sub(r"(?i)\s*de\s+[a-záéíóú\s]+\s*$", "", s)
+    s = s.strip()
+    return s or None
+
+
 def _materialize_block(raw: dict) -> Block | None:
     """Convierte dict crudo del LLM a un Block Pydantic. Defensive parsing."""
     btype = raw.get("type")
     if not btype:
         return None
 
-    # Helper para runs
+    # Helper para runs (con strip de marcadores de validación — M19.15.A.2)
     def _runs(field_val: Any) -> list[Run]:
         if isinstance(field_val, str):
-            return [Run(text=field_val)]
+            return [Run(text=_strip_validation_markers(field_val))]
         if isinstance(field_val, list):
             return [
                 Run(
-                    text=r.get("text", "") if isinstance(r, dict) else str(r),
+                    text=_strip_validation_markers(
+                        r.get("text", "") if isinstance(r, dict) else str(r)
+                    ),
                     bold=bool(r.get("bold", False)) if isinstance(r, dict) else False,
                     italic=bool(r.get("italic", False)) if isinstance(r, dict) else False,
                     underline=bool(r.get("underline", False)) if isinstance(r, dict) else False,
@@ -384,8 +521,13 @@ def _materialize_block(raw: dict) -> Block | None:
                 fuente_ref=raw.get("fuente_ref"),
             )
         if btype == "jurisprudencia":
+            # M19.15.A.8 — descartar si M.P. es "N/A" / vacío / desconocido
+            mp_raw = (raw.get("mp") or "").strip()
+            if mp_raw.lower() in ("", "n/a", "na", "desconocido", "sin datos", "(sin datos)", "?"):
+                logger.info("dropping jurisprudencia without valid M.P.: id=%s", raw.get("id"))
+                return None
             return JurisprudenciaBlock(
-                block_id=bid, id=raw.get("id", ""), mp=raw.get("mp", ""),
+                block_id=bid, id=raw.get("id", ""), mp=mp_raw,
                 corte=raw.get("corte", ""), fecha=raw.get("fecha"),
                 ratio=_runs(raw.get("ratio", [])),
                 chunk_id=raw.get("chunk_id"), verified=bool(raw.get("verified", False)),
@@ -420,12 +562,14 @@ def _materialize_block(raw: dict) -> Block | None:
         if btype == "juramento":
             return JuramentoBlock(block_id=bid, text=raw.get("text", ""), norma_ref=raw.get("norma_ref"))
         if btype == "firma":
+            # M19.15.A.3/4/5 — sanitización defensiva de campos
             return FirmaBlock(
                 block_id=bid,
-                ciudad_fecha=raw.get("ciudad_fecha", ""),
-                nombre=raw.get("nombre", "[NOMBRE_APODERADO]"),
-                tp=raw.get("tp", "[TP_APODERADO]"),
-                cc=raw.get("cc"), email=raw.get("email"), telefono=raw.get("telefono"),
+                ciudad_fecha=_clean_ciudad_fecha(raw.get("ciudad_fecha", "")),
+                nombre=(raw.get("nombre") or "[NOMBRE_APODERADO]").strip(),
+                tp=_clean_tp(raw.get("tp", "")),
+                cc=_clean_cc(raw.get("cc")),
+                email=raw.get("email"), telefono=raw.get("telefono"),
             )
         if btype == "blank":
             return BlankBlock(block_id=bid)

@@ -663,12 +663,22 @@ def _render_block(doc, btype: str, bd: dict[str, Any], derog_lookup: dict[str, s
         return
 
     if btype == "firma":
+        # M19.15.A.4 — auto-rellenar ciudad_fecha si llega vacío o con placeholder
+        ciudad_fecha = (bd.get("ciudad_fecha") or "").strip()
+        import re as _re
+        if not ciudad_fecha or _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", ciudad_fecha):
+            from datetime import datetime
+            meses = ("enero","febrero","marzo","abril","mayo","junio","julio",
+                     "agosto","septiembre","octubre","noviembre","diciembre")
+            hoy = datetime.now()
+            ciudad_fecha = f"Bogotá D.C., {hoy.day} de {meses[hoy.month-1]} de {hoy.year}"
+
         doc.add_paragraph("")
         doc.add_paragraph("")
         p1 = doc.add_paragraph()
         p1.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p1.paragraph_format.first_line_indent = Cm(0)
-        r = p1.add_run(bd.get("ciudad_fecha", ""))
+        r = p1.add_run(ciudad_fecha)
         r.italic = True
 
         doc.add_paragraph("")
@@ -681,19 +691,31 @@ def _render_block(doc, btype: str, bd: dict[str, Any], derog_lookup: dict[str, s
         r2 = p2.add_run(bd.get("nombre", ""))
         r2.bold = True
 
+        # M19.15.A.3 — sanitizar tp por si llegó con prefijo/sufijo del LLM
+        tp_raw = (bd.get("tp") or "").strip()
+        tp_raw = _re.sub(r"(?i)\bt\.?p\.?\s*(no\.?|n[º°]\.?)?\s*", "", tp_raw)
+        tp_raw = _re.sub(r"(?i)\s*del\s+c\.?\s*s\.?\s*j\.?\s*$", "", tp_raw).strip()
+        if not tp_raw or _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", tp_raw):
+            tp_raw = "__________"
         p3 = doc.add_paragraph()
         p3.paragraph_format.first_line_indent = Cm(0)
-        p3.add_run(f"Abogado · T.P. No. {bd.get('tp', '')} del C.S.J.")
+        p3.add_run(f"Abogada(o) · T.P. No. {tp_raw} del C.S.J.")
 
-        if bd.get("cc"):
-            p4 = doc.add_paragraph()
-            p4.paragraph_format.first_line_indent = Cm(0)
-            p4.add_run(f"C.C. No. {bd.get('cc')}")
+        # M19.15.A.5 — solo mostrar C.C. si es un número plausible (no nombre/placeholder)
+        cc_raw = (bd.get("cc") or "").strip()
+        if cc_raw and not _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", cc_raw):
+            cc_clean = _re.sub(r"(?i)\bc\.?\s*c\.?\s*(no\.?|n[º°]\.?)?\s*", "", cc_raw).strip()
+            if cc_clean:
+                p4 = doc.add_paragraph()
+                p4.paragraph_format.first_line_indent = Cm(0)
+                p4.add_run(f"C.C. No. {cc_clean}")
         contact = []
-        if bd.get("email"):
-            contact.append(f"Email: {bd['email']}")
-        if bd.get("telefono"):
-            contact.append(f"Tel.: {bd['telefono']}")
+        email_raw = (bd.get("email") or "").strip()
+        if email_raw and not _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", email_raw):
+            contact.append(f"Email: {email_raw}")
+        tel_raw = (bd.get("telefono") or "").strip()
+        if tel_raw and not _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", tel_raw):
+            contact.append(f"Tel.: {tel_raw}")
         if contact:
             p5 = doc.add_paragraph()
             p5.paragraph_format.first_line_indent = Cm(0)
