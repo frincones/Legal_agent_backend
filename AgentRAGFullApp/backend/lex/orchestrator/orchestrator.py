@@ -291,6 +291,20 @@ class Orchestrator:
             materia=classification.materia,
             confidence=classification.confidence,
         )
+        # M19.7: narrator post_classification (LLM)
+        try:
+            from lex.verify.narrator_agent import narrate
+            pc = await narrate(self.client, "post_classification", {
+                "doc_type": classification.doc_type,
+                "jurisdiccion": classification.jurisdiccion,
+                "materia": classification.materia,
+                "confidence": round(classification.confidence, 2),
+            })
+            if pc.text:
+                yield _push_thought(pc.text, kind="narration", thread_id=agent_thread_id)
+        except Exception as e:
+            logger.warning("narrator post_classification failed: %s", e)
+
         # Narración intro con LLM (estilo Claude)
         try:
             from lex.verify.narrator_agent import narrate
@@ -338,6 +352,20 @@ class Orchestrator:
             extracted_fields=(extraction.extracted_fields if extraction else {}),
             missing_fields=(extraction.missing_fields if extraction else []),
         )
+        # M19.7: narrator post_extraction
+        try:
+            from lex.verify.narrator_agent import narrate
+            fields_summary = {}
+            if extraction and extraction.extracted_fields:
+                # Solo top 8 fields para no saturar el prompt
+                fields_summary = dict(list(extraction.extracted_fields.items())[:8])
+            pe = await narrate(self.client, "post_extraction", {
+                "extracted_summary": fields_summary or "(datos básicos identificados)",
+            })
+            if pe.text:
+                yield _push_thought(pe.text, kind="narration", thread_id=agent_thread_id)
+        except Exception as e:
+            logger.warning("narrator post_extraction failed: %s", e)
         extracted_data = extraction.extracted_fields if extraction else {}
 
         # ===== STAGE 3: CALCULADORA (Python puro, cero LLM) =====
@@ -387,9 +415,118 @@ class Orchestrator:
                     "total_hits": len(jurisprudencia),
                     "sentencias": sum(1 for h in jurisprudencia if h.get("id")),
                 })
+                # M19.7: narrator post_hunters
+                try:
+                    from lex.verify.narrator_agent import narrate
+                    ph = await narrate(self.client, "post_hunters", {
+                        "hunters_summary": {
+                            "total": len(jurisprudencia),
+                            "ejemplos": [
+                                (h.get("providencia") or h.get("doc_title") or "")[:80]
+                                for h in jurisprudencia[:5]
+                            ],
+                        },
+                    })
+                    if ph.text:
+                        yield _push_thought(ph.text, kind="narration", thread_id=agent_thread_id)
+                except Exception as e:
+                    logger.warning("narrator post_hunters failed: %s", e)
             except Exception as e:
                 logger.warning("hunters stage failed: %s", e)
                 yield sse("hunters_done", {"total_hits": 0, "error": str(e)[:120]})
+
+        # ===== STAGE 6.5: M19.8 SECTION PLANNER (LLM declara citas por sección) =====
+        # Feature flag USE_SECTION_PLAN_LOOP controla si activamos el plan-and-execute.
+        # Si está deshabilitado o falla el LLM, seguimos con el flow tradicional.
+        import os as _os_sp
+        USE_SECTION_PLAN = _os_sp.getenv("USE_SECTION_PLAN_LOOP", "true").lower() in ("true", "1", "yes")
+        section_plan_obj: dict[str, list[dict]] = {}  # {section_key: [{ref,type,relevance,purpose}]}
+        section_verdicts: dict[str, list[dict]] = {}   # {section_key: [verdict dicts pre-verificados]}
+
+        if USE_SECTION_PLAN and self.client is not None:
+            try:
+                from lex.orchestrator.stages.section_planner import plan_sections
+                _plan_id = uuid.uuid4().hex[:12]
+                yield _push_thought(
+                    "Planificando qué citas legales requiere cada sección del documento...",
+                    kind="tool_call", tool="section_planner", tool_id=_plan_id,
+                    tool_request={"doc_type": classification.doc_type, "n_sections": len(plan)},
+                    thread_id=agent_thread_id,
+                )
+                sp = await plan_sections(
+                    client=self.client,
+                    intent=req.intent,
+                    brief=req.user_brief or "",
+                    doc_type=classification.doc_type,
+                    sections_plan=plan,
+                    hunters_results=jurisprudencia or [],
+                )
+                if sp.by_section and not sp.error:
+                    section_plan_obj = {
+                        k: [c.to_dict() for c in v]
+                        for k, v in sp.by_section.items()
+                    }
+                yield _push_thought(
+                    f"Plan declarado: {sp.total_citations()} citas distribuidas en {len(sp.by_section)} secciones",
+                    kind="tool_call", tool="section_planner", tool_id=_plan_id,
+                    tool_response=sp.to_summary_dict(),
+                    tool_duration_ms=sp.duration_ms,
+                    thread_id=agent_thread_id,
+                )
+
+                # Narración del plan
+                if sp.by_section:
+                    plan_lines = []
+                    for sec_key, cits in sp.by_section.items():
+                        if not cits:
+                            continue
+                        sec_title = next((s["title"] for s in plan if s["key"] == sec_key), sec_key)
+                        top_refs = [c.ref for c in cits[:3]]
+                        plan_lines.append(f"- **{sec_title}**: {', '.join(top_refs)}" + (" …" if len(cits) > 3 else ""))
+                    if plan_lines:
+                        plan_msg = "**Plan de citas por sección:**\n\n" + "\n".join(plan_lines)
+                        yield _push_thought(plan_msg, kind="narration", thread_id=agent_thread_id)
+
+                # Pre-verificar TODAS las citas únicas declaradas
+                if USE_AGENT_PREDECLARE := USE_SECTION_PLAN and section_plan_obj:
+                    try:
+                        from lex.verify.verification_agent import VerificationAgent
+                        all_expected_cits: list[dict] = []
+                        seen_refs: set[str] = set()
+                        for sec_key, cits in section_plan_obj.items():
+                            for c in cits:
+                                k = (c["ref"], c["type"])
+                                if k not in seen_refs:
+                                    seen_refs.add(k)
+                                    all_expected_cits.append({"ref": c["ref"], "type": c["type"]})
+                        if all_expected_cits:
+                            pre_thought_buffer: list[dict] = []
+                            def _capture_pre(message: str, kind: str = "info", **extra):
+                                extra.setdefault("thread_id", agent_thread_id)
+                                pre_thought_buffer.append({"message": message, "kind": kind, **extra})
+                            pre_agent = VerificationAgent(
+                                self.client, self.pool,
+                                firm_id=req.firm_id, user_id=None,
+                                on_thought=_capture_pre,
+                            )
+                            pre_verdicts = await pre_agent.verify_batch(all_expected_cits)
+                            # Flush narrations (tool calls)
+                            for th in pre_thought_buffer:
+                                yield _push_thought(**th)
+                            # Indexar verdicts por ref
+                            verdict_by_ref: dict[str, dict] = {}
+                            for v in pre_verdicts:
+                                verdict_by_ref[v.citation_text] = v.to_audit_dict()
+                            # Distribuir verdicts a cada sección
+                            for sec_key, cits in section_plan_obj.items():
+                                section_verdicts[sec_key] = [
+                                    verdict_by_ref[c["ref"]] for c in cits
+                                    if c["ref"] in verdict_by_ref
+                                ]
+                    except Exception as e:
+                        logger.warning("section_plan pre-verify failed: %s", e)
+            except Exception as e:
+                logger.warning("section_planner stage failed: %s", e)
 
         # ===== STAGE 7: BLOCK GENERATOR (por sección, streaming) =====
         all_blocks: list[dict[str, Any]] = []
@@ -430,6 +567,28 @@ class Orchestrator:
 
             yield SSEEvent.section_started(section_key, section_order, len(plan))
 
+            # M19.7: narrator section_intro (LLM corto, anuncia qué va a redactar)
+            try:
+                from lex.verify.narrator_agent import narrate
+                # M19.8: si tenemos section_plan con citas esperadas, las pasamos como contexto
+                citations_for_section = ""
+                if 'section_plan_obj' in locals() and section_plan_obj:
+                    sec_plan = section_plan_obj.get(section_key)
+                    if sec_plan and sec_plan.get("expected_citations"):
+                        cits = sec_plan["expected_citations"][:4]
+                        citations_for_section = "Citas a integrar: " + ", ".join(
+                            [c.get("ref", "?") for c in cits]
+                        )
+                si = await narrate(self.client, "section_intro", {
+                    "section_title": section_title,
+                    "section_key": section_key,
+                    "citations_summary": citations_for_section or "(sin citas específicas)",
+                })
+                if si.text:
+                    yield _push_thought(si.text, kind="narration", thread_id=agent_thread_id)
+            except Exception:
+                pass
+
             # Emitir SectionHeadingBlock si tiene romano
             if roman:
                 heading = SectionHeadingBlock(
@@ -449,6 +608,8 @@ class Orchestrator:
 
             # Generar bloques de la sección
             section_content_acc: list[str] = []
+            # M19.8: citas pre-verificadas para esta sección (si hay plan)
+            section_verified_cits = section_verdicts.get(section_key, [])
             try:
                 async for block in generate_section_blocks(
                     client=self.client,
@@ -464,6 +625,7 @@ class Orchestrator:
                     jurisprudencia=jurisprudencia,
                     section_instruction=extra_instr,
                     expected_blocks=expected_blocks,
+                    verified_citations=section_verified_cits,  # M19.8
                 ):
                     block_order += 1
                     payload = {
@@ -482,12 +644,13 @@ class Orchestrator:
                     if text_repr:
                         section_content_acc.append(text_repr)
 
-                    # Recolectar citas
+                    # Recolectar citas (M19.8: con section_key para summary)
                     if block.type == "norma_citada":
                         citations_collected.append({
                             "type": "norma",
                             "ref": block.norma,
                             "block_id": block.block_id,
+                            "section_key": section_key,
                             "verified": block.verified,
                             "derogada": block.derogada,
                         })
@@ -498,6 +661,7 @@ class Orchestrator:
                             "mp": block.mp,
                             "corte": block.corte,
                             "block_id": block.block_id,
+                            "section_key": section_key,
                             "verified": block.verified,
                         })
 
@@ -506,6 +670,24 @@ class Orchestrator:
                 yield SSEEvent.error(f"block_generator:{section_key}", str(e))
 
             yield SSEEvent.section_done(section_key)
+
+            # M19.7: narrator section_summary (LLM corto, confirma sección lista)
+            try:
+                from lex.verify.narrator_agent import narrate
+                n_blocks_section = sum(1 for b in all_blocks if b.get("section_key") == section_key)
+                n_cit_used = sum(
+                    1 for c in citations_collected
+                    if c.get("section_key") == section_key
+                )
+                ss = await narrate(self.client, "section_summary", {
+                    "section_title": section_title,
+                    "n_blocks": n_blocks_section,
+                    "n_citations_used": n_cit_used,
+                })
+                if ss.text:
+                    yield _push_thought(ss.text, kind="narration", thread_id=agent_thread_id)
+            except Exception:
+                pass
 
             if section_content_acc:
                 previous_sections_summary += f"\n[{section_title}]: " + " ".join(section_content_acc)[:600]
@@ -690,6 +872,15 @@ class Orchestrator:
             yield SSEEvent.polish_started(model="gpt-4o", draft_chars=sum(
                 len(str(b.get("block_data", {}))) for b in all_blocks
             ))
+            # M19.7: narrator polish_intro
+            try:
+                from lex.verify.narrator_agent import narrate
+                pi = await narrate(self.client, "polish_intro", {})
+                if pi.text:
+                    yield _push_thought(pi.text, kind="narration", thread_id=agent_thread_id)
+            except Exception:
+                pass
+
             polish_info = await run_polish(self.client, all_blocks, classification.doc_type)
             yield SSEEvent.polish_done(
                 polished_chars=polish_info.get("delta_chars", 0),
@@ -709,6 +900,19 @@ class Orchestrator:
                 score=qa_result.get("score", 7.5),
                 issues=qa_result.get("issues", []),
             )
+            # M19.7: narrator qa_summary
+            try:
+                from lex.verify.narrator_agent import narrate
+                qs = await narrate(self.client, "qa_summary", {
+                    "score": round(qa_result.get("score", 0.0), 2),
+                    "passed": qa_result.get("passed", True),
+                    "n_issues": len(qa_result.get("issues", []) or []),
+                    "issues_list": (qa_result.get("issues") or [])[:5],
+                })
+                if qs.text:
+                    yield _push_thought(qs.text, kind="narration", thread_id=agent_thread_id)
+            except Exception:
+                pass
         except Exception as e:
             logger.warning("qa stage exception: %s", e)
 
@@ -778,6 +982,48 @@ class Orchestrator:
                 logger.warning("audit insert failed: %s", e)
 
         yield SSEEvent.audit_report(audit_payload)
+
+        # M19.7: presented_file event con metadata DOCX (URL al export endpoint)
+        try:
+            docx_filename = f"{classification.doc_type}_{document_id[:8]}.docx"
+            # URL relativa al export endpoint (frontend resuelve absoluto)
+            docx_url = f"/api/documents/v2/documents/{document_id}/export-forensic"
+            # M19.7 future: generar preview PNG con docx2pdf + pdf2image
+            # Por ahora sin thumbnail (PresentedFileChip muestra icono DOCX genérico)
+            yield SSEEvent.presented_file(
+                name=docx_filename,
+                url=docx_url,
+                size_kb=None,  # se calcula on-demand
+                preview_b64=None,
+                thread_id=agent_thread_id,
+            )
+        except Exception as e:
+            logger.debug("presented_file emit failed (non-fatal): %s", e)
+
+        # M19.7: narrator synthesis (estilo Claude "5 correcciones importantes")
+        try:
+            from lex.verify.narrator_agent import narrate
+            n_verified = sum(1 for v in verification_results if v.get("verified"))
+            n_corrections = sum(1 for v in verification_results if v.get("suggested_correction"))
+            corrections_applied = [
+                {"original": v.get("ref"), "sugerida": v.get("suggested_correction")}
+                for v in verification_results if v.get("suggested_correction")
+            ][:8]
+            syn = await narrate(self.client, "synthesis", {
+                "result_summary": {
+                    "doc_type": classification.doc_type,
+                    "total_blocks": len(all_blocks),
+                    "verified": n_verified,
+                    "total_citations": len(verification_results),
+                    "corrections": n_corrections,
+                    "duration_seconds": duration_seconds,
+                },
+                "corrections_applied": corrections_applied or "(ninguna)",
+            })
+            if syn.text:
+                yield _push_thought(syn.text, kind="narration", thread_id=agent_thread_id)
+        except Exception as e:
+            logger.warning("narrator synthesis failed: %s", e)
 
         # M19.5: persistir thread del agente en chat_messages
         if self.pool is not None:

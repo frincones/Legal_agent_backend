@@ -47,6 +47,8 @@ EventName = Literal[
     "error",
     # M18.d: Agent thought stream — narración en vivo estilo Claude
     "agent_thought",
+    # M19.7: archivo final presentado (DOCX/PDF) con preview
+    "presented_file",
 ]
 
 
@@ -192,6 +194,28 @@ class SSEEvent:
     @staticmethod
     def error(stage: str, message: str) -> bytes:
         return sse("error", {"stage": stage, "message": message})
+
+    @staticmethod
+    def presented_file(
+        name: str,
+        url: str | None = None,
+        size_kb: int | None = None,
+        mime: str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        preview_b64: str | None = None,
+        thread_id: str | None = None,
+    ) -> bytes:
+        """M19.7: presenta un archivo generado (DOCX) con preview opcional.
+
+        El frontend renderiza como PresentedFileChip dentro del thread del agente.
+        """
+        return sse("presented_file", {
+            "name": name,
+            "url": url,
+            "size_kb": size_kb,
+            "mime": mime,
+            "preview_b64": preview_b64,
+            "thread_id": thread_id,
+        })
 
     @staticmethod
     def agent_thought(

@@ -153,8 +153,14 @@ async def generate_section_blocks(
     jurisprudencia: list[dict] | None = None,
     section_instruction: str = "",
     expected_blocks: list[str] | None = None,
+    verified_citations: list[dict] | None = None,  # M19.8: citas pre-verificadas
 ) -> AsyncIterator[Block]:
-    """Genera bloques tipados para una sección. Yield Block uno por uno."""
+    """Genera bloques tipados para una sección. Yield Block uno por uno.
+
+    M19.8: `verified_citations` permite pasar citas ya verificadas por el
+    VerificationAgent (con fuente_url, vigencia, correcciones del Judge)
+    para que el LLM las use literalmente sin "inventar" o citar mal.
+    """
     model = _model_for_section(section_key)
 
     # Construir contexto enriquecido
@@ -171,6 +177,27 @@ async def generate_section_blocks(
         ctx_parts.append(f"BLOQUES PRIORITARIOS A USAR: {', '.join(expected_blocks)}")
     if calculations:
         ctx_parts.append(f"CÁLCULOS DETERMINÍSTICOS:\n{json.dumps(calculations, ensure_ascii=False, indent=2)}")
+
+    # M19.8: PRIORIDAD MÁXIMA — citas verificadas inyectadas
+    if verified_citations:
+        ctx_parts.append("\n=== CITAS PRE-VERIFICADAS PARA ESTA SECCIÓN ===")
+        ctx_parts.append("USA EXACTAMENTE ESTAS CITAS (no inventes otras). Si el Judge sugirió corrección, usa la corregida:")
+        for vc in verified_citations[:15]:
+            ref = vc.get("ref", "?")
+            url = vc.get("fuente_url", "")
+            estado = vc.get("estado", "?")
+            sugg = vc.get("suggested_correction")
+            note = vc.get("legal_note")
+            line = f"  - {ref}  [{estado}]"
+            if url:
+                line += f"  → {url}"
+            if sugg:
+                line += f"  ⚠ SUSTITUIR POR: {sugg}"
+            if note:
+                line += f"  ⓘ {note}"
+            ctx_parts.append(line)
+        ctx_parts.append("=== FIN CITAS VERIFICADAS ===\n")
+
     if jurisprudencia:
         ctx_parts.append("JURISPRUDENCIA RELEVANTE (úsala con cita exacta + M.P.):")
         for j in jurisprudencia[:5]:

@@ -68,11 +68,70 @@ Genera un mensaje narrativo (1-2 párrafos) que:
 2. Liste cada finding como bullet, explicando brevemente el problema y la sugerencia (si hay)
 3. Termine indicando que vas a continuar con la verificación de las citas restantes y aplicar las correcciones""",
 
-    "mid_verification": """He completado la verificación de un bloque de citas. Aquí el resumen:
+    "post_classification": """Acabo de clasificar el documento solicitado.
 
-{summary_json}
+Tipo detectado: {doc_type}
+Jurisdicción: {jurisdiccion}
+Materia: {materia}
+Confianza: {confidence}
 
-Genera un párrafo corto (2-3 frases) que mencione cuántas citas verificaste y qué fuentes principales se confirmaron. Termina con una transición a la siguiente fase si la hay.""",
+Genera UN párrafo corto (2 frases máximo) en primera persona explicando qué tipo de documento es y qué implica jurídicamente. Tono natural, no técnico.""",
+
+    "post_extraction": """Extraje los datos clave del caso desde el prompt y brief del usuario:
+
+{extracted_summary}
+
+Genera UN párrafo corto (2-3 frases) que mencione los datos más relevantes identificados (partes, fechas, montos). NO repitas TODOS los datos, solo los importantes. Termina con transición a siguiente fase.""",
+
+    "post_hunters": """Acabo de pre-buscar jurisprudencia y normas relevantes para este caso usando mi corpus interno:
+
+Resultados: {hunters_summary}
+
+Genera UN párrafo corto (2 frases) sobre cuántas fuentes encontré y de qué tipo (Corte Constitucional, CSJ, leyes, etc.). Termina con transición ("Ahora voy a verificar la vigencia...").""",
+
+    "post_derogation": """Verifiqué la vigencia de las normas mencionadas:
+
+Total normas verificadas: {total}
+Vigentes: {vigentes}
+Derogadas/modificadas: {derogadas}
+
+Lista de normas derogadas (si hay):
+{derogadas_list}
+
+Genera UN párrafo (2-3 frases). Si hay derogadas, MENCIONA cuáles fueron derogadas y por qué norma vigente las reemplaza. Si todas vigentes, di "todas las normas están vigentes". Termina con transición.""",
+
+    "section_intro": """Voy a redactar la sección {section_title} del documento ({section_key}).
+
+{citations_summary}
+
+Genera UN párrafo MUY corto (1-2 frases) anunciando que vas a redactar esa sección. Si tienes citas verificadas para esa sección, menciona las MÁS importantes (max 2). NO repitas info redundante.""",
+
+    "section_summary": """Acabo de terminar la sección {section_title} del documento.
+
+Bloques generados: {n_blocks}
+Citas integradas: {n_citations_used}
+
+Genera UN párrafo corto (1 frase) confirmando que la sección está lista. Estilo Claude: "Sección X completa." o "Listo".""",
+
+    "polish_intro": """Voy a hacer una pasada final de redacción para mejorar coherencia, estilo formal y unificar terminología jurídica.
+
+Genera UN párrafo corto (1 frase) anunciando la pasada de polish. Tono natural.""",
+
+    "qa_summary": """Acabo de pasar el documento por una validación de calidad jurídica:
+
+Score: {score}
+Pasó: {passed}
+Issues detectados: {n_issues}
+{issues_list}
+
+Genera UN párrafo corto (1-2 frases) reportando el resultado del QA. Si hay issues, menciónalos brevemente.""",
+
+    "docx_built": """Acabo de generar el archivo DOCX del documento:
+
+Nombre: {filename}
+Tamaño: {size_kb} KB
+
+Genera UN párrafo MUY corto (1 frase) tipo "Documento DOCX listo." o "Generé el archivo Word".""",
 
     "post_verification": """Acabo de terminar la verificación completa de todas las citas:
 
@@ -191,6 +250,17 @@ def _safe_format_context(moment: str, context: dict[str, Any]) -> dict[str, Any]
         "intro": {"intent_preview": "...", "doc_type": "documento_legal",
                   "jurisdiccion": "general", "materia": "general", "n_citations": "varias"},
         "post_preflight": {"findings_json": "[]"},
+        "post_classification": {"doc_type": "documento_legal", "jurisdiccion": "general",
+                                "materia": "general", "confidence": "0.9"},
+        "post_extraction": {"extracted_summary": "(datos basicos)"},
+        "post_hunters": {"hunters_summary": "(corpus consultado)"},
+        "post_derogation": {"total": 0, "vigentes": 0, "derogadas": 0, "derogadas_list": "(ninguna)"},
+        "section_intro": {"section_title": "Sección", "section_key": "section",
+                          "citations_summary": "(sin citas específicas para esta sección)"},
+        "section_summary": {"section_title": "Sección", "n_blocks": 0, "n_citations_used": 0},
+        "polish_intro": {},
+        "qa_summary": {"score": 0.0, "passed": False, "n_issues": 0, "issues_list": "(ninguno)"},
+        "docx_built": {"filename": "documento.docx", "size_kb": 0},
         "mid_verification": {"summary_json": "{}"},
         "post_verification": {
             "total": 0, "verified": 0, "not_found": 0,
@@ -211,17 +281,40 @@ def _fallback_narration(moment: str, context: dict[str, Any]) -> str:
     """Plantillas hardcoded si el LLM falla. Mejor que silencio."""
     if moment == "intro":
         n = context.get("n_citations", "varias")
-        return f"Voy a verificar las {n} referencias normativas y jurisprudenciales mencionadas en tu solicitud antes de redactar el documento. Empezaré por las normas constitucionales y luego pasaré a la jurisprudencia."
+        return f"Voy a verificar las {n} referencias normativas y jurisprudenciales mencionadas en tu solicitud antes de redactar el documento."
     if moment == "post_preflight":
         findings = context.get("findings", [])
         if not findings:
             return "**Verifiqué la coherencia jurídica del prompt.** No detecté errores obvios. Procedo a verificar las citas."
         n = len(findings) if isinstance(findings, list) else "varias"
-        return f"**Importante**: detecté {n} observaciones en tu solicitud que conviene revisar. Voy a continuar con la verificación de las citas e incorporar las correcciones donde aplique."
+        return f"**Importante**: detecté {n} observaciones en tu solicitud que conviene revisar."
+    if moment == "post_classification":
+        return f"Identifiqué el tipo de documento: **{context.get('doc_type', '?')}** ({context.get('jurisdiccion', '?')}, {context.get('materia', '?')})."
+    if moment == "post_extraction":
+        return "Identifiqué los datos clave del caso. Voy a continuar con el análisis."
+    if moment == "post_hunters":
+        return "Pre-busqué jurisprudencia y normas relevantes en mi corpus interno. Voy a verificar vigencia."
+    if moment == "post_derogation":
+        d = context.get("derogadas", 0)
+        if d:
+            return f"Verifiqué la vigencia de las normas. **{d} normas tienen modificaciones o están derogadas** — las trataré con cuidado en el documento."
+        return "Verifiqué la vigencia de las normas. Todas están vigentes."
+    if moment == "section_intro":
+        return f"Voy a redactar la sección **{context.get('section_title', 'siguiente')}**."
+    if moment == "section_summary":
+        n = context.get("n_blocks", 0)
+        return f"Sección **{context.get('section_title', '')}** completa ({n} bloques)."
+    if moment == "polish_intro":
+        return "Voy a hacer una pasada final de redacción para mejorar coherencia y estilo."
+    if moment == "qa_summary":
+        s = context.get("score", 0)
+        return f"Pasó QA legal con score {s}."
+    if moment == "docx_built":
+        return "Documento DOCX listo."
     if moment == "post_verification":
         v = context.get("verified", 0)
         t = context.get("total", 0)
-        return f"✓ Verificación completa: **{v} de {t} citas confirmadas**. Procedo a redactar el documento con las correcciones aplicadas."
+        return f"✓ Verificación completa: **{v} de {t} citas confirmadas**."
     if moment == "synthesis":
-        return "El documento está listo. Revisa el panel de Audit para ver el detalle de cada cita verificada y sus fuentes oficiales."
+        return "**El documento está listo.** Revisa el panel de Audit para ver el detalle de cada cita verificada."
     return ""

@@ -147,7 +147,7 @@ async def persist_chat_thread(
         matter_uuid = uuid.UUID(matter_id) if matter_id else None
 
         async with pool.acquire() as conn:
-            # User row
+            # User row (UPSERT por thread_id: si ya existe, actualiza content)
             await conn.execute(
                 """
                 INSERT INTO chat_messages (
@@ -156,14 +156,19 @@ async def persist_chat_thread(
                     duration_ms, total_tools_used
                 )
                 VALUES ($1, $2, $3, $4, $5, 'user', 'composer', $6, '[]'::jsonb, 0, 0)
-                ON CONFLICT DO NOTHING
+                ON CONFLICT (thread_id) DO UPDATE SET
+                    content = EXCLUDED.content,
+                    generation_id = COALESCE(EXCLUDED.generation_id, chat_messages.generation_id),
+                    document_id = COALESCE(EXCLUDED.document_id, chat_messages.document_id),
+                    matter_id = COALESCE(EXCLUDED.matter_id, chat_messages.matter_id),
+                    updated_at = now()
                 """,
                 f"{thread_id}:user",
                 firm_uuid, generation_id, doc_uuid, matter_uuid,
                 user_content,
             )
 
-            # Assistant row
+            # Assistant row (UPSERT por thread_id: actualiza segments)
             await conn.execute(
                 """
                 INSERT INTO chat_messages (
@@ -172,7 +177,15 @@ async def persist_chat_thread(
                     duration_ms, total_tools_used
                 )
                 VALUES ($1, $2, $3, $4, $5, 'assistant', 'composer', $6, $7::jsonb, $8, $9)
-                ON CONFLICT DO NOTHING
+                ON CONFLICT (thread_id) DO UPDATE SET
+                    content = EXCLUDED.content,
+                    segments = EXCLUDED.segments,
+                    duration_ms = EXCLUDED.duration_ms,
+                    total_tools_used = EXCLUDED.total_tools_used,
+                    generation_id = COALESCE(EXCLUDED.generation_id, chat_messages.generation_id),
+                    document_id = COALESCE(EXCLUDED.document_id, chat_messages.document_id),
+                    matter_id = COALESCE(EXCLUDED.matter_id, chat_messages.matter_id),
+                    updated_at = now()
                 """,
                 thread_id,
                 firm_uuid, generation_id, doc_uuid, matter_uuid,
