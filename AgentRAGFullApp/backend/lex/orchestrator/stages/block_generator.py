@@ -78,16 +78,96 @@ TIPOS DISPONIBLES:
   "blank":           {}
 }
 
-REGLAS DE CALIDAD:
+REGLAS DE CALIDAD (FORMATO FORENSE COLOMBIANO):
 1. Tono solemne: "Honorable señor Juez", "respetuosamente solicito", "comedidamente expongo"
 2. Citas exactas con artículo + ley + año. Jurisprudencia con M.P. y radicación.
-3. Numeración romana en pretensiones, arábiga en hechos
+3. Numeración: arábiga en hechos (1, 2, 3...), ordinales en MAYÚSCULAS en pretensiones (PRIMERA, SEGUNDA, TERCERA...)
 4. Si hay cálculos, usa "calc_step" para mostrar fórmula + aplicación + total
 5. Si hay tabla resumen, usa "table"
 6. Mezcla runs con bold para destacar normas y conceptos clave
 7. NO inventes citas/jurisprudencia que no aparezcan en el CONTEXTO LEGAL
 8. Cada sección debe tener 5-12 bloques sustantivos (excepto encabezado/firma)
 9. Usa placeholders entre corchetes: [NOMBRE_DEMANDANTE], [FECHA_INGRESO], etc, si faltan datos
+
+REGLA — HECHOS CON BOLD LEAD-IN (OBLIGATORIO):
+   Cada "hecho" DEBE iniciar con una frase corta en BOLD (etiqueta temática)
+   seguida de un punto y luego el desarrollo del hecho en texto normal.
+   ✓ EJEMPLO CORRECTO:
+       {"type": "hecho", "num": 1, "runs": [
+         {"text": "Vínculo laboral.", "bold": true},
+         {"text": " La señora MARÍA FERNANDA GUTIÉRREZ RAMÍREZ suscribió contrato individual de trabajo a término indefinido el 15 de febrero de 2018...", "bold": false}
+       ]}
+   ✗ MAL: {"type": "hecho", "num": 1, "runs": [{"text": "La señora suscribió contrato..."}]}  (sin lead-in)
+   Etiquetas típicas: "Vínculo laboral.", "Despido.", "Salario.", "Acoso laboral.", "Cuantía.", etc.
+
+REGLA — PRETENSIONES CON VERBO EN MAYÚSCULAS (OBLIGATORIO):
+   Cada "pretension" DEBE iniciar con el verbo procesal en MAYÚSCULAS Y BOLD,
+   seguido del desarrollo de la pretensión.
+   ✓ EJEMPLO CORRECTO:
+       {"type": "pretension", "ord": "PRIMERA", "kind": "declarativa", "runs": [
+         {"text": "DECLARAR", "bold": true},
+         {"text": " la existencia del contrato de trabajo a término indefinido celebrado entre...", "bold": false}
+       ]}
+   Verbos válidos: DECLARAR (declarativas), CONDENAR / ORDENAR / DISPONER (de condena).
+   El campo "ord" debe ser ordinal en MAYÚSCULAS: PRIMERA, SEGUNDA, TERCERA, CUARTA, QUINTA, SEXTA, SÉPTIMA, OCTAVA, NOVENA, DÉCIMA, etc.
+   El campo "kind" debe coincidir con el verbo: DECLARAR→"declarativa", CONDENAR/ORDENAR→"condena".
+
+REGLA — SUBSECCIONES NUMERADAS (RECOMENDADO):
+   Dentro de secciones con varios bloques temáticos (PRETENSIONES, FUNDAMENTOS DE DERECHO, PRUEBAS),
+   usa "subsection" con numeración arábiga jerárquica:
+   ✓ {"type": "subsection", "number": "3.1", "text": "Pretensiones principales declarativas"}
+   ✓ {"type": "subsection", "number": "3.2", "text": "Pretensiones principales de condena"}
+   ✓ {"type": "subsection", "number": "3.3", "text": "Pretensiones subsidiarias"}
+   ✓ {"type": "subsection", "number": "4.1", "text": "Estabilidad ocupacional reforzada por razones de salud"}
+   ✓ {"type": "subsection", "number": "7.1", "text": "Documentales"}
+   ✓ {"type": "subsection", "number": "7.2", "text": "Testimoniales"}
+
+REGLA — TABLA DE LIQUIDACIÓN (3 COLUMNAS ESTÁNDAR):
+   Cuando la sección sea LIQUIDACIÓN o CÁLCULOS y haya múltiples conceptos a cuantificar,
+   emite UNA SOLA tabla con EXACTAMENTE 3 columnas y has_total_row=true:
+   ✓ EJEMPLO:
+       {"type": "table",
+        "header": ["CONCEPTO", "BASE / FÓRMULA", "VALOR APROXIMADO (COP)"],
+        "rows": [
+          ["Cesantías 2018-2025 (Art. 249 CST)", "1 mes salario × 7,79 años", "$37.781.500"],
+          ["Intereses sobre cesantías 12% EA", "Cesantías × 12% × años", "$4.500.000"],
+          ...
+          ["TOTAL APROXIMADO", "Suma de los anteriores", "$95.000.000"]
+        ],
+        "has_total_row": true}
+   NUNCA 4 ni 5 columnas. El total SIEMPRE en la última fila con etiqueta "TOTAL ..." en mayúsculas.
+
+REGLA — ENCABEZADO FORENSE (sección key="encabezado"):
+   El encabezado se compone de paragraphs centrados (uno por línea) seguidos de un bloque
+   de referencia justificado con etiquetas en bold y un párrafo de comparecencia del apoderado:
+   ✓ {"type": "paragraph", "align": "center", "runs": [{"text": "Señor", "bold": true}]}
+   ✓ {"type": "paragraph", "align": "center", "runs": [{"text": "JUEZ LABORAL DEL CIRCUITO DE BOGOTÁ D.C.", "bold": true}]}
+   ✓ {"type": "paragraph", "align": "center", "runs": [{"text": "(REPARTO)", "bold": true}]}
+   ✓ {"type": "blank"}
+   ✓ {"type": "paragraph", "align": "justify", "runs": [
+        {"text": "Referencia:", "bold": true},
+        {"text": " DEMANDA ORDINARIA LABORAL DE MAYOR CUANTÍA", "bold": false}
+      ]}
+   ✓ Otros 3 paragraphs con etiquetas "Demandante:", "Demandado:", "Asunto:" en bold.
+   ✓ {"type": "paragraph", "align": "justify", "runs": [
+        {"text": "[NOMBRE_APODERADO]", "bold": true},
+        {"text": ", mayor de edad, vecina/o de Bogotá D.C., identificado/a con C.C. N.° __________ de _________, abogado/a en ejercicio, portadora/or de la T.P. N.° __________ del C.S.J., obrando en calidad de apoderado/a judicial de ", "bold": false},
+        {"text": "[NOMBRE_DEMANDANTE]", "bold": true},
+        {"text": ", conforme al poder que se adjunta, respetuosamente formulo la presente DEMANDA ORDINARIA LABORAL DE MAYOR CUANTÍA contra ", "bold": false},
+        {"text": "[NOMBRE_DEMANDADA]", "bold": true},
+        {"text": ", con base en los siguientes hechos, pretensiones y fundamentos.", "bold": false}
+      ]}
+
+REGLA — FIRMA DE APODERADO (sección key="firma"):
+   La firma estándar colombiana incluye fórmula de cierre y bloque de identificación:
+   ✓ {"type": "paragraph", "align": "justify", "runs": [{"text": "Del Señor Juez,"}]}
+   ✓ {"type": "blank"}
+   ✓ {"type": "firma",
+        "ciudad_fecha": "Bogotá D.C., [FECHA]",
+        "nombre": "[NOMBRE_APODERADO]",
+        "tp": "__________ del C.S.J.",
+        "cc": "__________ de _________",
+        "email": "[email]", "telefono": "[telefono]"}
 
 REGLA CRÍTICA — NORMAS COMO BLOQUE TIPADO (OBLIGATORIO):
    ✗ MAL: {"type": "paragraph", "runs": [{"text": "Conforme al artículo 64 del CST, se debe..."}]}

@@ -24,7 +24,11 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 FONT = "Times New Roman"
-FONT_SIZE_PT = 12
+# M19.14.C: alineado con referencia forense Colombia (demanda laboral)
+# body 11pt, subheadings 12pt, headings 14pt, Letter size, márgenes 1 in (2.54 cm)
+FONT_SIZE_PT = 11
+FONT_SIZE_SUBHEADING = 12
+FONT_SIZE_HEADING = 14
 
 # Paleta profesional (estilo Claude/Word default)
 COLOR_H1 = (0x1F, 0x38, 0x64)        # Azul oscuro corporate
@@ -45,34 +49,39 @@ def build_docx_from_blocks(
 ) -> bytes:
     """Construye .docx forense a partir de lista de bloques tipados."""
     from docx import Document
-    from docx.shared import Cm, Pt, RGBColor
+    from docx.shared import Cm, Inches, Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 
     doc = Document()
     doc.core_properties.title = title
     doc.core_properties.author = author
 
-    # Setup forense
+    # M19.14.C: Letter size + márgenes 1 inch (estándar forense Colombia)
+    # — alineado con referencia Demanda_Laboral_Gutierrez_vs_Constructora_Andina.docx
     for section in doc.sections:
-        section.top_margin = Cm(3)
-        section.bottom_margin = Cm(3)
-        section.left_margin = Cm(3)
-        section.right_margin = Cm(2.5)
+        section.page_width = Inches(8.5)
+        section.page_height = Inches(11)
+        section.top_margin = Inches(1)
+        section.bottom_margin = Inches(1)
+        section.left_margin = Inches(1)
+        section.right_margin = Inches(1)
 
     normal = doc.styles["Normal"]
     normal.font.name = FONT
     normal.font.size = Pt(FONT_SIZE_PT)
     pf = normal.paragraph_format
     pf.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    pf.line_spacing = 1.5
+    # M19.14.C: line_spacing 1.15 (más compacto, estilo forense moderno)
+    pf.line_spacing = 1.15
     pf.space_after = Pt(6)
-    pf.first_line_indent = Cm(1.25)
+    # M19.14.C: sin first_line_indent (la referencia no lo usa)
+    pf.first_line_indent = Cm(0)
 
-    # M19.10.A1: Headings con colores corporate
+    # M19.10.A1 + M19.14.C: Headings alineados a referencia
     heading_styles = [
-        (1, 14, COLOR_H1),  # H1: #1F3864 azul oscuro
-        (2, 13, COLOR_H2),  # H2: #2F5496 azul medio
-        (3, 12, COLOR_H2),  # H3: mismo H2
+        (1, FONT_SIZE_HEADING, COLOR_H1),   # H1: 14pt #1F3864 azul oscuro
+        (2, FONT_SIZE_SUBHEADING, COLOR_H2), # H2: 12pt #2F5496 azul medio
+        (3, FONT_SIZE_SUBHEADING, COLOR_H2), # H3: mismo H2
     ]
     for lvl, size, color in heading_styles:
         try:
