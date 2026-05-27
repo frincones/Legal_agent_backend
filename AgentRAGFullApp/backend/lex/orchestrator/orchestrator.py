@@ -923,21 +923,54 @@ class Orchestrator:
         except Exception as e:
             logger.debug("inject verdicts into blocks failed (non-fatal): %s", e)
 
-        # M19.15.A.1 — Dedup de bloques firma: si por error se colaron varias,
-        # conservar solo el ÚLTIMO (que está en la sección key="firma").
+        # M19.15.A.1 + M19.18.D — Dedup de bloques firma:
+        #   1) Si hay múltiples `firma` blocks, conservar solo el último (sección "firma")
+        #   2) Borrar paragraphs tipo firma (Atentamente, _____, T.P. del C.S.J.,
+        #      Abogado · T.P., Email:, Tel.:) que estén FUERA de section_key="firma"
         try:
             firma_indices = [
                 i for i, b in enumerate(all_blocks)
                 if (b.get("block_type") or b.get("block_data", {}).get("type")) == "firma"
             ]
+            drop_set: set[int] = set()
             if len(firma_indices) > 1:
-                keep = firma_indices[-1]
-                drop = set(firma_indices[:-1])
-                all_blocks[:] = [b for i, b in enumerate(all_blocks) if i not in drop]
+                drop_set.update(firma_indices[:-1])
                 logger.info(
                     "dedup firma blocks: kept index %d, dropped %d duplicates",
-                    keep, len(drop),
+                    firma_indices[-1], len(firma_indices) - 1,
                 )
+
+            # M19.18.D — drop paragraphs con firma-like content fuera de section_key="firma"
+            import re as _re
+            FIRMA_RX = _re.compile(
+                r"(?i)(atentamente,?$|^del\s+se[ñn]or\s+juez|_{15,}|"
+                r"\babogad[oa]\s*[·\-]?\s*t\.?\s*p\.?\s*no\b|"
+                r"\bemail:\s*\S+@|\btel\.?:\s*\d{6,})"
+            )
+            for i, b in enumerate(all_blocks):
+                if i in drop_set:
+                    continue
+                bd = b.get("block_data") or {}
+                bt = b.get("block_type") or bd.get("type")
+                sk = b.get("section_key") or bd.get("section_key") or ""
+                if bt != "paragraph" or sk == "firma":
+                    continue
+                runs = bd.get("runs") or []
+                flat = " ".join(
+                    (r.get("text", "") if isinstance(r, dict) else str(r))
+                    for r in runs
+                ).strip()
+                if not flat:
+                    continue
+                if FIRMA_RX.search(flat):
+                    drop_set.add(i)
+                    logger.info(
+                        "drop firma-like paragraph in section=%s: %r",
+                        sk[:20], flat[:60],
+                    )
+
+            if drop_set:
+                all_blocks[:] = [b for i, b in enumerate(all_blocks) if i not in drop_set]
         except Exception as e:
             logger.debug("firma dedup failed (non-fatal): %s", e)
 

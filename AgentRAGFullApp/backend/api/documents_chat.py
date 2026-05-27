@@ -108,7 +108,12 @@ Tu tarea es:
           "block_id": "<id si la pregunta es sobre un bloque>",
           "selection_text": "<texto si la pregunta es sobre una selección>",
           "original_instruction": "<instrucción original del usuario que motivó la duda>"
-        }}
+        }},
+      {"kind": "propagate_change",
+        "old_text": "<texto literal a reemplazar globalmente, ej: 'TRANSPORTES VELOZ DEL VALLE S.A.S.'>",
+        "new_text": "<texto nuevo, ej: 'TDX Transformación Digital S.A.S.'>",
+        "case_insensitive": false,
+        "exclude_block_ids": ["<opcional: bloques donde NO aplicar>"]}
     ]
   }
 
@@ -125,6 +130,20 @@ REGLAS DE ACCIÓN (M19.17.A):
 - NO inventes block_ids — usa solo los que aparecen en el contexto.
 - NO inventes texto que el usuario no seleccionó.
 - Sé conciso en "reply" (máximo 200 chars).
+
+REGLA — CUÁNDO USAR "propagate_change" (M19.18.B):
+Cuando el usuario pide explícitamente o implícitamente CAMBIAR un dato en todo
+el documento (un nombre, una fecha, un monto, etc.), prefiere "propagate_change"
+sobre múltiples "update_block". Ejemplos:
+  - "cámbialo en todo el documento" → propagate_change con el old/new
+  - "renombra X por Y" → propagate_change
+  - "actualiza todas las menciones de…" → propagate_change
+  - Si el usuario solo dice "cambia el nombre" sin especificar el nuevo,
+    primero "clarify" preguntando el nuevo nombre, luego propagate_change.
+
+Después de "propagate_change", PUEDES adicionalmente devolver update_block
+puntuales para bloques estructurados (firma, norma_citada) que no se tocan
+por el rename global.
 
 REGLA — CUÁNDO USAR "clarify" (M19.17.B):
 Si la petición del usuario es AMBIGUA, INCOMPLETA o tiene IMPLICACIONES legales
@@ -277,12 +296,24 @@ Responde con JSON {{"reply": "...", "actions": [...]}}."""
         reply = data.get("reply", "(sin respuesta)")
         actions = data.get("actions", []) or []
     except Exception as e:
-        logger.exception("chat LLM failed")
+        logger.exception("chat LLM failed for doc=%s msg=%r", document_id[:12], body.message[:80])
         return {
             "reply": f"Error procesando: {str(e)[:120]}",
             "actions": [],
             "blocks_changed": 0,
         }
+
+    # M19.18.C — log de cada chat con qué decidió el LLM (debug)
+    action_kinds = [a.get("kind", "?") for a in actions]
+    logger.info(
+        "chat: doc=%s msg=%r selection=%s pending=%s -> %d actions: %s",
+        document_id[:12],
+        body.message[:80],
+        bool(body.selection),
+        bool(body.pending_context),
+        len(actions),
+        ",".join(action_kinds),
+    )
 
     # Aplicar acciones
     blocks_changed = 0
@@ -311,6 +342,33 @@ Responde con JSON {{"reply": "...", "actions": [...]}}."""
                 applied_actions.append({"kind": "add_block_after", "ok": False, "reason": "pending_m10"})
             elif kind == "info_only":
                 applied_actions.append({"kind": "info_only"})
+            elif kind == "propagate_change":
+                # M19.18.B — rename global de old_text por new_text en todos los
+                # bloques editables del documento.
+                old_text = (act.get("old_text") or "").strip()
+                new_text = (act.get("new_text") or "").strip()
+                if not old_text or not new_text:
+                    applied_actions.append({
+                        "kind": "propagate_change", "ok": False,
+                        "reason": "missing_old_or_new_text",
+                    })
+                    continue
+                res = await _apply_rename_across_document(
+                    storage.pool, document_id,
+                    old_text=old_text, new_text=new_text,
+                    case_insensitive=bool(act.get("case_insensitive", False)),
+                    exclude_block_ids=act.get("exclude_block_ids") or [],
+                )
+                blocks_changed += res.get("blocks_modified", 0)
+                applied_actions.append({
+                    "kind": "propagate_change",
+                    "old_text": old_text[:120],
+                    "new_text": new_text[:120],
+                    "blocks_modified": res.get("blocks_modified", 0),
+                    "total_replacements": res.get("total_replacements", 0),
+                    "ok": res.get("blocks_modified", 0) > 0,
+                    "reason": res.get("error"),
+                })
             elif kind == "clarify":
                 # M19.17.B — el LLM pide aclaración antes de actuar. NO modifica el
                 # documento; el frontend muestra la pregunta y re-envía con
@@ -388,6 +446,100 @@ Responde con JSON {{"reply": "...", "actions": [...]}}."""
         "actions": applied_actions,
         "blocks_changed": blocks_changed,
     }
+
+
+async def _apply_rename_across_document(
+    pool,
+    document_id: str,
+    old_text: str,
+    new_text: str,
+    case_insensitive: bool = False,
+    exclude_block_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """M19.18.B — Reemplazo global de `old_text` por `new_text` en TODOS los
+    bloques editables (paragraph/hecho/pretension/list_item) del documento.
+
+    No toca bloques tipo norma_citada/jurisprudencia/table/firma para no romper
+    metadata estructural. Si quieres tocar esos, hazlo con update_block puntual.
+
+    Devuelve {blocks_modified: int, total_replacements: int, skipped: int}.
+    """
+    if not old_text or not new_text:
+        return {"blocks_modified": 0, "total_replacements": 0, "skipped": 0, "error": "empty"}
+    if old_text == new_text:
+        return {"blocks_modified": 0, "total_replacements": 0, "skipped": 0, "error": "same"}
+    exclude = set(exclude_block_ids or [])
+    EDITABLE = ("paragraph", "hecho", "pretension", "list_item")
+    blocks_modified = 0
+    total_replacements = 0
+    skipped = 0
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT block_id, block_type, block_data FROM document_blocks
+                WHERE document_id = $1::uuid AND block_type = ANY($2::text[])
+                ORDER BY block_order ASC
+                """,
+                document_id, list(EDITABLE),
+            )
+            for row in rows:
+                bid = row["block_id"]
+                if bid in exclude:
+                    skipped += 1
+                    continue
+                bd = row["block_data"] if isinstance(row["block_data"], dict) \
+                     else json.loads(row["block_data"])
+                runs = bd.get("runs") or []
+                if not isinstance(runs, list):
+                    skipped += 1
+                    continue
+                modified_in_block = 0
+                new_runs: list[dict] = []
+                for r in runs:
+                    if not isinstance(r, dict):
+                        new_runs.append(r)
+                        continue
+                    rtxt = r.get("text", "") or ""
+                    if case_insensitive:
+                        # contar matches case-insensitive, reemplazar preservando case del original
+                        # simplificado: solo case-sensitive si el LLM no lo pidió
+                        count = rtxt.lower().count(old_text.lower())
+                    else:
+                        count = rtxt.count(old_text)
+                    if count > 0:
+                        if case_insensitive:
+                            import re
+                            rtxt_new = re.sub(re.escape(old_text), new_text, rtxt, flags=re.IGNORECASE)
+                        else:
+                            rtxt_new = rtxt.replace(old_text, new_text)
+                        new_r = dict(r)
+                        new_r["text"] = rtxt_new
+                        new_runs.append(new_r)
+                        modified_in_block += count
+                    else:
+                        new_runs.append(r)
+                if modified_in_block > 0:
+                    bd["runs"] = new_runs
+                    await conn.execute(
+                        """
+                        UPDATE document_blocks
+                        SET block_data = $1::jsonb
+                        WHERE document_id = $2::uuid AND block_id = $3
+                        """,
+                        json.dumps(bd, ensure_ascii=False, default=str),
+                        document_id, bid,
+                    )
+                    blocks_modified += 1
+                    total_replacements += modified_in_block
+        return {
+            "blocks_modified": blocks_modified,
+            "total_replacements": total_replacements,
+            "skipped": skipped,
+        }
+    except Exception as e:
+        logger.warning("apply_rename_across_document failed: %s", e)
+        return {"blocks_modified": 0, "total_replacements": 0, "skipped": 0, "error": str(e)[:120]}
 
 
 async def _replace_selection_in_block(

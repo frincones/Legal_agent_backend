@@ -521,11 +521,21 @@ def _materialize_block(raw: dict) -> Block | None:
                 fuente_ref=raw.get("fuente_ref"),
             )
         if btype == "jurisprudencia":
-            # M19.15.A.8 — descartar si M.P. es "N/A" / vacío / desconocido
+            # M19.15.A.8 + M19.18.H — si M.P. es vacío/N/A/desconocido, NO descartar
+            # automáticamente. Conservar con M.P. = "(por verificar)" si el ID parece
+            # válido (formato T-/C-/SU-/SL-/SC-/CE-/etc.).
             mp_raw = (raw.get("mp") or "").strip()
             if mp_raw.lower() in ("", "n/a", "na", "desconocido", "sin datos", "(sin datos)", "?"):
-                logger.info("dropping jurisprudencia without valid M.P.: id=%s", raw.get("id"))
-                return None
+                jid = (raw.get("id") or "").strip()
+                import re as _re_jid
+                id_looks_valid = bool(_re_jid.match(
+                    r"^(T|C|SU|SL|SC|CE|AP|AC)[-\s]?\d{1,5}([-/]\d{2,4})?", jid, _re_jid.I
+                ))
+                if not id_looks_valid:
+                    logger.info("dropping jurisprudencia: invalid id=%r and no M.P.", jid[:40])
+                    return None
+                logger.info("jurisprudencia kept with placeholder M.P.: id=%s", jid[:40])
+                mp_raw = "(por verificar)"
             return JurisprudenciaBlock(
                 block_id=bid, id=raw.get("id", ""), mp=mp_raw,
                 corte=raw.get("corte", ""), fecha=raw.get("fecha"),
