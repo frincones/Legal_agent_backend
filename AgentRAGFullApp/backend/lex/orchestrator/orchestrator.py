@@ -20,6 +20,7 @@ Stages futuros (M3-M5) se insertan como hooks plugables.
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -890,6 +891,107 @@ class Orchestrator:
         except Exception as e:
             logger.warning("polish stage exception: %s", e)
 
+        # ===== STAGE 9.5: M19.20.B — COMPLETENESS CHECK (post-polish, pre-QA) =====
+        completeness_report = None
+        try:
+            from lex.orchestrator.stages.completeness_check import check_completeness
+            completeness_report = await check_completeness(
+                client=self.client,
+                blocks=all_blocks,
+                doc_type=classification.doc_type,
+                run_llm_check=True,
+            )
+            yield SSEEvent.completeness_check_done(completeness_report.to_dict())
+        except Exception as e:
+            logger.warning("completeness_check stage exception: %s", e)
+
+        # ===== STAGE 9.6: M19.20.E — AUTO-LOOP de corrección (opcional via flag) =====
+        # Si completeness reporta gaps críticos y QUALITY_AUTOLOOP=true, intentamos
+        # regenerar las secciones gap. Max 2 iteraciones.
+        AUTOLOOP_ENABLED = os.getenv("QUALITY_AUTOLOOP", "false").lower() in ("1", "true", "yes")
+        if (
+            AUTOLOOP_ENABLED
+            and completeness_report is not None
+            and not completeness_report.can_continue
+        ):
+            try:
+                MAX_AUTOLOOP_ITERATIONS = 2
+                for iteration in range(1, MAX_AUTOLOOP_ITERATIONS + 1):
+                    # Identificar secciones críticas faltantes
+                    critical_sections: list[str] = list({
+                        g.section_key for g in completeness_report.gaps
+                        if g.severity == "critical" and g.section_key
+                    })
+                    if not critical_sections:
+                        break
+                    yield SSEEvent.autoloop_iteration(
+                        iteration=iteration,
+                        gaps_remaining=completeness_report.critical_count,
+                        regenerating_sections=critical_sections,
+                    )
+                    logger.info(
+                        "autoloop iter=%d: regenerando %d secciones críticas: %s",
+                        iteration, len(critical_sections), critical_sections,
+                    )
+                    # Re-invocar block_generator solo para esas secciones
+                    for sec_key in critical_sections:
+                        # Encontrar el SectionPlanItem correspondiente si existe en el plan
+                        sec_plan_item = next(
+                            (p for p in plan if getattr(p, "key", None) == sec_key), None
+                        )
+                        if sec_plan_item is None:
+                            continue
+                        # Borrar bloques existentes de la sección (excepto heading)
+                        all_blocks[:] = [
+                            b for b in all_blocks
+                            if (b.get("section_key") or b.get("block_data", {}).get("section_key")) != sec_key
+                            or (b.get("block_type") or b.get("block_data", {}).get("type")) == "section_heading"
+                        ]
+                        # Re-generar bloques de la sección
+                        try:
+                            async for block in generate_section_blocks(
+                                client=self.client,
+                                doc_type=classification.doc_type,
+                                section_key=sec_key,
+                                section_title=getattr(sec_plan_item, "title", sec_key),
+                                section_order=getattr(sec_plan_item, "order", 99),
+                                intent=req.intent,
+                                brief=req.user_brief,
+                                extracted_data=extracted_data,
+                                previous_sections_summary="",
+                                calculations=calculations,
+                                jurisprudencia=jurisprudencia,
+                                section_instruction=f"REGENERACIÓN AUTO-CORRECCIÓN: la sección anterior fue marcada como incompleta. Genera AHORA todos los bloques sustantivos requeridos.",
+                                expected_blocks=None,
+                                verified_citations=section_verdicts.get(sec_key, []),
+                            ):
+                                block_order += 1
+                                payload = {
+                                    "section_key": sec_key,
+                                    "block_order": block_order,
+                                    "block_id": block.block_id,
+                                    "block_type": block.type,
+                                    "block_data": block.model_dump(),
+                                }
+                                all_blocks.append(payload)
+                                yield SSEEvent.block_emit(sec_key, block.model_dump())
+                                yield SSEEvent.block_done(block.block_id)
+                        except Exception as e:
+                            logger.warning("autoloop regen sec=%s failed: %s", sec_key, e)
+                    # Re-correr completeness
+                    completeness_report = await check_completeness(
+                        client=self.client,
+                        blocks=all_blocks,
+                        doc_type=classification.doc_type,
+                        run_llm_check=False,  # rule-only en iteraciones, más rápido
+                    )
+                    yield SSEEvent.completeness_check_done(completeness_report.to_dict())
+                    if completeness_report.can_continue:
+                        logger.info("autoloop converged after iteration %d", iteration)
+                        break
+            except Exception as e:
+                logger.warning("autoloop exception (non-fatal): %s", e)
+
         # ===== STAGE 10: QA AGENT (rule-based + template validation_rules) =====
         qa_result: dict[str, Any] = {}
         try:
@@ -1040,6 +1142,34 @@ class Orchestrator:
                 logger.warning("audit insert failed: %s", e)
 
         yield SSEEvent.audit_report(audit_payload)
+
+        # ===== STAGE 11.5: M19.20.C — COHERENCE CHECK (cross-section LLM) =====
+        coherence_report = None
+        try:
+            from lex.orchestrator.stages.coherence_check import check_coherence
+            coherence_report = await check_coherence(
+                client=self.client,
+                blocks=all_blocks,
+                doc_type=classification.doc_type,
+            )
+            yield SSEEvent.coherence_check_done(coherence_report.to_dict())
+        except Exception as e:
+            logger.warning("coherence_check stage exception: %s", e)
+
+        # ===== STAGE 11.6: M19.20.D — QUALITY REPORT UNIFICADO =====
+        try:
+            from lex.verify.quality_report import build_quality_report
+            citation_rate = float(audit_payload.get("citation_existence_rate", 0.0) or 0.0)
+            quality_report = build_quality_report(
+                doc_type=classification.doc_type,
+                completeness=completeness_report,
+                coherence=coherence_report,
+                qa_result=qa_result,
+                citation_existence_rate=citation_rate,
+            )
+            yield SSEEvent.quality_report(quality_report.to_dict())
+        except Exception as e:
+            logger.warning("quality_report stage exception: %s", e)
 
         # M19.7: presented_file event con metadata DOCX (URL al export endpoint)
         try:

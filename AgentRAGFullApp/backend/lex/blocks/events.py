@@ -180,6 +180,27 @@ class SSEEvent:
     def audit_report(audit: dict) -> bytes:
         return sse("audit_report", audit)
 
+    # M19.20 — Quality Loop Continuo
+    @staticmethod
+    def completeness_check_done(report: dict) -> bytes:
+        return sse("completeness_check_done", report)
+
+    @staticmethod
+    def coherence_check_done(report: dict) -> bytes:
+        return sse("coherence_check_done", report)
+
+    @staticmethod
+    def quality_report(report: dict) -> bytes:
+        return sse("quality_report", report)
+
+    @staticmethod
+    def autoloop_iteration(iteration: int, gaps_remaining: int, regenerating_sections: list[str]) -> bytes:
+        return sse("autoloop_iteration", {
+            "iteration": iteration,
+            "gaps_remaining": gaps_remaining,
+            "regenerating_sections": regenerating_sections,
+        })
+
     @staticmethod
     def done(generation_id: str, matter_document_id: str | None,
              duration_seconds: float, cost_usd: float, total_blocks: int) -> bytes:
