@@ -916,6 +916,13 @@ class Orchestrator:
         except Exception as e:
             logger.warning("qa stage exception: %s", e)
 
+        # M19.10.A7: Inyectar verdicts (fuente_url, derogada, etc.) en blocks
+        # antes de persistir → el DOCX builder generará hyperlinks reales.
+        try:
+            _inject_verdicts_into_blocks(all_blocks, verification_results, derogation_results)
+        except Exception as e:
+            logger.debug("inject verdicts into blocks failed (non-fatal): %s", e)
+
         # ===== Persistir bloques en BD (best-effort) =====
         if self.blocks_repo:
             try:
@@ -1071,6 +1078,77 @@ def _block_text_preview(block: Block) -> str:
     if t == "calc_step":
         return f"{block.label}: {block.total}"
     return ""
+
+
+def _inject_verdicts_into_blocks(
+    all_blocks: list[dict[str, Any]],
+    verification_results: list[dict],
+    derogation_results: list[dict],
+) -> None:
+    """M19.10.A7: enriquece blocks norma_citada/jurisprudencia con datos del verdict.
+
+    Esto permite que el DOCX builder genere hyperlinks reales a las fuentes
+    oficiales gov.co usando `fuente_url` propagado del VerificationAgent.
+
+    Mutación in-place del array all_blocks.
+    """
+    # Indexar verdicts por ref (case-insensitive simple)
+    verdict_by_ref: dict[str, dict] = {}
+    for v in verification_results or []:
+        ref = (v.get("ref") or "").strip()
+        if ref:
+            verdict_by_ref[ref.lower()] = v
+            verdict_by_ref[ref] = v  # preservar case original también
+
+    derog_by_norma: dict[str, dict] = {}
+    for d in derogation_results or []:
+        norma = (d.get("norma") or "").strip()
+        if norma:
+            derog_by_norma[norma.lower()] = d
+            derog_by_norma[norma] = d
+
+    for b in all_blocks:
+        bt = b.get("block_type") or b.get("block_data", {}).get("type")
+        bd = b.get("block_data") or {}
+        if bt not in ("norma_citada", "jurisprudencia"):
+            continue
+
+        # Resolver verdict matching por ref/norma/id
+        if bt == "norma_citada":
+            ref = bd.get("norma", "")
+        else:  # jurisprudencia
+            ref = bd.get("id", "")
+
+        if not ref:
+            continue
+
+        # Match exact + lowercase fallback
+        v = verdict_by_ref.get(ref) or verdict_by_ref.get(ref.lower())
+        d = derog_by_norma.get(ref) or derog_by_norma.get(ref.lower())
+
+        if v:
+            # Propagar URLs verificadas al block_data (in-place)
+            if v.get("fuente_url") and not bd.get("fuente_url"):
+                bd["fuente_url"] = v["fuente_url"]
+            if v.get("fuente_url_original") and not bd.get("fuente_url"):
+                bd["fuente_url"] = v["fuente_url_original"]
+            if v.get("fuente_url_vigente") and not bd.get("fuente_url_vigente"):
+                bd["fuente_url_vigente"] = v["fuente_url_vigente"]
+            if v.get("discovered_by") and not bd.get("discovered_by"):
+                bd["discovered_by"] = v["discovered_by"]
+            if v.get("verified") is not None:
+                bd["verified"] = v["verified"]
+            if v.get("is_derogada") and not bd.get("derogada"):
+                bd["derogada"] = True
+            if v.get("titulo") and not bd.get("titulo_oficial"):
+                bd["titulo_oficial"] = v["titulo"]
+
+        if d and bt == "norma_citada":
+            # Si está derogada y tenemos URL vigente
+            if not d.get("vigente"):
+                bd["derogada"] = True
+            if d.get("fuente_url_vigente") and not bd.get("fuente_url_vigente"):
+                bd["fuente_url_vigente"] = d["fuente_url_vigente"]
 
 
 async def run_pipeline(client, pool, req: GenerationRequest) -> AsyncIterator[bytes]:

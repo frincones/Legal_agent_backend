@@ -106,7 +106,11 @@ class NormaCitadaBlock(_BaseBlock):
     contenido: list[Run] = Field(default_factory=list)
     verified: bool = False
     derogada: bool = False
-    fuente_ref: str | None = None  # 'cst:64' o url
+    fuente_ref: str | None = None  # 'cst:64' o url (legacy)
+    # M19.10.A7: URLs canónicas verificadas (propagadas desde VerificationVerdict)
+    fuente_url: str | None = None  # URL principal validada
+    fuente_url_vigente: str | None = None  # si derogada, URL de norma vigente
+    discovered_by: str | None = None  # 'brave_search'|'internal_db'|'pattern'|...
 
 
 class JurisprudenciaBlock(_BaseBlock):
@@ -120,6 +124,9 @@ class JurisprudenciaBlock(_BaseBlock):
     chunk_id: str | None = None
     verified: bool = False
     sim_score: float | None = None
+    # M19.10.A3: URL canónica para hyperlink en DOCX (propagada de VerificationVerdict)
+    fuente_url: str | None = None
+    discovered_by: str | None = None
 
 
 class SilogismoBlock(_BaseBlock):

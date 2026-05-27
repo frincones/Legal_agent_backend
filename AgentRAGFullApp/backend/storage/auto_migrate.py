@@ -28,6 +28,7 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_05_25_sprint_m18_norma_url_index.sql",
     "2026_05_27_sprint_m19_chat_messages.sql",
     "2026_05_27_sprint_m19_chat_messages_unique.sql",
+    "2026_05_27_sprint_m19_document_files.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.

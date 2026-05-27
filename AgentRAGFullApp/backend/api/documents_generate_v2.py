@@ -150,17 +150,23 @@ async def get_document_audit(
 
 
 @router.post("/documents/{document_id}/export-forensic")
+@router.get("/documents/{document_id}/export-forensic")
 async def export_forensic_docx(
     document_id: str,
     _claims: dict = Depends(_require_session),
 ):
     """Exporta documento como .docx forense (Times NR, márgenes 3cm, justified)
-    construyendo imperativamente desde bloques persistidos."""
+    construyendo imperativamente desde bloques persistidos.
+
+    M19.12.C1: persiste el DOCX en Supabase Storage bucket 'documents' la primera
+    vez que se solicita, y en llamadas posteriores lo sirve desde cache (más rápido).
+    """
     if not _flag_enabled():
         raise HTTPException(status_code=503, detail="docgen_v2_disabled")
     storage = await get_storage()
     from lex.storage import BlocksRepo
     from lex.docx_forensic_builder import build_docx_from_blocks
+    from lex.storage.docx_storage import get_or_build_and_cache_docx
     from fastapi.responses import StreamingResponse
     import io as _io
 
@@ -170,7 +176,14 @@ async def export_forensic_docx(
         raise HTTPException(status_code=404, detail="document_not_found_or_empty")
 
     try:
-        docx_bytes = build_docx_from_blocks(blocks, title=f"Documento {document_id[:8]}", author="LexAI")
+        # M19.12.C1: cache en Supabase Storage (fallback a build on-demand si falla)
+        docx_bytes = await get_or_build_and_cache_docx(
+            pool=storage.pool,
+            document_id=document_id,
+            builder=lambda: build_docx_from_blocks(
+                blocks, title=f"Documento {document_id[:8]}", author="LexAI"
+            ),
+        )
     except Exception as e:
         logger.exception("docx forensic export failed")
         raise HTTPException(status_code=500, detail=f"export_error:{str(e)[:120]}")
