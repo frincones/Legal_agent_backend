@@ -195,6 +195,79 @@ async def export_forensic_docx(
     )
 
 
+class BlockPatchBody(BaseModel):
+    """M19.16.B1 — body para PATCH inline edit de un bloque."""
+    block_data: dict[str, Any] = Field(..., description="Nuevo block_data completo (mismo shape que en BD)")
+    # Opcional: si solo cambia el texto, el cliente puede mandar solo runs y el
+    # servidor hace merge sobre el block_data existente.
+    runs_only: bool = Field(default=False, description="Si true, solo reemplaza el campo `runs` del bloque actual")
+
+
+@router.patch("/documents/{document_id}/blocks/{block_id}")
+async def patch_block(
+    document_id: str,
+    block_id: str,
+    body: BlockPatchBody,
+    _claims: dict = Depends(_require_session),
+):
+    """M19.16 — Edit inline de un bloque (Harvey-style).
+
+    Flujo:
+      1. blocks_repo.update_block() (o replace_block_runs si runs_only)
+      2. docx_storage.invalidate_cache() para forzar rebuild en próxima descarga
+      3. versions_repo.create_version(change_type='user_edit', snapshot=blocks)
+
+    Returns: {block: <updated row>, version: <id, num>}
+    """
+    if not _flag_enabled():
+        raise HTTPException(status_code=503, detail="docgen_v2_disabled")
+    storage = await get_storage()
+    from lex.storage import BlocksRepo
+    from lex.storage.versions_repo import VersionsRepo
+    from lex.storage.docx_storage import invalidate_cache as docx_invalidate_cache
+
+    repo = BlocksRepo(storage.pool)
+    versions_repo = VersionsRepo(storage.pool)
+
+    # 1) Persistir cambio
+    if body.runs_only:
+        runs = body.block_data.get("runs", [])
+        if not isinstance(runs, list):
+            raise HTTPException(status_code=400, detail="runs_only requires block_data.runs list")
+        updated = await repo.replace_block_runs(document_id, block_id, runs)
+    else:
+        updated = await repo.update_block(document_id, block_id, body.block_data)
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail="block_not_found")
+
+    # 2) Invalidar cache DOCX (best-effort, no bloquea)
+    try:
+        await docx_invalidate_cache(storage.pool, document_id)
+    except Exception as e:
+        logger.debug("docx cache invalidate failed (non-fatal): %s", e)
+
+    # 3) Snapshot version (best-effort; si falla el edit ya está aplicado)
+    version_info: dict[str, Any] | None = None
+    try:
+        all_blocks = await repo.get_blocks_for_document(document_id)
+        version_info = await versions_repo.create_version(
+            document_id=document_id,
+            change_type="user_edit",
+            blocks_snapshot=all_blocks,
+            section_key=updated.get("section_key"),
+            feedback=f"inline edit on block {block_id}",
+        )
+    except Exception as e:
+        logger.warning("version snapshot failed after PATCH (non-fatal): %s", e)
+
+    return {
+        "block": updated,
+        "version": version_info,
+        "cache_invalidated": True,
+    }
+
+
 @router.get("/health")
 async def health():
     """Health check + flag status."""

@@ -99,6 +99,85 @@ class BlocksRepo:
             logger.warning("get_blocks_for_document failed: %s", e)
             return []
 
+    # M19.16.B2 — Harvey-style inline edits
+    async def update_block(
+        self,
+        document_id: str,
+        block_id: str,
+        new_block_data: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Actualiza block_data de un bloque puntual. Devuelve la fila actualizada o None
+        si no existe el bloque.
+
+        Garantiza que solo se actualiza si (document_id, block_id) coincide,
+        evitando que un usuario edite bloques de otro documento.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    UPDATE document_blocks
+                       SET block_data = $1::jsonb
+                     WHERE document_id = $2 AND block_id = $3
+                 RETURNING block_id, section_key, block_order, block_type, block_data
+                """, json.dumps(new_block_data, ensure_ascii=False, default=str),
+                     uuid.UUID(document_id), block_id)
+        except Exception as e:
+            logger.warning("update_block failed for %s/%s: %s", document_id, block_id, e)
+            return None
+        if row is None:
+            return None
+        return {
+            "block_id": row["block_id"],
+            "section_key": row["section_key"],
+            "block_order": row["block_order"],
+            "block_type": row["block_type"],
+            "block_data": row["block_data"] if isinstance(row["block_data"], dict)
+                          else json.loads(row["block_data"]),
+        }
+
+    async def replace_block_runs(
+        self,
+        document_id: str,
+        block_id: str,
+        new_runs: list[dict[str, Any]],
+    ) -> dict[str, Any] | None:
+        """Helper: reemplaza solo el array `runs` dentro de block_data. Usado por chat
+        actions `update_block` y por edits inline cuando el usuario solo cambia texto.
+
+        Devuelve la fila actualizada o None si el bloque no existe o no tiene `runs`.
+        """
+        try:
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("""
+                    SELECT block_data FROM document_blocks
+                     WHERE document_id = $1 AND block_id = $2
+                """, uuid.UUID(document_id), block_id)
+                if row is None:
+                    return None
+                bd = row["block_data"] if isinstance(row["block_data"], dict) \
+                     else json.loads(row["block_data"])
+                bd["runs"] = new_runs
+                updated = await conn.fetchrow("""
+                    UPDATE document_blocks
+                       SET block_data = $1::jsonb
+                     WHERE document_id = $2 AND block_id = $3
+                 RETURNING block_id, section_key, block_order, block_type, block_data
+                """, json.dumps(bd, ensure_ascii=False, default=str),
+                     uuid.UUID(document_id), block_id)
+            if updated is None:
+                return None
+            return {
+                "block_id": updated["block_id"],
+                "section_key": updated["section_key"],
+                "block_order": updated["block_order"],
+                "block_type": updated["block_type"],
+                "block_data": updated["block_data"] if isinstance(updated["block_data"], dict)
+                              else json.loads(updated["block_data"]),
+            }
+        except Exception as e:
+            logger.warning("replace_block_runs failed for %s/%s: %s", document_id, block_id, e)
+            return None
+
     async def delete_section_blocks(self, document_id: str, section_key: str) -> int:
         """Borra todos los bloques de una sección (para regenerar)."""
         try:

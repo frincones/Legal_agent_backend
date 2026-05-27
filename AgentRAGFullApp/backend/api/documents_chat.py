@@ -50,9 +50,22 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class SelectionContext(BaseModel):
+    """M19.16.B3 — selección de texto del usuario en el canvas editable.
+
+    Permite que el chat reciba el contexto exacto de qué bloque y qué texto
+    está seleccionado, para ediciones puntuales tipo ChatGPT Canvas
+    ("resume este párrafo", "reescribe esto en tono más formal", etc.).
+    """
+    block_id: str
+    text: str
+    instruction: str | None = None  # "resumir" | "reescribir" | "expandir" | etc.
+
+
 class ChatBody(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     history: list[ChatMessage] = Field(default_factory=list)
+    selection: SelectionContext | None = None  # M19.16.B3
 
 
 CHAT_SYSTEM_PROMPT = """Eres un asistente legal que ayuda a EDITAR un documento ya generado.
@@ -139,9 +152,27 @@ async def chat_with_document(
         f"{m.role}: {m.content[:300]}" for m in body.history[-6:]
     ) if body.history else "(sin historial)"
 
+    # M19.16.B3 — si hay selección de texto, contextualizar al LLM para edit puntual
+    selection_block = ""
+    if body.selection:
+        sel = body.selection
+        selection_block = f"""
+=== SELECCIÓN ACTIVA DEL USUARIO EN EL CANVAS ===
+El usuario tiene seleccionado este texto dentro del bloque [{sel.block_id}]:
+\"\"\"
+{sel.text[:1200]}
+\"\"\"
+{f"Instrucción rápida: {sel.instruction}" if sel.instruction else ""}
+
+CUANDO HAY SELECCIÓN, PRIORIZA UNA ACCIÓN \"update_block\" SOBRE EL block_id [{sel.block_id}]
+con new_runs que represente el TEXTO COMPLETO del bloque después de aplicar la edición a la
+selección. No regeneres otras secciones a menos que el usuario lo pida explícitamente.
+=== FIN SELECCIÓN ===
+"""
+
     user_prompt = f"""DOCUMENTO ACTUAL (bloques con block_id):
 {blocks_summary}
-
+{selection_block}
 HISTORIAL RECIENTE:
 {history_text}
 
@@ -204,6 +235,26 @@ Responde con JSON {{"reply": "...", "actions": [...]}}."""
         except Exception as e:
             logger.warning("apply action %s failed: %s", kind, e)
             applied_actions.append({"kind": kind, "ok": False, "error": str(e)[:120]})
+
+    # M19.16.B3 — si hubo cambios, invalidar cache DOCX y crear snapshot version
+    if blocks_changed > 0:
+        try:
+            from lex.storage.docx_storage import invalidate_cache
+            await invalidate_cache(storage.pool, document_id)
+        except Exception as e:
+            logger.debug("chat: docx cache invalidate failed (non-fatal): %s", e)
+        try:
+            from lex.storage.versions_repo import VersionsRepo
+            versions_repo = VersionsRepo(storage.pool)
+            fresh_blocks = await repo.get_blocks_for_document(document_id)
+            await versions_repo.create_version(
+                document_id=document_id,
+                change_type="chat_edit",
+                blocks_snapshot=fresh_blocks,
+                feedback=body.message[:200],
+            )
+        except Exception as e:
+            logger.debug("chat: version snapshot failed (non-fatal): %s", e)
 
     return {
         "reply": reply,
