@@ -196,22 +196,42 @@ class SSEEvent:
     @staticmethod
     def agent_thought(
         message: str,
-        kind: str = "info",          # info|tool_call|tool_result|correction|warning|success
+        kind: str = "info",          # narration|tool_call|tool_result|correction|warning|success|info|error
         tool: str | None = None,     # 'brave_search'|'judge'|'corte_cc'|...
         ref: str | None = None,      # citation_ref si aplica
         url: str | None = None,      # URL relevante
         suggestion: str | None = None,  # correccion propuesta
+        # M19.5: capacidad estilo Claude
+        tool_id: str | None = None,             # id único del tool call (para correlar request/response)
+        tool_request: dict | None = None,       # JSON args enviados al tool
+        tool_response: dict | None = None,      # JSON respuesta del tool
+        tool_error: str | None = None,          # error si tool falló
+        tool_duration_ms: int | None = None,    # latencia ejecución
+        thread_id: str | None = None,           # agrupa thoughts en mismo "mensaje" del asistente
     ) -> bytes:
-        """M18.d: narración del agente en vivo estilo Claude.
+        """M18.d + M19.5: narración del agente en vivo estilo Claude.
 
-        El frontend renderiza estos como mensajes secuenciales en el
-        ThoughtStream panel, dándole al usuario visibilidad del razonamiento.
+        Tipos de `kind`:
+          - "narration"  : párrafo de prosa (markdown) del agente
+          - "tool_call"  : invocación de tool con request/response
+          - "tool_result": resultado de tool (legacy, prefer tool_call con response)
+          - "correction" : sugerencia de corrección legal
+          - "warning"    : nota legal importante
+          - "success"    : hito completado
+          - "info"       : log genérico (legacy, prefer "narration")
+          - "error"      : algo falló
         """
         return sse("agent_thought", {
             "kind": kind,
-            "message": message[:600],
+            "message": message[:2000] if message else "",
             "tool": tool,
             "ref": ref,
             "url": url,
             "suggestion": suggestion,
+            "tool_id": tool_id,
+            "tool_request": tool_request,
+            "tool_response": tool_response,
+            "tool_error": tool_error,
+            "tool_duration_ms": tool_duration_ms,
+            "thread_id": thread_id,
         })

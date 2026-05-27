@@ -219,45 +219,59 @@ class Orchestrator:
         started_at = time.monotonic()
         document_id = str(uuid.uuid4())  # M1: documento virtual; M2 vinculará a matter_documents
 
+        # M19.5: threadId único para agrupar todos los thoughts en un mensaje del asistente
+        import uuid as _uuid_thread
+        import time as _time_m19
+        agent_thread_id = _uuid_thread.uuid4().hex[:16]
+
+        # M19.5: buffer in-memory de TODOS los thoughts emitidos durante este run.
+        # Helper para empujar al buffer Y emitir bytes SSE en una sola llamada.
+        agent_thoughts_buffer: list[dict] = []
+
+        def _push_thought(message: str, kind: str = "narration", **kwargs) -> bytes:
+            """Empuja al buffer (para persist al final) + retorna bytes SSE."""
+            payload = {"message": message, "kind": kind, **kwargs}
+            agent_thoughts_buffer.append({**payload, "_ts": int(_time_m19.time() * 1000)})
+            return SSEEvent.agent_thought(**payload)
+
         # ===== STAGE 0: PRE-FLIGHT CHECK (M18.d / M19.5) =====
         # Detecta errores legales obvios en el prompt antes de generar.
         # No bloquea — solo advierte via agent_thought.
+        pre_findings_list = []
         try:
             import os as _os_pf
             preflight_enabled = _os_pf.getenv("PREFLIGHT_CHECK_ENABLED", "true").lower() in ("true", "1", "yes")
             if preflight_enabled and self.client is not None:
                 from lex.verify.preflight_check import preflight_check
-                yield SSEEvent.agent_thought(
-                    "🔬 Revisando coherencia jurídica del prompt antes de redactar...",
-                    kind="info",
+
+                # Tool call event para pre-flight (visible como chip colapsable)
+                _pf_id = _uuid_thread.uuid4().hex[:12]
+                yield _push_thought(
+                    "Llamando preflight_check...",
+                    kind="tool_call", tool="preflight_check", tool_id=_pf_id,
+                    tool_request={"intent": req.intent[:500], "brief": (req.user_brief or "")[:300]},
+                    thread_id=agent_thread_id,
                 )
                 pre_res = await preflight_check(self.client, req.intent, req.user_brief or "")
-                if pre_res.findings:
-                    yield SSEEvent.agent_thought(
-                        f"⚠ Encontré {len(pre_res.findings)} observaciones jurídicas en el prompt:",
-                        kind="warning",
-                    )
-                    for f in pre_res.findings:
-                        kind_map = {"blocker": "error", "warning": "warning", "info": "info"}
-                        yield SSEEvent.agent_thought(
-                            f"  • {f.issue}" + (f"  →  {f.suggestion}" if f.suggestion else ""),
-                            kind=kind_map.get(f.severity, "info"),
-                            suggestion=f.suggestion,
-                        )
-                elif pre_res.overall_assessment and not pre_res.error:
-                    yield SSEEvent.agent_thought(
-                        f"✓ {pre_res.overall_assessment}",
-                        kind="success",
-                    )
+                pre_findings_list = [{"severity": f.severity, "issue": f.issue, "suggestion": f.suggestion} for f in pre_res.findings]
+                yield _push_thought(
+                    f"preflight_check completado en {pre_res.duration_ms}ms",
+                    kind="tool_call", tool="preflight_check", tool_id=_pf_id,
+                    tool_response={"findings": pre_findings_list, "overall_assessment": pre_res.overall_assessment},
+                    tool_duration_ms=pre_res.duration_ms,
+                    thread_id=agent_thread_id,
+                )
+
+                # Narración con LLM sobre los findings
+                from lex.verify.narrator_agent import narrate
+                narration = await narrate(self.client, "post_preflight", {"findings": pre_findings_list, "findings_json": pre_findings_list})
+                if narration.text:
+                    yield _push_thought(narration.text, kind="narration", thread_id=agent_thread_id)
         except Exception as e:
             logger.warning("preflight stage failed: %s", e)
 
         # ===== STAGE 1: CLASSIFIER =====
         yield sse("classification_started", {"intent_preview": req.intent[:200]})
-        yield SSEEvent.agent_thought(
-            "📋 Analizando solicitud y clasificando tipo de documento legal...",
-            kind="info",
-        )
         try:
             classification = await classify(self.client, req.intent, req.user_brief)
         except Exception as e:
@@ -277,10 +291,20 @@ class Orchestrator:
             materia=classification.materia,
             confidence=classification.confidence,
         )
-        yield SSEEvent.agent_thought(
-            f"✓ Tipo identificado: **{classification.doc_type}** ({classification.jurisdiccion}, {classification.materia})",
-            kind="success",
-        )
+        # Narración intro con LLM (estilo Claude)
+        try:
+            from lex.verify.narrator_agent import narrate
+            intro = await narrate(self.client, "intro", {
+                "intent_preview": req.intent[:400],
+                "doc_type": classification.doc_type,
+                "jurisdiccion": classification.jurisdiccion,
+                "materia": classification.materia,
+                "n_citations": "varias",
+            })
+            if intro.text:
+                yield _push_thought(intro.text, kind="narration", thread_id=agent_thread_id)
+        except Exception as e:
+            logger.warning("narrator intro failed: %s", e)
 
         template_selected_meta = {
             "id": classification.doc_type,
@@ -539,10 +563,11 @@ class Orchestrator:
                 agent_results: list[dict] = []
                 if USE_AGENT:
                     from lex.verify.verification_agent import VerificationAgent
-                    # M18.d: buffer narrations del agente (no podemos yield desde
-                    # callback síncrono — recolectar y emitir después)
+                    # M18.d + M19.5: buffer thoughts del agente con threadId común
                     thought_buffer: list[dict] = []
                     def _capture_thought(message: str, kind: str = "info", **extra):
+                        # Agregar thread_id si no viene
+                        extra.setdefault("thread_id", agent_thread_id)
                         thought_buffer.append({"message": message, "kind": kind, **extra})
 
                     agent = VerificationAgent(
@@ -550,26 +575,40 @@ class Orchestrator:
                         firm_id=req.firm_id, user_id=None,
                         on_thought=_capture_thought,
                     )
-                    # Narration global antes de empezar
-                    yield SSEEvent.agent_thought(
-                        f"🔎 Iniciando verificación de {len(citations_collected)} citas con cascada multi-fuente (BD interna + Brave Search gov.co + Judge LLM)",
-                        kind="info",
-                    )
                     verdicts = await agent.verify_batch(citations_collected)
                     agent_results = [v.to_audit_dict() for v in verdicts]
-                    # Flush buffered narrations al cliente
+                    # Flush buffered thoughts (tool calls)
                     for thought in thought_buffer:
-                        yield SSEEvent.agent_thought(**thought)
-                    # Resumen final
+                        yield _push_thought(**thought)
+
+                    # Narración post-verification con LLM
                     n_ok = sum(1 for v in verdicts if v.verified)
                     n_corrections = sum(1 for v in verdicts if v.suggested_correction)
                     n_notes = sum(1 for v in verdicts if v.legal_note)
-                    yield SSEEvent.agent_thought(
-                        f"✅ Verificación completa: {n_ok}/{len(verdicts)} citas confirmadas"
-                        + (f", {n_corrections} sugerencias de corrección" if n_corrections else "")
-                        + (f", {n_notes} notas de vigencia/modificación" if n_notes else ""),
-                        kind="success",
-                    )
+                    n_not_found = sum(1 for v in verdicts if v.estado == "no_encontrada")
+                    corrections_list = [
+                        {"original": v.citation_text, "sugerida": v.suggested_correction, "rationale": v.judge_rationale}
+                        for v in verdicts if v.suggested_correction
+                    ]
+                    notes_list = [
+                        {"cita": v.citation_text, "nota": v.legal_note}
+                        for v in verdicts if v.legal_note
+                    ]
+                    try:
+                        from lex.verify.narrator_agent import narrate
+                        post_verif = await narrate(self.client, "post_verification", {
+                            "total": len(verdicts),
+                            "verified": n_ok,
+                            "not_found": n_not_found,
+                            "corrections": n_corrections,
+                            "legal_notes": n_notes,
+                            "corrections_list": corrections_list[:5],
+                            "notes_list": notes_list[:5],
+                        })
+                        if post_verif.text:
+                            yield _push_thought(post_verif.text, kind="narration", thread_id=agent_thread_id)
+                    except Exception as e:
+                        logger.warning("narrator post_verification failed: %s", e)
 
                 # ── Decidir cuál ganara según flags ──
                 if USE_AGENT and SHADOW:
@@ -739,6 +778,25 @@ class Orchestrator:
                 logger.warning("audit insert failed: %s", e)
 
         yield SSEEvent.audit_report(audit_payload)
+
+        # M19.5: persistir thread del agente en chat_messages
+        if self.pool is not None:
+            try:
+                from lex.orchestrator.persistence_chat import persist_chat_thread
+                await persist_chat_thread(
+                    pool=self.pool,
+                    thread_id=agent_thread_id,
+                    generation_id=generation_id,
+                    document_id=document_id,
+                    firm_id=req.firm_id,
+                    matter_id=req.matter_id,
+                    user_intent=req.intent,
+                    user_brief=req.user_brief or "",
+                    agent_thoughts=agent_thoughts_buffer,
+                    duration_ms=int(duration_seconds * 1000),
+                )
+            except Exception as e:
+                logger.warning("chat_messages persist failed: %s", e)
 
         yield SSEEvent.done(
             generation_id=generation_id,

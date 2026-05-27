@@ -136,12 +136,28 @@ class VerificationAgent:
 
         # 3. TOOL DISPATCH
         tools = self.dispatcher.dispatch(parsed)
-        tool_names = [t.name for t in tools]
-        self._thought(
-            f"🔍 Verificando '{citation_text}' con {len(tools)} fuentes: {', '.join(tool_names)}",
-            kind="tool_call", ref=citation_text,
-        )
-        tool_results = await self.dispatcher.execute_all(parsed, tools)
+
+        # M19.5: callback que emite tool_call event con request/response al frontend
+        async def _emit_tool_event(tool_name, tool_id, status, request, response, error, duration_ms):
+            # Composición del mensaje del thought (corto, el frontend renderiza el chip)
+            label = tool_name.replace("_", " ")
+            if status == "running":
+                msg = f"Llamando {label}..."
+            elif status == "done":
+                msg = f"{label} completado en {duration_ms}ms"
+            else:
+                msg = f"{label} falló: {error or 'error'}"
+            self._thought(
+                msg, kind="tool_call",
+                tool=tool_name, ref=citation_text,
+                tool_id=tool_id,
+                tool_request=request,
+                tool_response=response,
+                tool_error=error,
+                tool_duration_ms=duration_ms,
+            )
+
+        tool_results = await self.dispatcher.execute_all(parsed, tools, on_tool=_emit_tool_event)
 
         # 4. EVIDENCE ACCUMULATOR
         evidence = self.accumulator.collect(citation_text, tool_results)
@@ -149,21 +165,13 @@ class VerificationAgent:
         verdict.duration_ms = int((time.time() - started) * 1000)
 
         # 4.1 M18: propagar provenance + snippet del best_hit al verdict
+        # (Los tool events individuales ya se emitieron en dispatcher.execute_all
+        # via on_tool callback con request/response. No duplicar narration aquí.)
         best_hit = evidence.best_hit()
         if best_hit:
             verdict.discovered_by = best_hit.discovered_by
             verdict.snippet = best_hit.snippet
             verdict.query_used = best_hit.query_used
-            # M18.d: narration sobre cómo se descubrió
-            origen_label = {
-                "brave_search": "Brave Search (gov.co)",
-                "internal_db": "BD interna",
-                "smart_search": "índice + Brave",
-            }.get(best_hit.discovered_by, best_hit.discovered_by or "tool")
-            self._thought(
-                f"  ✓ Encontrado vía {origen_label} (confianza {best_hit.confidence:.2f})",
-                kind="tool_result", ref=citation_text, url=best_hit.fuente_url,
-            )
 
         # 5. M17 GUARANTEE FUENTE_URL + HEAD CASCADE
         # Estrategia: para cada cita verificada, probar TODOS los candidatos

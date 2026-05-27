@@ -100,30 +100,101 @@ class ToolDispatcher:
             self._get_tool(SmartSearchTool),
         ]
 
-    async def execute_all(self, parsed, tools: list[BaseTool]) -> list[ToolResult]:
-        """Ejecuta tools en paralelo con semáforo limitante."""
+    async def execute_all(self, parsed, tools: list[BaseTool], on_tool=None) -> list[ToolResult]:
+        """Ejecuta tools en paralelo con semáforo limitante.
+
+        Args:
+            on_tool: callback opcional async(tool_name, tool_id, status, request, response, error, duration_ms)
+                     llamado dos veces por tool: status="running" antes, status="done"|"error" después.
+        """
+        import uuid as _uuid
+        import time as _time
 
         async def _run_with_sem(tool: BaseTool) -> ToolResult:
+            tool_id = _uuid.uuid4().hex[:12]
+            started = _time.time()
+
+            # Request preview = ParsedCitation summary
+            req_preview = {
+                "kind": getattr(parsed, "kind", None),
+                "tipo": getattr(parsed, "tipo", None),
+                "numero": getattr(parsed, "numero", None),
+                "anio": getattr(parsed, "anio", None),
+                "normalized": getattr(parsed, "normalized", None),
+            }
+
+            # Emit "running"
+            if on_tool:
+                try:
+                    await on_tool(
+                        tool_name=tool.name, tool_id=tool_id,
+                        status="running", request=req_preview,
+                        response=None, error=None, duration_ms=None,
+                    )
+                except Exception:
+                    pass
+
             async with self.semaphore:
                 try:
-                    return await asyncio.wait_for(
+                    result = await asyncio.wait_for(
                         tool.run(parsed),
                         timeout=tool.timeout_seconds,
                     )
                 except asyncio.TimeoutError:
+                    duration = int((_time.time() - started) * 1000)
+                    if on_tool:
+                        try:
+                            await on_tool(
+                                tool_name=tool.name, tool_id=tool_id,
+                                status="error", request=req_preview,
+                                response=None, error=f"timeout {tool.timeout_seconds}s",
+                                duration_ms=duration,
+                            )
+                        except Exception:
+                            pass
                     return ToolResult(
-                        tool_name=tool.name,
-                        status="timeout",
-                        confidence=0.0,
+                        tool_name=tool.name, status="timeout", confidence=0.0,
                         error_message=f"timeout {tool.timeout_seconds}s",
                     )
                 except Exception as e:
+                    duration = int((_time.time() - started) * 1000)
                     logger.warning("tool %s error: %s", tool.name, e)
+                    if on_tool:
+                        try:
+                            await on_tool(
+                                tool_name=tool.name, tool_id=tool_id,
+                                status="error", request=req_preview,
+                                response=None, error=str(e)[:200],
+                                duration_ms=duration,
+                            )
+                        except Exception:
+                            pass
                     return ToolResult(
-                        tool_name=tool.name,
-                        status="error",
-                        confidence=0.0,
+                        tool_name=tool.name, status="error", confidence=0.0,
                         error_message=str(e)[:200],
                     )
+
+            # Emit "done" con response summary
+            if on_tool:
+                duration = int((_time.time() - started) * 1000)
+                resp_preview = {
+                    "status": result.status,
+                    "confidence": result.confidence,
+                    "fuente_url": result.fuente_url,
+                    "titulo": (result.titulo or "")[:200] if result.titulo else None,
+                    "snippet": (result.snippet or "")[:300] if result.snippet else None,
+                    "discovered_by": result.discovered_by,
+                }
+                try:
+                    await on_tool(
+                        tool_name=tool.name, tool_id=tool_id,
+                        status="done", request=req_preview,
+                        response=resp_preview, error=None,
+                        duration_ms=duration,
+                    )
+                except Exception:
+                    pass
+
+            return result
 
         return await asyncio.gather(*[_run_with_sem(t) for t in tools])
