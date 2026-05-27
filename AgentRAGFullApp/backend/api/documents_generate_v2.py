@@ -268,6 +268,76 @@ async def patch_block(
     }
 
 
+class AuditChangeBody(BaseModel):
+    """M19.17.C — body para auditar un cambio recién aplicado al documento."""
+    edited_block_id: str = Field(..., description="block_id del bloque que se modificó")
+    before_block_data: dict[str, Any] | None = Field(
+        default=None,
+        description="Snapshot del block_data ANTES del cambio (opcional; el frontend lo tiene)"
+    )
+    user_instruction: str = Field(
+        default="",
+        max_length=2000,
+        description="Mensaje/instrucción del usuario que motivó el cambio. Vacío si fue edit inline directo."
+    )
+
+
+@router.post("/documents/{document_id}/audit-change")
+async def audit_change_endpoint(
+    document_id: str,
+    body: AuditChangeBody,
+    _claims: dict = Depends(_require_session),
+):
+    """M19.17.C — Audita un cambio recién aplicado en 8 dimensiones jurídicas.
+
+    El frontend llama a este endpoint DESPUÉS de que un edit se haya persistido
+    (PATCH /blocks/{id}, chat edit, etc.). El stage `change_auditor` corre un
+    LLM-as-judge entrenado como abogado litigante senior colombiano.
+
+    Returns: {coherence_score, summary, findings: [...]}
+    """
+    if not _flag_enabled():
+        raise HTTPException(status_code=503, detail="docgen_v2_disabled")
+
+    storage = await get_storage()
+    from lex.storage import BlocksRepo
+    from lex.orchestrator.stages.change_auditor import audit_change
+
+    repo = BlocksRepo(storage.pool)
+    all_blocks = await repo.get_blocks_for_document(document_id)
+    if not all_blocks:
+        raise HTTPException(status_code=404, detail="document_not_found_or_empty")
+
+    # Localizar bloque editado en el estado actual (después del cambio)
+    after_block = next(
+        (b for b in all_blocks if b.get("block_id") == body.edited_block_id),
+        None
+    )
+    if after_block is None:
+        raise HTTPException(status_code=404, detail="edited_block_not_found")
+
+    # Reconstruir "before" si el frontend lo mandó; si no, queda None y el auditor
+    # solo verá el estado actual + la instrucción
+    before_block = None
+    if body.before_block_data:
+        before_block = {
+            "block_id": body.edited_block_id,
+            "block_data": body.before_block_data,
+            "block_type": body.before_block_data.get("type", "paragraph"),
+        }
+
+    client = get_openai_client()
+    result = await audit_change(
+        client=client,
+        all_blocks=all_blocks,
+        edited_block_id=body.edited_block_id,
+        before_block=before_block,
+        after_block=after_block,
+        user_instruction=body.user_instruction,
+    )
+    return result
+
+
 @router.get("/health")
 async def health():
     """Health check + flag status."""
