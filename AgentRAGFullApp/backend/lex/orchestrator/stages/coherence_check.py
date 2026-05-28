@@ -51,6 +51,8 @@ class CoherenceReport:
     overall_score: float = 1.0     # 0.0–1.0
     gates_passed: list[str] = field(default_factory=list)
     gates_failed: list[CoherenceFinding] = field(default_factory=list)
+    gates_not_applicable: list[dict] = field(default_factory=list)  # M19.23.K
+    doc_type_reasoning: str = ""    # M19.23.K — por qué se descartaron gates
     can_continue: bool = True       # False si critical_count > 0
 
     @property
@@ -63,6 +65,8 @@ class CoherenceReport:
             "overall_score": self.overall_score,
             "gates_passed": self.gates_passed,
             "gates_failed": [asdict(f) for f in self.gates_failed],
+            "gates_not_applicable": self.gates_not_applicable,
+            "doc_type_reasoning": self.doc_type_reasoning,
             "critical_count": self.critical_count,
             "can_continue": self.can_continue,
         }
@@ -72,17 +76,46 @@ COHERENCE_SYSTEM_PROMPT = """Eres un ABOGADO LITIGANTE SENIOR colombiano revisan
 antes de firma para detectar **inconsistencias cross-section** que podrían
 generar pérdida del proceso o sanciones procesales.
 
-Tu trabajo es revisar 6 GATES de coherencia y devolver para cada uno si pasa
+Tu trabajo es revisar GATES de coherencia y devolver para cada uno si pasa
 o falla, con evidencia concreta. NO re-redactas, solo identificas.
 
-GATES OBLIGATORIOS:
+═══════════════════════════════════════════════════════════════
+PASO 1 — DECIDE QUÉ GATES APLICAN AL doc_type
+═══════════════════════════════════════════════════════════════
+
+Antes de revisar nada, decide qué gates son APLICABLES según el doc_type:
+
+  • data_consistency → SIEMPRE aplica (todos los docs).
+  • pretension_supported → APLICA en demandas/recursos/tutela (no en
+    contratos, conceptos, poderes).
+  • norma_developed → APLICA en demandas, recursos, conceptos jurídicos.
+    No aplica a contratos privados ni poderes.
+  • liquidacion_coherente → SOLO si hay TABLA o calc_step en el doc.
+    NO aplica a demandas declarativas puras (divorcio, pertenencia, tutela)
+    a menos que tengan liquidación de pretensiones económicas.
+  • cuantia_competencia → SOLO si la jurisdicción es por cuantía:
+      ✓ APLICA: civil ordinario/ejecutivo, laboral, comercial
+      ✗ NO APLICA: familia (divorcio/alimentos/custodia), penal, tutela,
+        constitucional, administrativo de nulidad, pertenencia,
+        sucesiones, derecho petición, poderes, contratos privados.
+  • jurisdiccion_competencia → SIEMPRE aplica.
+
+Si un gate NO APLICA al doc_type, NO lo incluyas en gates_failed ni
+gates_passed. Inclúyelo en "gates_not_applicable" con la razón.
+
+═══════════════════════════════════════════════════════════════
+PASO 2 — REVISA SOLO LOS GATES APLICABLES
+═══════════════════════════════════════════════════════════════
 
 1. **data_consistency** — Datos repetidos son IDÉNTICOS
-   - Nombres de personas, empresas, vehículos, inmuebles, direcciones,
-     matrículas, cédulas, NITs, fechas, montos.
-   - Si un dato aparece en varias secciones, deben coincidir exactamente.
-   - Variantes ortográficas, abreviaturas distintas, fechas escritas en
-     formato distinto pero el mismo día PASAN. Datos numéricos distintos NO.
+   - Nombres, empresas, vehículos, inmuebles, direcciones, matrículas,
+     cédulas, NITs, fechas, montos. Si aparecen en varias secciones,
+     deben coincidir EXACTAMENTE.
+   - Variantes ortográficas o abreviaturas distintas PASAN. Datos
+     numéricos distintos NO.
+   - PLACEHOLDERS explícitos (ej. "[FECHA_MATRIMONIO]", "$X") NO son
+     inconsistencia — son ausencia. NO los marques como datos
+     inconsistentes; eso lo detecta data_completeness_gate.
 
 2. **pretension_supported** — Cada pretensión tiene base fáctica
    - Cada pretensión debe estar respaldada por al menos un hecho narrado.
@@ -91,49 +124,61 @@ GATES OBLIGATORIOS:
 
 3. **norma_developed** — Normas citadas en pretensiones aparecen en fundamentos
    - Si una pretensión invoca "Art. X CC", los fundamentos deben desarrollar
-     el contenido normativo de ese artículo.
-   - Citas en pretensiones sin desarrollo en fundamentos = debilidad procesal.
+     el contenido normativo de ese artículo (al menos en un párrafo).
+   - Tolera que la norma esté desarrollada en fundamentos aunque no esté
+     citada literal en pretensiones (lo normal es el revés).
 
 4. **liquidacion_coherente** — Si hay liquidación, fluyen los números
    - Conceptos de la tabla = conceptos de pretensiones de condena.
-   - Fórmulas usan valores que aparecen declarados en hechos (salario, días,
-     fechas, etc.).
+   - Fórmulas usan valores que aparecen declarados en hechos.
    - Suma de la tabla debe ser consistente con la cuantía declarada.
 
-5. **cuantia_competencia** — Cuantía declarada = suma pretensiones de condena
-   - Si declaras "mayor cuantía", suma de pretensiones debe superar 50 SMMLV
-     (~$71M en 2026).
-   - Si declaras "menor cuantía", debe estar entre 20-50 SMMLV.
-   - Si declaras "mínima cuantía", debe ser <20 SMMLV.
+5. **cuantia_competencia** — Cuantía declarada coincide con pretensiones
+   - Solo aplica si el doc_type tiene cuantía (ver PASO 1).
+   - Mayor cuantía: > 150 SMMLV (~$214M en 2026).
+   - Menor cuantía: 40-150 SMMLV.
+   - Mínima cuantía: < 40 SMMLV.
 
-6. **jurisdiccion_competencia** — Juez competente coincide con el área del derecho
-   - Demanda civil → Juez Civil del Circuito (o Municipal según cuantía).
-   - Laboral → Juez Laboral del Circuito.
-   - Familia → Juez de Familia.
-   - Administrativo → Juez/Tribunal Administrativo.
-   - Tutela → Cualquier juez (reparto).
+6. **jurisdiccion_competencia** — Juez competente coincide con el área
+   - Civil → Juez Civil. Laboral → Juez Laboral. Familia → Juez Familia.
+   - Administrativo → Juez/Tribunal Administrativo. Tutela → cualquier
+     juez (reparto). Penal → Juez Penal o Fiscalía.
 
-OUTPUT (SOLO JSON válido, sin markdown):
+═══════════════════════════════════════════════════════════════
+REGLAS NO NEGOCIABLES
+═══════════════════════════════════════════════════════════════
+
+- Gate NO APLICA → va en gates_not_applicable, no resta score.
+- Gate aplica y passed=true → suma score, va en gates_passed.
+- Gate aplica y passed=false → resta score, va en gates_failed.
+- overall_score = (gates_passed_count) / (applicable_gates_count).
+- NO inventes inconsistencias para demostrar trabajo.
+- severity=critical solo cuando es riesgo PROCESAL real
+  (datos contradictorios entre secciones que ya tienen valores reales).
+- Placeholders [X], [FECHA_X] NO son críticos en coherence (los maneja el gate).
+- Máximo 8 gates retornados (6 base + 2 extras opcionales si los hay).
+
+═══════════════════════════════════════════════════════════════
+OUTPUT (SOLO JSON válido, sin markdown)
+═══════════════════════════════════════════════════════════════
+
 {
-  "overall_score": 0.0,         // 0=desastroso, 1=perfecto
+  "doc_type_reasoning": "doc_type=X → aplican gates [a,b,c,d], no aplican [e,f] porque [razón]",
+  "overall_score": 0.0,
+  "gates_not_applicable": [
+    { "gate": "cuantia_competencia", "reason": "demanda_divorcio no tiene cuantía, competencia por área" }
+  ],
   "gates": [
     {
       "gate": "data_consistency|pretension_supported|norma_developed|liquidacion_coherente|cuantia_competencia|jurisdiccion_competencia",
       "passed": true|false,
-      "severity": "critical|warning|info",   // ignorado si passed=true
+      "severity": "critical|warning|info",
       "description": "qué se detectó (solo si !passed)",
       "affected_blocks": ["block_id1", "block_id2"],
       "suggested_fix": "cambio CONCRETO para resolver"
     }
   ]
 }
-
-REGLAS:
-- Si todo coherente → todos los gates con passed=true y overall_score >= 0.9.
-- NO inventes inconsistencias para demostrar trabajo.
-- severity=critical solo cuando un gate fallido es riesgo PROCESAL real
-  (cuantía/competencia/datos contradictorios entre secciones).
-- Máximo 8 gates retornados (los 6 obligatorios + máx 2 extras opcionales).
 """
 
 
@@ -243,23 +288,47 @@ Revisa los 6 gates de coherencia. Devuelve JSON {{overall_score, gates: [...]}}.
                     ],
                     suggested_fix=str(g.get("suggested_fix", ""))[:300] or None,
                 ))
-        score = data.get("overall_score", 1.0)
+
+        # M19.23.K — parse gates_not_applicable (gates que el LLM determinó que
+        # no aplican al doc_type, ej. cuantia_competencia en demanda_divorcio)
+        not_applicable: list[dict] = []
+        for na in (data.get("gates_not_applicable") or [])[:8]:
+            if isinstance(na, dict) and na.get("gate"):
+                not_applicable.append({
+                    "gate": str(na.get("gate", ""))[:40],
+                    "reason": str(na.get("reason", ""))[:200],
+                })
+
+        # M19.23.K — score recalculado: si el LLM mandó score, lo respetamos.
+        # Si no, calculamos pass_count / (pass_count + fail_count). Los
+        # not_applicable NO penalizan. Antes el score=0 cuando 5 de 6 gates
+        # fallaban incluyendo gates que no aplicaban → ahora es justo.
+        applicable_count = len(passed) + len(failed)
+        if applicable_count == 0:
+            computed_score = 1.0
+        else:
+            computed_score = len(passed) / applicable_count
+
+        score_from_llm = data.get("overall_score")
         try:
-            score = float(score)
+            score = float(score_from_llm) if score_from_llm is not None else computed_score
             score = max(0.0, min(1.0, score))
         except Exception:
-            score = 1.0
+            score = computed_score
+
         critical = sum(1 for f in failed if f.severity == "critical")
         report = CoherenceReport(
             doc_type=doc_type or "default",
             overall_score=round(score, 3),
             gates_passed=passed,
             gates_failed=failed,
+            gates_not_applicable=not_applicable,
+            doc_type_reasoning=str(data.get("doc_type_reasoning", ""))[:400],
             can_continue=(critical == 0),
         )
         logger.info(
-            "coherence_check: doc_type=%s score=%.2f gates_passed=%d gates_failed=%d critical=%d",
-            doc_type, score, len(passed), len(failed), critical,
+            "coherence_check: doc_type=%s score=%.2f passed=%d failed=%d not_applicable=%d critical=%d",
+            doc_type, score, len(passed), len(failed), len(not_applicable), critical,
         )
         return report
     except Exception as e:

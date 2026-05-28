@@ -68,7 +68,8 @@ async def _promote_to_core(pool: asyncpg.Pool, cache_row: dict[str, Any]) -> boo
     """Inserta el contenido cacheado como nuevo documento en core corpus.
 
     Best-effort: inserta en documents + crea chunks básicos.
-    En M5 se conectará al pipeline real (ingestion/pipeline.py) para embedding.
+    M19.23.K — Schema de documents NO tiene columna `url`. Se mueve a
+    metadata.url para conservar la trazabilidad sin requerir migración.
     """
     try:
         content = cache_row.get("content_text") or ""
@@ -79,17 +80,20 @@ async def _promote_to_core(pool: asyncpg.Pool, cache_row: dict[str, Any]) -> boo
         url = cache_row.get("url")
         cache_key = cache_row["cache_key"]
 
+        import json as _json
+        metadata = {"url": url, "cache_key": cache_key, "promoted_from": "auto_ingest_worker"}
+
         async with pool.acquire() as conn:
             await conn.execute("""
-                INSERT INTO documents (id, title, source, doc_type, content, url, created_at)
-                VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, now())
+                INSERT INTO documents (id, title, source, doc_type, content, metadata, created_at)
+                VALUES (gen_random_uuid(), $1, $2, $3, $4, $5::jsonb, now())
                 ON CONFLICT DO NOTHING
             """,
                 f"[auto-cache] {cache_key[:80]}",
                 f"auto_cached_{source}",
                 "jurisprudencia" if "csj" in source or "cc" in source else "norma",
                 content[:50000],  # limit
-                url)
+                _json.dumps(metadata, ensure_ascii=False, default=str))
         return True
     except Exception as e:
         logger.warning("promote_to_core insert failed: %s", e)

@@ -121,73 +121,150 @@ EMPTY_REPORT = DataCompletenessReport(
 # LLM prompt
 # ============================================================
 
-DATA_COMPLETENESS_PROMPT = """Eres un ABOGADO LITIGANTE SENIOR colombiano. Tu tarea es revisar el
-prompt del usuario y determinar si tiene los datos mínimos NECESARIOS
-para redactar un documento legal específico, basado en el doc_type y la
+DATA_COMPLETENESS_PROMPT = """Eres un ABOGADO LITIGANTE SENIOR colombiano con 20+ años de experiencia
+en redacción de documentos LISTOS-PARA-FIRMA. Tu trabajo es analizar el
+prompt del usuario y producir el SCHEMA COMPLETO Y EXHAUSTIVO de datos
+que se requieren para redactar el documento legal especificado, sin
+asumir conocimiento previo del LLM sobre el caso concreto.
+
+═══════════════════════════════════════════════════════════════
+METODOLOGÍA OBLIGATORIA (no la saltes — cada paso es necesario)
+═══════════════════════════════════════════════════════════════
+
+PASO 1 — IMAGINAR EL DOCUMENTO TERMINADO
+Visualiza mentalmente el documento legal completo, sección por sección.
+Usa el `sections_plan` que te paso (lo descubrió `structure_discovery`)
+como guía. Si no hay plan, infiere las secciones obligatorias según la
 norma procesal aplicable.
 
-Te pasan:
-  1. doc_type del documento a generar
-  2. norma_procesal aplicable (Art. 82 CGP, Art. 162 CPACA, etc.)
-  3. juez_competente sugerido
-  4. El prompt completo del usuario
-  5. (Opcional) Los datos que ya se extrajeron del prompt
+PASO 2 — INVENTARIO POR CAPAS (sé exhaustivo)
+Recorre EXPLÍCITAMENTE cada capa de datos y enumera qué campos requiere
+el documento. Mínimo debes considerar TODAS estas capas:
 
-Tu output: lista de campos REQUERIDOS por la norma procesal, separados
-en críticos y opcionales:
+  A. DATOS DE LAS PARTES
+     - Nombres completos (no parciales) de cada parte
+     - Documentos de identidad (CC/NIT/CE/Pasaporte) con número y lugar
+     - Domicilios reales (dirección, ciudad, departamento)
+     - Estado civil, ocupación, representación legal si aplica
+     - Para personas jurídicas: representante legal + NIT + matrícula
 
-**CRÍTICOS** (sin estos NO se puede redactar legalmente):
-  - Para CUALQUIER demanda: identificación completa partes (nombres + cédula/NIT)
-  - Para CUALQUIER demanda: hechos concretos (al menos 1-2)
-  - Para CUALQUIER demanda: pretensiones (al menos 1)
-  - Específico por doc_type:
-    * demanda_divorcio: fecha y lugar matrimonio, causales invocadas (Art. 154 CC)
-    * demanda_pertenencia: identificación inmueble (dirección + matrícula),
-      fecha inicio posesión, naturaleza posesión
-    * demanda_laboral: vínculo laboral (fechas, salario, cargo)
-    * demanda_nulidad_restablecimiento: identificación acto admin
-      (resolución número + fecha), fecha agotamiento vía gubernativa
-    * tutela: derecho fundamental vulnerado (Art. 11/12/13/etc. CN),
-      acción/omisión de autoridad
-    * demanda_responsabilidad_civil: descripción del daño, nexo causal
-    * demanda_alimentos: edad del menor, capacidad económica alimentante
+  B. DATOS DEL DOCUMENTO/HECHO GENERADOR
+     - Fecha exacta del hecho/acto/contrato/relación
+     - Lugar del hecho
+     - Identificación documental (escritura, número, notaría, registro,
+       matrícula inmobiliaria, placa vehículo, factura, pagaré, etc.)
+     - Características del bien/relación (avalúo, área, especificaciones)
 
-**OPCIONALES** (placeholders aceptables si faltan):
-  - Direcciones físicas
-  - Emails / teléfonos
-  - Datos del apoderado
-  - Detalles técnicos secundarios
+  C. DATOS SUSTANTIVOS DEL DERECHO
+     - Causales/fundamentos invocados (con norma específica)
+     - Hechos concretos (mínimo 3-5 hechos para una demanda real)
+     - Pretensiones específicas (con monto si es de condena)
 
-REGLAS:
-- NO inventes campos. Solo los exigidos por norma procesal del área.
-- Si el campo se MENCIONA en el prompt → NO está faltante.
-- Si el prompt usa placeholders explícitos (e.g., "[NOMBRE_DEMANDADO]") →
-  marca el campo como CRÍTICO faltante.
-- suggested_placeholder: usa formato [CAMPO_DESCRIPTIVO_MAYUS].
-- example_value: da un ejemplo realista colombiano.
+  D. DATOS ECONÓMICOS
+     - Montos exactos con concepto (no solo "$X" sino "$X por concepto Y")
+     - Fechas de los montos (mora desde cuándo, intereses, etc.)
+     - Salario/ingresos si aplica (para alimentos, indemnizaciones)
+     - Fórmulas (tasa interés, IPC, SMMLV, índices)
+     - Cuantía estimada total
 
-OUTPUT (JSON estricto sin markdown):
+  E. DATOS PROCESALES
+     - Juzgado competente (con jurisdicción y circuito específico)
+     - Anexos/pruebas (lista detallada de documentos a aportar)
+     - Apoderado (nombre, T.P., correo, cuenta para notificaciones)
+     - Datos para notificación de cada parte (físico + electrónico)
+     - Juramento (norma de respaldo)
+
+  F. DATOS ACCESORIOS Y MENORES (si aplica)
+     - Hijos: nombres COMPLETOS, edades, registros civiles, custodia actual
+     - Bienes en sociedad: matrículas, placas, avalúos por separado
+     - Medidas cautelares solicitadas con sustento
+     - Pretensiones subsidiarias
+
+  G. DATOS DE FECHAS RELEVANTES
+     - Para procesal: agotamiento vía gubernativa, prescripción, caducidad
+     - Para sustantivo: inicio posesión, mora, fecha pago, vencimiento
+
+PASO 3 — CLASIFICAR SEVERIDAD POR CAMPO
+Para CADA campo del inventario asigna severity:
+
+  • CRITICAL → El documento NO puede firmarse ni presentarse sin este
+    dato. Si queda como "[PLACEHOLDER]" el documento es defectuoso o
+    inadmisible. Ejemplos universales:
+      - Identificación COMPLETA de todas las partes (no solo nombre)
+      - Fecha exacta del hecho generador del derecho/obligación
+      - Datos del título ejecutivo si es proceso ejecutivo
+      - Causal invocada si la norma exige una en específico
+      - Para alimentos: ingresos del alimentante + datos del menor
+      - Para divorcio: fecha exacta matrimonio + datos hijos si los hay
+      - Para pertenencia: matrícula inmobiliaria + fecha inicio posesión
+      - Para laboral: fechas vínculo + último salario
+      - Para tutela: derecho fundamental específico + autoridad/particular
+
+  • OPTIONAL → Mejora el documento pero se puede usar placeholder o
+    deferir. Ejemplos: teléfono, email secundario, número juzgado
+    específico de reparto, dirección si solo se conoce ciudad,
+    profesión/ocupación si no es esencial al caso.
+
+PASO 4 — MATCH CONTRA EL PROMPT
+Para cada campo del inventario, busca si el usuario ya lo proporcionó
+en su prompt (intent + brief + extracted_data):
+
+  • SÍ está (aunque parcial) → NO va en missing
+  • NO está → va en missing_critical o missing_optional según severity
+  • El usuario dijo "lo confirmo después" o usó placeholder explícito
+    (ej: "[FECHA_MATRIMONIO]", "X de X de 2024") → va en
+    missing_critical (no como opcional)
+
+PASO 5 — AUTO-CRÍTICA DE EXHAUSTIVIDAD
+Antes de finalizar, revisa tu output:
+  - ¿required_fields tiene al menos 12-25 entradas? (menos = perezoso)
+  - ¿Cubrí TODAS las capas A-G arriba?
+  - ¿Marqué campos compuestos como múltiples campos? (ej: "los hijos"
+    no es 1 campo, son N hijos × {nombre, edad, registro_civil})
+  - ¿Hay al menos 3-6 críticos faltantes? Para un prompt incompleto,
+    1-2 críticos es señal de que NO fuiste exhaustivo.
+
+═══════════════════════════════════════════════════════════════
+REGLAS NO NEGOCIABLES
+═══════════════════════════════════════════════════════════════
+
+- NO asumas que el LLM/agente sabe los datos. Si NO están en el prompt,
+  FALTAN — aunque el LLM "podría rellenar genéricos plausibles".
+- field_key debe ser snake_case_descriptivo y único.
+- Para datos compuestos genera múltiples entradas con sufijo numérico:
+  hijo_1_nombre, hijo_1_edad, hijo_1_registro_civil, hijo_2_nombre, ...
+- example_value: ejemplo realista COLOMBIANO concreto (no genérico
+  "Juan Pérez" sino algo como "María Fernanda Gómez Restrepo,
+  C.C. 43.215.789 de Medellín").
+- suggested_placeholder: [CAMPO_DESCRIPTIVO_EN_MAYUS_CON_GUION_BAJO].
+
+═══════════════════════════════════════════════════════════════
+OUTPUT (SOLO JSON válido, sin markdown, sin comentarios)
+═══════════════════════════════════════════════════════════════
+
 {
-  "required_fields": ["lista de field_keys totales esperados"],
+  "reasoning_chain": "PASO 1: el documento es <doc_type>, tendrá secciones [...]. PASO 2: las capas A-G requieren campos [...]. PASO 3: críticos son [...] porque [...]. PASO 4: el usuario mencionó [...] pero faltan [...]. PASO 5: auto-crítica: required_fields tiene N entradas, cubrí todas las capas.",
+  "doc_sections_imagined": ["lista de secciones del documento mental"],
+  "required_fields": ["field_key_1", "field_key_2", "...", "field_key_N"],
   "missing_critical": [
     {
       "field_key": "fecha_matrimonio",
-      "label": "Fecha y lugar del matrimonio",
-      "description": "Necesaria para acreditar el vínculo y aplicar Art. 388 CGP",
+      "label": "Fecha y lugar exactos del matrimonio civil",
+      "description": "Necesaria para acreditar el vínculo conyugal y aplicar Art. 154 CC (causales de divorcio) + Art. 388 CGP (competencia). Sin esto la demanda es inadmisible.",
       "suggested_placeholder": "[FECHA_MATRIMONIO]",
-      "example_value": "28 de junio de 2010 ante Notario 38 de Bogotá"
+      "example_value": "28 de junio de 2010 ante Notario 38 de Bogotá, inscrito en Registro Civil 12345"
     }
   ],
   "missing_optional": [
     {
       "field_key": "telefono_demandante",
-      "label": "Teléfono del demandante",
-      "description": "Para notificaciones",
-      "suggested_placeholder": "[TELEFONO]",
+      "label": "Teléfono del demandante para notificaciones",
+      "description": "Mejora notificación electrónica del Art. 291 CGP",
+      "suggested_placeholder": "[TELEFONO_DEMANDANTE]",
       "example_value": "3001234567"
     }
   ],
-  "reasoning": "El prompt incluye nombres y causal pero falta la fecha del matrimonio."
+  "reasoning": "Resumen breve y natural (3-4 líneas) para el usuario explicando qué falta y por qué importa para la firmabilidad del documento."
 }
 """
 
@@ -200,45 +277,88 @@ async def _llm_detect_missing(
     intent: str,
     brief: Optional[str],
     extracted_data: dict,
+    sections_plan: Optional[list] = None,
+    model: str = "gpt-4o",
 ) -> Optional[dict]:
-    """LLM detecta datos faltantes. None si falla."""
+    """LLM detecta datos faltantes. None si falla.
+
+    M19.23.K — Usa gpt-4o (no mini) para razonamiento legal exhaustivo.
+    Acepta sections_plan del structure_recipe para guiar la imaginación
+    del documento terminado (mejora exhaustividad).
+    """
     if client is None:
         return None
     try:
-        extracted_summary = json.dumps(extracted_data, ensure_ascii=False, default=str)[:1500] if extracted_data else "(sin datos extraídos)"
+        extracted_summary = (
+            json.dumps(extracted_data, ensure_ascii=False, default=str)[:2000]
+            if extracted_data else "(sin datos extraídos)"
+        )
+        sections_block = ""
+        if sections_plan:
+            try:
+                titles = []
+                for s in sections_plan[:20]:
+                    if isinstance(s, dict):
+                        t = s.get("title") or s.get("key") or "?"
+                        roman = s.get("roman") or ""
+                        titles.append(f"  {roman}. {t}")
+                if titles:
+                    sections_block = "PLAN DE SECCIONES (structure_discovery):\n" + "\n".join(titles) + "\n\n"
+            except Exception:
+                sections_block = ""
+
         user_msg = f"""DOC TYPE: {doc_type}
 NORMA PROCESAL APLICABLE: {norma_procesal_ref or '(no especificada)'}
 JUEZ COMPETENTE: {juez_competente or '(no especificado)'}
 
-PROMPT DEL USUARIO:
+{sections_block}PROMPT DEL USUARIO:
 \"\"\"
-{intent[:3000]}
+{intent[:4000]}
 \"\"\"
 
 BRIEF ADICIONAL:
-{(brief or '')[:1000]}
+{(brief or '')[:1500]}
 
 DATOS YA EXTRAÍDOS DEL PROMPT (por data_extractor):
 {extracted_summary}
 
-Identifica required_fields (lista total esperada según la norma procesal),
-missing_critical (sin los cuales NO se puede redactar legalmente) y
-missing_optional (placeholders aceptables). Devuelve JSON estricto."""
+Aplica la METODOLOGÍA OBLIGATORIA (Pasos 1 a 5). Sé EXHAUSTIVO: lista
+required_fields con 12-25 entradas mínimo cubriendo capas A a G. Llena
+reasoning_chain con tu análisis explícito paso a paso. Devuelve JSON
+estricto válido."""
 
         resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model=model,
             messages=[
                 {"role": "system", "content": DATA_COMPLETENESS_PROMPT},
                 {"role": "user", "content": user_msg},
             ],
             temperature=0.1,
-            max_tokens=1500,
+            max_tokens=4000,
             response_format={"type": "json_object"},
         )
         raw = resp.choices[0].message.content or "{}"
         return json.loads(raw)
     except Exception as e:
-        logger.warning("data_completeness LLM call failed: %s", e)
+        logger.warning("data_completeness LLM call failed (model=%s): %s", model, e)
+        # Fallback a gpt-4o-mini si gpt-4o no está disponible/quota
+        if model != "gpt-4o-mini":
+            logger.info("data_completeness retry con gpt-4o-mini fallback")
+            try:
+                resp = await client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": DATA_COMPLETENESS_PROMPT},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    temperature=0.1,
+                    max_tokens=3000,
+                    response_format={"type": "json_object"},
+                )
+                raw = resp.choices[0].message.content or "{}"
+                return json.loads(raw)
+            except Exception as e2:
+                logger.warning("data_completeness fallback gpt-4o-mini also failed: %s", e2)
         return None
 
 
@@ -254,8 +374,10 @@ async def check_data_completeness(
     extracted_data: Optional[dict] = None,
     norma_procesal_ref: Optional[str] = None,
     juez_competente: Optional[str] = None,
+    sections_plan: Optional[list] = None,
     borrador_mode: bool = True,
-    timeout_seconds: float = 25.0,
+    timeout_seconds: float = 40.0,
+    model: str = "gpt-4o",
 ) -> DataCompletenessReport:
     """Stage principal.
 
@@ -271,7 +393,8 @@ async def check_data_completeness(
         result = await asyncio.wait_for(
             _check_inner(
                 client, doc_type, intent, brief, extracted_data,
-                norma_procesal_ref, juez_competente, borrador_mode,
+                norma_procesal_ref, juez_competente, sections_plan,
+                borrador_mode, model,
             ),
             timeout=timeout_seconds,
         )
@@ -306,13 +429,16 @@ async def _check_inner(
     extracted_data: Optional[dict],
     norma_procesal_ref: Optional[str],
     juez_competente: Optional[str],
+    sections_plan: Optional[list],
     borrador_mode: bool,
+    model: str,
 ) -> DataCompletenessReport:
     """Implementación interna envuelta con timeout."""
 
     data = await _llm_detect_missing(
         client, doc_type, norma_procesal_ref, juez_competente,
         intent, brief, extracted_data or {},
+        sections_plan=sections_plan, model=model,
     )
 
     if data is None:

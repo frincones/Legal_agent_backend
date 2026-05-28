@@ -63,6 +63,91 @@ async def _require_session(request: Request) -> dict[str, Any]:
     return {"token": auth[7:]}
 
 
+class PreviewFieldsRequestBody(BaseModel):
+    """M19.23.K — Request body para /preview-required-fields.
+
+    Lo usa el BriefModal del frontend para mostrar dinámicamente los campos
+    que el agente considera necesarios para redactar el documento.
+    """
+    intent: str = Field(..., min_length=5, max_length=4000)
+    doc_type: str | None = None
+    materia: str | None = None
+
+
+@router.post("/preview-required-fields")
+async def preview_required_fields(
+    body: PreviewFieldsRequestBody,
+    _claims: dict = Depends(_require_session),
+):
+    """M19.23.K — Predice campos requeridos ANTES de generar.
+
+    Permite al BriefModal mostrar dinámicamente las preguntas que el agente
+    consideraría necesarias para redactar el documento, en lugar de tener
+    una lista hardcoded por template_id.
+
+    Reusa 100% el LLM call de `data_completeness_gate.check_data_completeness`
+    pasando solo intent + doc_type (sin extracted_data, sin sections_plan
+    porque structure_discovery aún no ha corrido). Aún así, gpt-4o produce
+    una lista exhaustiva razonando desde la norma procesal.
+
+    Latencia esperada: 5-12s. El frontend muestra spinner.
+    """
+    if not _flag_enabled():
+        raise HTTPException(status_code=503, detail="docgen_v2_disabled")
+
+    client = get_openai_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail="llm_client_unavailable")
+
+    # Si el frontend no mandó doc_type, intentamos inferir uno genérico
+    # (el preview funciona mejor si el doc_type ya viene del intent detector).
+    doc_type = body.doc_type or "documento_legal_generico"
+
+    from lex.orchestrator.stages.data_completeness_gate import check_data_completeness
+
+    report = await check_data_completeness(
+        client=client,
+        doc_type=doc_type,
+        intent=body.intent,
+        brief=None,
+        extracted_data=None,           # nada extraído todavía
+        norma_procesal_ref=None,        # no hay structure_recipe aún
+        juez_competente=None,
+        sections_plan=None,
+        borrador_mode=True,             # solo informativo, no bloquea
+        timeout_seconds=20.0,
+        model="gpt-4o",
+    )
+
+    return {
+        "doc_type": report.doc_type,
+        "fields_critical": [
+            {
+                "field_key": f.field_key,
+                "label": f.label,
+                "description": f.description,
+                "example_value": f.example_value,
+                "suggested_placeholder": f.suggested_placeholder,
+            }
+            for f in report.missing_critical
+        ],
+        "fields_optional": [
+            {
+                "field_key": f.field_key,
+                "label": f.label,
+                "description": f.description,
+                "example_value": f.example_value,
+                "suggested_placeholder": f.suggested_placeholder,
+            }
+            for f in report.missing_optional
+        ],
+        "required_fields_count": report.required_fields_count,
+        "reasoning": report.reasoning,
+        "skipped": report.skipped,
+        "duration_ms": report.duration_ms,
+    }
+
+
 @router.post("/generate")
 async def generate_v2(
     body: GenerateRequestBody,

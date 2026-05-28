@@ -485,8 +485,12 @@ class Orchestrator:
                 extracted_data=extracted_data,
                 norma_procesal_ref=(structure_recipe.norma_procesal_ref if structure_recipe else None),
                 juez_competente=(structure_recipe.juez_competente if structure_recipe else None),
+                # M19.23.K — pasar sections_plan (list[dict]) para que el LLM
+                # "imagine" el doc terminado y sea exhaustivo en el inventario.
+                sections_plan=(structure_recipe.sections_plan if structure_recipe else None),
                 borrador_mode=req.borrador_mode,
-                timeout_seconds=25.0,
+                timeout_seconds=40.0,
+                model="gpt-4o",
             )
             yield SSEEvent.missing_data(completeness_data_report.to_dict())
             # Narrator: si hay missing crítico, narrar al usuario
