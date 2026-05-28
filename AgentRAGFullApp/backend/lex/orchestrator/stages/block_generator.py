@@ -145,10 +145,31 @@ REGLA #4 — ENCABEZADO Y CIERRE SE EMITEN UNA SOLA VEZ:
   - El "firma" como sección emite el bloque firma con el cierre_tipo apropiado.
     En las demás secciones NO emitas el bloque firma.
 
-REGLA #5 — PLACEHOLDERS VISIBLES:
-  Si necesitas un dato no disponible, usa formato [NOMBRE_DESCRIPTIVO_MAYUS]
-  con corchetes. El renderer lo resaltará en amarillo. Ejemplo:
-  [RAZON_SOCIAL], [NIT], [FECHA_MATRIMONIO], [TOPE_MAXIMO_CUANTIA].
+REGLA #5 — PLACEHOLDERS VISIBLES (CRÍTICO):
+  Si un dato no está disponible en el INTENT/BRIEF/extracted_data, DEBES emitirlo
+  como PLACEHOLDER explícito: [NOMBRE_DESCRIPTIVO_MAYUS]. El renderer lo
+  resaltará automáticamente en AMARILLO para que el usuario lo complete antes
+  de firmar.
+
+  ✓ CORRECTO:
+      "la sociedad [RAZON_SOCIAL], identificada con NIT [NIT] y matrícula
+       mercantil [MATRICULA_MERCANTIL] de la Cámara de Comercio de [CAMARA_COMERCIO]"
+
+  ✗ PROHIBIDO — frases de relleno en prosa:
+      "la sociedad cuya razón social, NIT y matrícula están pendientes de confirmar"
+      "los datos del apoderado serán confirmados posteriormente"
+      "se completará con la fecha exacta más adelante"
+
+  Si lees "pendiente de confirmar" en el intent del usuario, esa es UNA SEÑAL
+  CLARA de que debes usar placeholder, NO repetir esa frase en el documento.
+
+  Lista típica de placeholders esperados (por familia):
+  - Notarial poder: [RAZON_SOCIAL], [NIT], [MATRICULA_MERCANTIL],
+    [TOPE_MAXIMO_CUANTIA], [VIGENCIA], [DIA], [MES], [ANIO],
+    [LUGAR_EXPEDICION_CC_APODERADO], [PROFESION_APODERADO],
+    [DIRECCION_APODERADO], [CORREO_APODERADO], [NOTARIA_DESTINATARIA]
+  - Contrato: [PRECIO], [CANON], [PLAZO_MESES], [FECHA_INICIO], [FECHA_FIN]
+  - Demanda: [FECHA_HECHOS], [MONTO_PRETENSION], [NOMBRE_JUEZ_REPARTO]
 
 REGLA #6 — FIRMA: usa el cierre_tipo del recipe.
   El bloque firma debe llevar el campo "cierre_tipo" idéntico al del recipe.
@@ -168,6 +189,38 @@ REGLA #8 — PROHIBIDO:
   - Repetir contenido que ya esté en BLOQUES PREVIOS
   - Usar numeración romana en contratos o poderes (van con cláusulas ordinales)
   - Emitir hechos/pretensiones en documentos no demanda
+
+REGLA #9 — LIST_ITEM Y NUMERACIÓN (CRÍTICO — NO DOBLE NUMERACIÓN):
+
+  Cuando emitas un bloque "list_item" con campo "num", el renderer YA antepone
+  la numeración formateada (ej. "1.", "PRIMERA.", etc.). PROHIBIDO incluir
+  esa misma numeración al INICIO del texto del run.
+
+  ✓ CORRECTO:
+      {"type": "list_item", "kind": "generic", "num": "1",
+       "runs": [{"text": "Gestionar y firmar acuerdos de facilidades de pago..."}]}
+
+  ✗ MAL — produce "1. 1. Gestionar..." en el documento final:
+      {"type": "list_item", "kind": "generic", "num": "1",
+       "runs": [{"text": "1. Gestionar y firmar acuerdos..."}]}
+
+  Lo mismo aplica para "hecho" y "pretension":
+  - hecho: NO pongas "1." ni "PRIMERA." al inicio del runs[0].text
+  - pretension: NO pongas "PRIMERA:" al inicio del runs[0].text — el ord
+    se renderiza por separado. Pon el verbo procesal como primer run bold:
+    [{"text":"DECLARAR","bold":true},{"text":" ..."}]
+
+  Para enumerar dentro de un paragraph (no list_item), SÍ puedes prefijar:
+      {"type": "paragraph", "runs": [
+        {"text":"a) primero...","bold":false},
+        {"text":" b) segundo...","bold":false}
+      ]}
+
+REGLA #10 — TÍTULO ÚNICO:
+  El orchestrator emite automáticamente un bloque "title" con el doc_type al
+  inicio del documento (antes de la primera sección). NO emitas otro "title"
+  ni un paragraph centrado con el nombre del documento dentro de "encabezado".
+  Empieza la sección "encabezado" directamente con el saludo/destinatario.
 
 ═══════════════════════════════════════════════════════════════
 OUTPUT

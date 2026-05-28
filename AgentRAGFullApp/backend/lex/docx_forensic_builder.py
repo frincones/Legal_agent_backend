@@ -703,6 +703,17 @@ def _render_block(doc, btype: str, bd: dict[str, Any], derog_lookup: dict[str, s
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         p.paragraph_format.first_line_indent = Cm(0)
         p.paragraph_format.left_indent = Cm(1)
+        # M19.24.G — defensive: stripear prefijo duplicado del primer run
+        import re as _re_h
+        runs = list(bd.get("runs", []))
+        num_str = str(bd.get("num", "")).strip()
+        if num_str and runs and isinstance(runs[0], dict):
+            t0 = runs[0].get("text", "") or ""
+            for pat in (rf"^\s*{_re_h.escape(num_str)}\s*[\.\):\-]\s*", rf"^\s*{_re_h.escape(num_str)}\s+"):
+                m = _re_h.match(pat, t0)
+                if m:
+                    runs[0] = {**runs[0], "text": t0[m.end():]}
+                    break
         # M19.11.B1: numbering nativo si block tiene flag use_native_numbering
         # (default mantiene texto manual para retrocompat)
         if bd.get("use_native_numbering"):
@@ -712,7 +723,7 @@ def _render_block(doc, btype: str, bd: dict[str, Any], derog_lookup: dict[str, s
             run.bold = True
             run.font.name = FONT
             run.font.size = Pt(FONT_SIZE_PT)
-        _add_runs(p, bd.get("runs", []))
+        _add_runs(p, runs)
         return
 
     if btype == "pretension":
@@ -720,11 +731,22 @@ def _render_block(doc, btype: str, bd: dict[str, Any], derog_lookup: dict[str, s
         p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
         p.paragraph_format.first_line_indent = Cm(0)
         p.paragraph_format.left_indent = Cm(1)
+        # M19.24.G — defensive: stripear prefijo "PRIMERA.- " si el LLM lo incluyó
+        import re as _re_p
+        runs = list(bd.get("runs", []))
+        ord_str = str(bd.get("ord", "")).strip()
+        if ord_str and runs and isinstance(runs[0], dict):
+            t0 = runs[0].get("text", "") or ""
+            for pat in (rf"^\s*{_re_p.escape(ord_str)}\s*[\.\):\-]+\s*", rf"^\s*{_re_p.escape(ord_str)}\s+"):
+                m = _re_p.match(pat, t0)
+                if m:
+                    runs[0] = {**runs[0], "text": t0[m.end():]}
+                    break
         run = p.add_run(f"{bd.get('ord', '?')}.- ")
         run.bold = True
         run.font.name = FONT
         run.font.size = Pt(FONT_SIZE_PT)
-        _add_runs(p, bd.get("runs", []))
+        _add_runs(p, runs)
         return
 
     if btype == "norma_citada":
@@ -902,17 +924,36 @@ def _render_block(doc, btype: str, bd: dict[str, Any], derog_lookup: dict[str, s
         p = doc.add_paragraph()
         p.paragraph_format.first_line_indent = Cm(0)
         p.paragraph_format.left_indent = Cm(1.5)
+        # M19.24.G — defensive: el LLM a veces incluye el prefijo de
+        # numeración dentro del texto del primer run (ej. "1. Gestionar..."
+        # cuando num="1"). Sin esto, el renderer emitiría "1) 1. Gestionar..."
+        # Stripeamos el prefijo si matchea.
+        import re as _re_ren
+        runs = list(bd.get("runs", []))
+        num_str = str(bd.get("num", "")).strip()
+        if num_str and runs and isinstance(runs[0], dict):
+            text0 = runs[0].get("text", "") or ""
+            patterns = [
+                rf"^\s*{_re_ren.escape(num_str)}\s*[\.\):\-]\s*",     # "1. ", "1) ", "1- "
+                rf"^\s*{_re_ren.escape(num_str)}\s+",                  # "1 "
+            ]
+            for pat in patterns:
+                m = _re_ren.match(pat, text0)
+                if m:
+                    runs[0] = {**runs[0], "text": text0[m.end():]}
+                    break
+
         # M19.11.B1: numbering nativo si flag presente
         if bd.get("use_native_numbering") == "bullet":
             _add_native_numbering(p, "bullet")
-            _add_runs(p, bd.get("runs", []))
+            _add_runs(p, runs)
         elif bd.get("use_native_numbering"):
             _add_native_numbering(p, "decimal")
-            _add_runs(p, bd.get("runs", []))
+            _add_runs(p, runs)
         else:
             r = p.add_run(f"{bd.get('num', '')}) ")
             r.bold = True
-            _add_runs(p, bd.get("runs", []))
+            _add_runs(p, runs)
         return
 
     if btype == "juramento":

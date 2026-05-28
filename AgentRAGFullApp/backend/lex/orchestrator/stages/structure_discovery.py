@@ -558,6 +558,46 @@ REGLAS:
 - Para cada sección llena playbooks con 3-7 bullets específicos de QUÉ debe contener,
   no instrucciones generales. Esto reemplaza el SYSTEM_PROMPT hardcoded.
 
+REGLA OBLIGATORIA — SECCIONES MÍNIMAS POR FAMILIA:
+
+Independiente del intent del usuario, las secciones siguientes son OBLIGATORIAS
+y DEBES incluirlas en sections_plan SIEMPRE como las ÚLTIMAS del documento:
+
+  • TODA familia notarial_poder DEBE incluir como secciones finales:
+      ...vigencia_y_revocabilidad → aceptacion_apoderado → firma → diligencia_notarial
+  • TODA familia contractual_* DEBE incluir como sección final: firma
+  • TODA familia judicial_demanda DEBE incluir como secciones finales:
+      ...juramento → firma
+  • TODA familia notarial_escritura DEBE incluir como secciones finales:
+      ...firma → diligencia_notarial
+  • TODA familia corporate_estatutos DEBE incluir como sección final: firma
+  • TODA familia corporate_acta DEBE incluir como sección final: firma
+  • TODA familia conceptual DEBE incluir como sección final: firma (firma_consultor)
+  • TODA familia petitorio_* DEBE incluir como sección final: firma (firma_natural)
+
+NUNCA omitas la sección "firma" — sin ella el documento no se puede firmar.
+NUNCA omitas "vigencia_y_revocabilidad" en poderes — sin plazo el poder es
+de duración indefinida y eso es riesgoso.
+NUNCA omitas "aceptacion_apoderado" en poderes — sin aceptación el mandato
+no se perfecciona (Arts. 2150-2151 CC).
+
+REGLA OBLIGATORIA — PLAYBOOKS RICOS:
+
+Cada playbook[section_key] debe tener:
+  - Mínimo 3 bullets
+  - Cada bullet con instrucción CONCRETA de qué emitir
+  - Mencionar campos específicos como [PLACEHOLDER_MAYUS] cuando aplique
+  - Indicar el formato del cierre con cierre_tipo cuando aplique a la sección firma
+
+Ejemplo bueno para sección firma de poder notarial:
+  ["Emite el bloque firma con cierre_tipo='firma_partes_notarial' y array parties
+    con DOS entradas: {rol: 'EL PODERDANTE', nombre: [NOMBRE_PODERDANTE],
+    cc: [CC_PODERDANTE], cargo: 'Representante Legal', razon_social: [RAZON_SOCIAL]}
+    y {rol: 'EL APODERADO (ACEPTO)', nombre: [NOMBRE_APODERADO], cc: [CC_APODERADO]}",
+   "NO emitas 'Atentamente,' ni 'Del Señor Juez,' — esto NO es demanda",
+   "Antes del bloque firma, emite un paragraph con: 'Para constancia se firma
+    en [CIUDAD], a los [DIA] días del mes de [MES] de [ANIO].'"]
+
 NO inventes secciones que no son típicas del documento. Mantén el orden
 tradicional colombiano. Si el doc_type es DESCONOCIDO, infiere familia
 por el intent del usuario y aplica las reglas anteriores."""
@@ -632,6 +672,63 @@ Devuelve el plan en JSON estricto según el schema del system prompt."""
                 "roman": s.get("roman"),
                 "expected_blocks": s.get("expected_blocks") or [],
             })
+        # M19.24.G — Garantizar secciones obligatorias por familia.
+        # Si el LLM omitió 'firma' (o vigencia/aceptacion en poderes), las añadimos.
+        family = str(data.get("document_family", "")).strip().lower()
+        section_keys = {s.get("key", "") for s in clean_sections}
+
+        def _append_section(key: str, title: str, expected_blocks: list[str]):
+            order = (max((s.get("order", 0) for s in clean_sections), default=0)) + 1
+            clean_sections.append({
+                "key": key, "title": title, "order": order,
+                "roman": None, "expected_blocks": expected_blocks,
+            })
+            section_keys.add(key)
+
+        REQUIRED_BY_FAMILY = {
+            "notarial_poder": [
+                ("vigencia_y_revocabilidad", "Vigencia y Revocabilidad", ["paragraph"]),
+                ("aceptacion_apoderado", "Aceptación del Apoderado", ["paragraph"]),
+                ("firma", "Firmas", ["firma"]),
+                ("diligencia_notarial", "Diligencia Notarial", ["paragraph"]),
+            ],
+            "notarial_escritura": [
+                ("firma", "Firmas", ["firma"]),
+                ("diligencia_notarial", "Diligencia Notarial", ["paragraph"]),
+            ],
+            "notarial_extrajuicio": [
+                ("firma", "Firma", ["firma"]),
+                ("diligencia_notarial", "Diligencia Notarial", ["paragraph"]),
+            ],
+            "contractual_civil": [("firma", "Firmas", ["firma"])],
+            "contractual_mercantil": [("firma", "Firmas", ["firma"])],
+            "contractual_laboral": [("firma", "Firmas", ["firma"])],
+            "contractual_corporate": [("firma", "Firmas", ["firma"])],
+            "corporate_estatutos": [("firma", "Firmas", ["firma"])],
+            "corporate_acta": [("firma", "Firmas", ["firma"])],
+            "corporate_policy": [("firma", "Firma", ["firma"])],
+            "conceptual": [("firma", "Firma del Consultor", ["firma"])],
+            "petitorio_admin": [("firma", "Firma", ["firma"])],
+            "petitorio_pqrs": [("firma", "Firma", ["firma"])],
+            "petitorio_extrajudicial": [("firma", "Firma", ["firma"])],
+            "judicial_demanda": [
+                ("juramento", "Juramento Estimatorio", ["juramento"]),
+                ("firma", "Firma", ["firma"]),
+            ],
+            "judicial_recurso": [("firma", "Firma", ["firma"])],
+            "judicial_memorial": [("firma", "Firma", ["firma"])],
+            "judicial_constitucional": [("firma", "Firma", ["firma"])],
+            "criminal_denuncia": [("firma", "Firma", ["firma"])],
+            "tributario_dian": [("firma", "Firma", ["firma"])],
+        }
+        for required_key, required_title, expected in REQUIRED_BY_FAMILY.get(family, []):
+            if required_key not in section_keys:
+                logger.info(
+                    "structure_discovery: añadiendo sección obligatoria omitida por LLM: %s (family=%s)",
+                    required_key, family,
+                )
+                _append_section(required_key, required_title, expected)
+
         data["sections_plan"] = clean_sections
         # M19.24: sanitizar playbooks (max 20 secciones, max 10 bullets cada una, max 300 chars cada bullet)
         playbooks_raw = data.get("playbooks") or {}
