@@ -41,6 +41,10 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_06_01_sprint_m19_24_f_invalidate_stale_recipes.sql",
     "2026_06_01_sprint_m19_24_g_wipe_partial_recipes.sql",
     "2026_06_01_sprint_m19_24_h_wipe_for_claude_test.sql",
+    # M19.25+M19.26 — Claude renderer audit + marketplace tier + skill_assets/skill_learning_jobs
+    "2026_05_28_sprint_m1925_m1926_marketplace_renderer.sql",
+    # M19.27 — Seed 12 NEW builtin skills (no duplica sprint_h)
+    "2026_05_28_seed_m1927_12_new_builtin_skills.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
