@@ -295,15 +295,28 @@ def health_check_sync() -> dict[str, Any]:
     try:
         env = os.environ.copy()
         env.setdefault("NODE_PATH", "/opt/docx-runtime/node_modules")
+        # docx@9.x bloquea require('docx/package.json') via exports map.
+        # En su lugar verificamos que require('docx') exporta Document + Packer.
+        # Si funciona, intentamos extraer la versión vía fs sin pasar por exports map.
+        check_script = (
+            "const d = require('docx');"
+            "if (!d.Document || !d.Packer) { console.error('missing exports'); process.exit(1); }"
+            "try {"
+            "  const fs = require('fs'), path = require('path');"
+            "  const p = path.join(require.resolve('docx').replace(/build[\\\\/].*/,'') ,'package.json');"
+            "  const v = JSON.parse(fs.readFileSync(p,'utf-8')).version;"
+            "  console.log(v);"
+            "} catch(e) { console.log('unknown'); }"
+        )
         r = subprocess.run(
-            ["node", "-e", "console.log(require('docx/package.json').version)"],
+            ["node", "-e", check_script],
             capture_output=True, text=True, timeout=5, env=env,
         )
         if r.returncode == 0:
-            out["docx_version"] = r.stdout.strip()
+            out["docx_version"] = r.stdout.strip() or "unknown"
             out["docx_ok"] = True
         else:
-            out["docx_error"] = r.stderr.strip()
+            out["docx_error"] = (r.stderr or "").strip()[:300]
     except Exception as e:
         out["docx_error"] = str(e)
 
