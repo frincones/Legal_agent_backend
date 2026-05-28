@@ -40,6 +40,7 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_06_01_sprint_m19_24_e_recipes_anchor.sql",
     "2026_06_01_sprint_m19_24_f_invalidate_stale_recipes.sql",
     "2026_06_01_sprint_m19_24_g_wipe_partial_recipes.sql",
+    "2026_06_01_sprint_m19_24_h_wipe_for_claude_test.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
