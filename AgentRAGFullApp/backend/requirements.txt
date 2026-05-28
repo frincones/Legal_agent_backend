@@ -6,6 +6,8 @@ pyyaml>=6.0
 
 # LLM & Embeddings (OpenAI Realtime requires >=1.50)
 openai>=1.50.0
+# M19.24.H — Anthropic Claude API (multi-provider support)
+anthropic>=0.40.0
 
 # Database
 asyncpg>=0.29.0

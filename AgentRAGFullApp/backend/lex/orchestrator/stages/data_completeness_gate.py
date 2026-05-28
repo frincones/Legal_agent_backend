@@ -327,38 +327,22 @@ required_fields con 12-25 entradas mínimo cubriendo capas A a G. Llena
 reasoning_chain con tu análisis explícito paso a paso. Devuelve JSON
 estricto válido."""
 
-        resp = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": DATA_COMPLETENESS_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
+        # M19.24.H — Multi-provider con fallback
+        from utils.llm_provider import chat_complete_json
+        data = await chat_complete_json(
+            provider_env="LLM_PROVIDER_DATA_COMPLETENESS",
+            default_provider="openai",
+            model_env_anthropic="ANTHROPIC_MODEL_DATA_COMPLETENESS",
+            default_model_openai=model,
+            default_model_anthropic="claude-sonnet-4-6",
+            system_prompt=DATA_COMPLETENESS_PROMPT,
+            user_prompt=user_msg,
             temperature=0.1,
             max_tokens=4000,
-            response_format={"type": "json_object"},
         )
-        raw = resp.choices[0].message.content or "{}"
-        return json.loads(raw)
+        return data
     except Exception as e:
-        logger.warning("data_completeness LLM call failed (model=%s): %s", model, e)
-        # Fallback a gpt-4o-mini si gpt-4o no está disponible/quota
-        if model != "gpt-4o-mini":
-            logger.info("data_completeness retry con gpt-4o-mini fallback")
-            try:
-                resp = await client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": DATA_COMPLETENESS_PROMPT},
-                        {"role": "user", "content": user_msg},
-                    ],
-                    temperature=0.1,
-                    max_tokens=3000,
-                    response_format={"type": "json_object"},
-                )
-                raw = resp.choices[0].message.content or "{}"
-                return json.loads(raw)
-            except Exception as e2:
-                logger.warning("data_completeness fallback gpt-4o-mini also failed: %s", e2)
+        logger.warning("data_completeness LLM call failed: %s", e)
         return None
 
 

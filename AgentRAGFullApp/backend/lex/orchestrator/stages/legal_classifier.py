@@ -325,18 +325,20 @@ INTENT DEL USUARIO:
 
 Aplica la METODOLOGÍA OBLIGATORIA (Pasos 1-5). Devuelve JSON estricto."""
 
-        resp = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": LEGAL_CLASSIFIER_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
+        # M19.24.H — Multi-provider
+        from utils.llm_provider import chat_complete_json
+        data = await chat_complete_json(
+            provider_env="LLM_PROVIDER_LEGAL_CLASSIFIER",
+            default_provider="openai",
+            model_env_anthropic="ANTHROPIC_MODEL_LEGAL",
+            default_model_openai="gpt-4o",
+            default_model_anthropic="claude-sonnet-4-6",
+            system_prompt=LEGAL_CLASSIFIER_PROMPT,
+            user_prompt=user_msg,
             temperature=0.1,
             max_tokens=2500,
-            response_format={"type": "json_object"},
         )
-        raw = resp.choices[0].message.content or "{}"
-        return json.loads(raw)
+        return data
     except Exception as e:
         logger.warning("legal_classifier LLM call failed: %s", e)
         return None

@@ -638,20 +638,19 @@ Intent del usuario (primeras 800 chars):
 {enriched_block}
 Devuelve el plan en JSON estricto según el schema del system prompt."""
 
-        # M19.24: gpt-4o (no mini) para calidad de discovery en docs no demanda.
-        # Más tokens (3000 vs 1500) porque ahora también devuelve playbooks.
-        resp = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": STRUCTURE_DISCOVERY_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
+        # M19.24.H — Multi-provider: dispatch OpenAI ↔ Anthropic
+        from utils.llm_provider import chat_complete_json
+        data = await chat_complete_json(
+            provider_env="LLM_PROVIDER_STRUCTURE",
+            default_provider="openai",
+            model_env_anthropic="ANTHROPIC_MODEL_STRUCTURE",
+            default_model_openai="gpt-4o",
+            default_model_anthropic="claude-sonnet-4-6",
+            system_prompt=STRUCTURE_DISCOVERY_PROMPT,
+            user_prompt=user_prompt,
             temperature=0.1,
             max_tokens=3000,
-            response_format={"type": "json_object"},
         )
-        raw = resp.choices[0].message.content or "{}"
-        data = json.loads(raw)
         # Validar shape mínimo
         sp = data.get("sections_plan")
         if not isinstance(sp, list) or len(sp) < 3:

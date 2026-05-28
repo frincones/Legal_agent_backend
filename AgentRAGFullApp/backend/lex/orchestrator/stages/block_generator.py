@@ -615,19 +615,21 @@ async def generate_section_blocks(
         + "\n\nREDACTA AHORA SOLO ESTA SECCIÓN como JSON {\"blocks\": [...]}. NO incluyas título de sección (ya se renderiza aparte)."
     )
 
+    # M19.24.H — Multi-provider: dispatcha entre OpenAI y Anthropic Claude
+    # según env var LLM_PROVIDER_BLOCK_GEN. Default openai (backward compat).
     try:
-        resp = await client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": system_prompt_to_use},
-                {"role": "user", "content": user_prompt},
-            ],
+        from utils.llm_provider import chat_complete_json
+        data = await chat_complete_json(
+            provider_env="LLM_PROVIDER_BLOCK_GEN",
+            default_provider="openai",
+            model_env_anthropic="ANTHROPIC_MODEL_BLOCK_GEN",
+            default_model_openai=model,                       # respeta gpt-4o/gpt-4o-mini por sección
+            default_model_anthropic="claude-sonnet-4-6",
+            system_prompt=system_prompt_to_use,
+            user_prompt=user_prompt,
             temperature=0.2,
             max_tokens=4000,
-            response_format={"type": "json_object"},
         )
-        raw = resp.choices[0].message.content or '{"blocks": []}'
-        data = json.loads(raw)
         raw_blocks = data.get("blocks", [])
     except Exception as e:
         logger.exception("block_generator failed for section %s: %s", section_key, e)
