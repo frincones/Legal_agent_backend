@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -93,9 +94,77 @@ REGLAS DE CLASIFICACIÓN IMPORTANTES (M19.21.B):
 """
 
 
-async def classify(client, intent: str, brief: str | None = None) -> ClassificationResult:
-    """Clasifica el intent del usuario en un doc_type soportado."""
-    user_prompt = f"INTENT: {intent}\n\nBRIEF (opcional): {brief or '(sin brief)'}\n\nResponde con JSON: {{\"doc_type\": \"...\", \"jurisdiccion\": \"...\", \"materia\": \"...\", \"confidence\": 0.0-1.0, \"reasoning\": \"...\"}}"
+async def classify(
+    client,
+    intent: str,
+    brief: str | None = None,
+    enriched_context: Any | None = None,
+) -> ClassificationResult:
+    """Clasifica el intent del usuario en un doc_type soportado.
+
+    M19.22: si recibe `enriched_context` (de context_enrichment stage) con
+    suggested_doc_type de alta confianza (≥0.85), lo usa directamente sin
+    llamar al LLM (atajo + clasificación determinística más confiable).
+    En otros casos, pasa el contexto enriquecido al LLM para mejor decisión.
+
+    Args:
+        enriched_context: EnrichedContext opcional. Si None, comportamiento
+            idéntico al pre-M19.22 (backward compat total).
+    """
+    # M19.22.C — Atajo: si el pre-stage ya decidió con alta confianza, usar eso
+    if (
+        enriched_context is not None
+        and getattr(enriched_context, "suggested_doc_type", None)
+        and getattr(enriched_context, "suggested_doc_type_confidence", 0.0) >= 0.85
+        and enriched_context.suggested_doc_type in SUPPORTED_DOC_TYPES
+    ):
+        logger.info(
+            "classifier: using enriched suggestion doc_type=%s confidence=%.2f (skip LLM)",
+            enriched_context.suggested_doc_type,
+            enriched_context.suggested_doc_type_confidence,
+        )
+        return ClassificationResult(
+            doc_type=enriched_context.suggested_doc_type,
+            jurisdiccion=enriched_context.suggested_jurisdiccion or "general",
+            materia="",  # el LLM puede inferirla si se necesita; vacío por ahora
+            confidence=enriched_context.suggested_doc_type_confidence,
+            reasoning=enriched_context.reasoning or "from context_enrichment",
+        )
+
+    # M19.22.C — Pasar contexto enriquecido al LLM para mejor decisión
+    enriched_block = ""
+    if enriched_context is not None and not getattr(enriched_context, "enrichment_skipped", True):
+        suggested = getattr(enriched_context, "suggested_doc_type", None)
+        suggested_conf = getattr(enriched_context, "suggested_doc_type_confidence", 0.0)
+        corrections = getattr(enriched_context, "citations_corrections", []) or []
+        warnings = getattr(enriched_context, "data_warnings", []) or []
+        if suggested or corrections or warnings:
+            ctx_lines = ["\nCONTEXTO ENRIQUECIDO (análisis previo del prompt):"]
+            if suggested:
+                ctx_lines.append(
+                    f"  - Pre-stage sugirió doc_type='{suggested}' "
+                    f"(confidence {suggested_conf:.2f}, sin llegar al umbral de atajo)"
+                )
+            if corrections:
+                ctx_lines.append(
+                    f"  - Detectadas {len(corrections)} correcciones en citas del usuario"
+                )
+            if warnings:
+                ctx_lines.append(
+                    f"  - Detectadas {len(warnings)} advertencias sobre datos"
+                )
+            ctx_lines.append(
+                "Usa este contexto para confirmar o ajustar el doc_type."
+            )
+            enriched_block = "\n".join(ctx_lines)
+
+    user_prompt = (
+        f"INTENT: {intent}\n\n"
+        f"BRIEF (opcional): {brief or '(sin brief)'}"
+        f"{enriched_block}\n\n"
+        "Responde con JSON: {\"doc_type\": \"...\", \"jurisdiccion\": \"...\", "
+        "\"materia\": \"...\", \"confidence\": 0.0-1.0, \"reasoning\": \"...\"}"
+    )
 
     try:
         resp = await client.chat.completions.create(

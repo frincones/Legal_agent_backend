@@ -180,6 +180,15 @@ class SSEEvent:
     def audit_report(audit: dict) -> bytes:
         return sse("audit_report", audit)
 
+    # M19.22 — Context Enrichment (pre-research estilo Claude)
+    @staticmethod
+    def context_enrichment_started() -> bytes:
+        return sse("context_enrichment_started", {})
+
+    @staticmethod
+    def context_enrichment_done(report: dict) -> bytes:
+        return sse("context_enrichment_done", report)
+
     # M19.20 — Quality Loop Continuo
     @staticmethod
     def completeness_check_done(report: dict) -> bytes:

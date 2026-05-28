@@ -271,10 +271,57 @@ class Orchestrator:
         except Exception as e:
             logger.warning("preflight stage failed: %s", e)
 
+        # ===== STAGE 0.5: M19.22 — CONTEXT ENRICHMENT (pre-research) =====
+        # Investiga las citas que el usuario mencionó, detecta inconsistencias
+        # y sugiere doc_type. Reusa VerificationAgent + JudgeAgent existentes.
+        # Si falla o timeout, retorna EnrichedContext vacío (no rompe pipeline).
+        enriched_context = None
+        try:
+            from lex.orchestrator.stages.context_enrichment import (
+                enrich_context, EMPTY_ENRICHED_CONTEXT,
+            )
+            yield SSEEvent.context_enrichment_started()
+            enriched_context = await enrich_context(
+                client=self.client,
+                pool=self.pool,
+                intent=req.intent,
+                brief=req.user_brief,
+                firm_id=req.firm_id,
+                user_id=None,
+                timeout_seconds=60.0,
+            )
+            yield SSEEvent.context_enrichment_done(enriched_context.to_dict())
+            # Narrator: si hay correcciones detectadas, emitir thought para
+            # que el usuario las vea en el chat estilo Claude.
+            if enriched_context.has_corrections:
+                try:
+                    from lex.verify.narrator_agent import narrate
+                    # post_preflight moment espera findings_json — le pasamos los hallazgos
+                    n_ctx = await narrate(self.client, "post_preflight", {
+                        "findings_json": enriched_context.corrections_summary_for_narrator(),
+                    })
+                    if n_ctx.text:
+                        yield _push_thought(n_ctx.text, kind="narration", thread_id=agent_thread_id)
+                except Exception as e:
+                    logger.debug("narrator post_preflight failed (non-fatal): %s", e)
+        except Exception as e:
+            logger.warning("context_enrichment stage exception (non-fatal): %s", e)
+            try:
+                from lex.orchestrator.stages.context_enrichment import EMPTY_ENRICHED_CONTEXT
+                enriched_context = EMPTY_ENRICHED_CONTEXT
+            except Exception:
+                enriched_context = None
+
         # ===== STAGE 1: CLASSIFIER =====
+        # M19.22: pasa enriched_context al classifier para mejor decisión.
+        # Si enriched_context tiene suggested_doc_type con confidence ≥0.85,
+        # el classifier hace shortcut sin llamar al LLM.
         yield sse("classification_started", {"intent_preview": req.intent[:200]})
         try:
-            classification = await classify(self.client, req.intent, req.user_brief)
+            classification = await classify(
+                self.client, req.intent, req.user_brief,
+                enriched_context=enriched_context,
+            )
         except Exception as e:
             yield SSEEvent.error("classifier", str(e))
             return
@@ -1188,22 +1235,49 @@ class Orchestrator:
         except Exception as e:
             logger.debug("presented_file emit failed (non-fatal): %s", e)
 
-        # M19.7: narrator synthesis (estilo Claude "5 correcciones importantes")
+        # M19.7 + M19.22.F: narrator synthesis (estilo Claude "5 correcciones importantes")
+        # Combina correcciones detectadas por VerificationAgent post-redacción
+        # CON las correcciones detectadas por ContextEnrichment pre-redacción.
         try:
             from lex.verify.narrator_agent import narrate
             n_verified = sum(1 for v in verification_results if v.get("verified"))
-            n_corrections = sum(1 for v in verification_results if v.get("suggested_correction"))
+            n_corrections_post = sum(1 for v in verification_results if v.get("suggested_correction"))
             corrections_applied = [
                 {"original": v.get("ref"), "sugerida": v.get("suggested_correction")}
                 for v in verification_results if v.get("suggested_correction")
             ][:8]
+
+            # M19.22.F — agregar correcciones del pre-stage ContextEnrichment
+            n_corrections_pre = 0
+            if enriched_context is not None and not getattr(enriched_context, "enrichment_skipped", True):
+                for c in (enriched_context.citations_corrections or [])[:5]:
+                    corrections_applied.append({
+                        "original": c.original_ref,
+                        "sugerida": c.suggested_replacement or "(reemplazo no propuesto)",
+                        "razon": c.issue,
+                        "fuente": "pre_research",
+                    })
+                    n_corrections_pre += 1
+                for w in (enriched_context.data_warnings or [])[:5]:
+                    corrections_applied.append({
+                        "campo": w.field,
+                        "problema": w.issue,
+                        "sugerencia": w.suggested_fix or "(sin sugerencia)",
+                        "severidad": w.severity,
+                        "fuente": "pre_research",
+                    })
+                    n_corrections_pre += 1
+
+            corrections_applied = corrections_applied[:12]
+            n_corrections_total = n_corrections_post + n_corrections_pre
+
             syn = await narrate(self.client, "synthesis", {
                 "result_summary": {
                     "doc_type": classification.doc_type,
                     "total_blocks": len(all_blocks),
                     "verified": n_verified,
                     "total_citations": len(verification_results),
-                    "corrections": n_corrections,
+                    "corrections": n_corrections_total,
                     "duration_seconds": duration_seconds,
                 },
                 "corrections_applied": corrections_applied or "(ninguna)",
