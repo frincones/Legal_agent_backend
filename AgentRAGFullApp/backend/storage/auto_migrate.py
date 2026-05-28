@@ -38,6 +38,7 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_06_01_sprint_m19_24_c_legal_classifications.sql",
     "2026_06_01_sprint_m19_24_d_risk_advisories.sql",
     "2026_06_01_sprint_m19_24_e_recipes_anchor.sql",
+    "2026_06_01_sprint_m19_24_f_invalidate_stale_recipes.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
