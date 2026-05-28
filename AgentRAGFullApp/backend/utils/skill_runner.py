@@ -25,6 +25,7 @@ from utils.skill_loader import SkillDefinition, resolve_skill
 from utils.playbook_resolver import get_firm_playbook, playbook_context_block
 from utils.hook_runner import run_hooks_for_skill
 from utils import persona_assembler
+from utils.tier_check import check_skill_tier_allowed
 
 logger = logging.getLogger(__name__)
 
@@ -628,6 +629,26 @@ async def run_skill(
             "error", f"skill_not_found: {command}", [], 0, 0, 0, 0,
         )
         return {"ok": False, "error": "skill_not_found", "command": command}
+
+    # M19.26.B · Tier gate (public vs premium)
+    tier_decision = await check_skill_tier_allowed(
+        pool, firm_id=firm_id, skill_id=skill.id, skill_command=command,
+    )
+    if not tier_decision.allowed:
+        await _persist_execution(
+            pool, execution_id, firm_id, user_id, skill.id, command,
+            matter_id, document_id, input_data, {},
+            "error", f"tier_gate_blocked: {tier_decision.reason}", [], 0, 0, 0, 0,
+        )
+        return {
+            "ok": False,
+            "error": "premium_required",
+            "tier": tier_decision.tier,
+            "firm_plan": tier_decision.firm_plan,
+            "reason": tier_decision.reason,
+            "command": command,
+            "upgrade_required_plan": "estudio_pro",
+        }
 
     # Playbook context
     playbook = await get_firm_playbook(pool, firm_id)

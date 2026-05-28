@@ -287,6 +287,7 @@ async def get_document_audit(
 @router.get("/documents/{document_id}/export-forensic")
 async def export_forensic_docx(
     document_id: str,
+    request: Request,
     _claims: dict = Depends(_require_session),
 ):
     """Exporta documento como .docx forense (Times NR, márgenes 3cm, justified)
@@ -294,6 +295,13 @@ async def export_forensic_docx(
 
     M19.12.C1: persiste el DOCX en Supabase Storage bucket 'documents' la primera
     vez que se solicita, y en llamadas posteriores lo sirve desde cache (más rápido).
+
+    M19.25.E · CAMINO B opcional · query param ``engine=claude``:
+        Si llega ``?engine=claude`` AND CLAUDE_RENDERER_ENABLED=true AND el doc_type
+        del documento está habilitado en CLAUDE_RENDERER_DOC_FAMILIES → usa
+        lex.renderer.claude_docx_renderer.render_docx() (Claude Opus + docx-js).
+        Si falla por cualquier motivo (timeout, JS error, anthropic API down) →
+        fallback transparente al builder legacy. Auditado en claude_render_audit.
     """
     if not _flag_enabled():
         raise HTTPException(status_code=503, detail="docgen_v2_disabled")
@@ -308,6 +316,40 @@ async def export_forensic_docx(
     blocks = await repo.get_blocks_for_document(document_id)
     if not blocks:
         raise HTTPException(status_code=404, detail="document_not_found_or_empty")
+
+    # M19.25.E · Try Claude renderer (camino B) si activado por query param
+    engine = (request.query_params.get("engine") or "").strip().lower()
+    if engine == "claude":
+        try:
+            from lex.renderer import claude_docx_renderer as _crd
+            doc_meta = await _resolve_document_meta_for_render(storage.pool, document_id)
+            if _crd.is_renderer_enabled_for(
+                doc_type=doc_meta.get("doc_type"),
+                doc_family=doc_meta.get("doc_family"),
+                firm_id=doc_meta.get("firm_id"),
+            ):
+                docx_bytes = await _try_render_with_claude(
+                    pool=storage.pool,
+                    document_id=document_id,
+                    blocks=blocks,
+                    doc_meta=doc_meta,
+                )
+                if docx_bytes:
+                    return StreamingResponse(
+                        _io.BytesIO(docx_bytes),
+                        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        headers={
+                            "Content-Disposition": f'attachment; filename="documento_{document_id[:8]}.docx"',
+                            "X-LexAI-Renderer": "claude-opus",
+                        },
+                    )
+                # docx_bytes None → falló y fallback a legacy
+                logger.info("claude renderer returned None, falling back to legacy for %s", document_id)
+            else:
+                logger.info("claude renderer disabled for doc_meta=%s, using legacy", doc_meta)
+        except Exception as e:
+            # NUNCA romper el endpoint si Claude renderer falla
+            logger.warning("claude renderer crashed (%s), falling back to legacy", e)
 
     try:
         # M19.12.C1: cache en Supabase Storage (fallback a build on-demand si falla)
@@ -325,8 +367,203 @@ async def export_forensic_docx(
     return StreamingResponse(
         _io.BytesIO(docx_bytes),
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="documento_{document_id[:8]}.docx"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="documento_{document_id[:8]}.docx"',
+            "X-LexAI-Renderer": "legacy-forensic",
+        },
     )
+
+
+# ----------------------------------------------------------------
+# M19.25.E · helpers para integración Claude renderer
+# ----------------------------------------------------------------
+
+async def _resolve_document_meta_for_render(pool, document_id: str) -> dict[str, Any]:
+    """Best-effort: extrae doc_type, doc_family, firm_id, user_id, matter_id
+    desde tablas conocidas (matter_documents, document_blocks metadata).
+
+    Returns dict (puede tener None en cualquier campo).
+    """
+    meta: dict[str, Any] = {}
+    try:
+        async with pool.acquire() as conn:
+            # matter_documents may not exist in all envs; try gracefully
+            row = await conn.fetchrow(
+                """
+                select md.doc_type, md.doc_family, md.firm_id, md.user_id, md.matter_id
+                  from matter_documents md
+                 where md.id = $1::uuid
+                """,
+                document_id,
+            )
+            if row:
+                meta.update({
+                    "doc_type": row["doc_type"],
+                    "doc_family": row["doc_family"],
+                    "firm_id": str(row["firm_id"]) if row["firm_id"] else None,
+                    "user_id": str(row["user_id"]) if row["user_id"] else None,
+                    "matter_id": str(row["matter_id"]) if row["matter_id"] else None,
+                })
+                return meta
+    except Exception as e:
+        logger.debug("matter_documents lookup failed (likely table absent): %s", e)
+
+    # Fallback: inferir desde document_blocks (primera fila tiene generation_id)
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                select dg.doc_type, dg.doc_family, dg.firm_id, dg.user_id, dg.matter_id
+                  from document_blocks db
+                  join document_generations dg on dg.id = db.generation_id
+                 where db.document_id = $1::uuid
+                 limit 1
+                """,
+                document_id,
+            )
+            if row:
+                meta.update({
+                    "doc_type": row["doc_type"],
+                    "doc_family": row["doc_family"],
+                    "firm_id": str(row["firm_id"]) if row["firm_id"] else None,
+                    "user_id": str(row["user_id"]) if row["user_id"] else None,
+                    "matter_id": str(row["matter_id"]) if row["matter_id"] else None,
+                })
+    except Exception as e:
+        logger.debug("document_generations lookup failed: %s", e)
+    return meta
+
+
+async def _try_render_with_claude(
+    *,
+    pool,
+    document_id: str,
+    blocks: list[dict[str, Any]],
+    doc_meta: dict[str, Any],
+) -> bytes | None:
+    """Intenta renderizar con Claude. None si no se puede (fallback) o si falla."""
+    from lex.renderer.claude_docx_renderer import RenderRequest, render_docx, log_audit
+
+    doc_type = doc_meta.get("doc_type")
+    firm_id = doc_meta.get("firm_id")
+    if not doc_type:
+        return None
+
+    # Resolver SKILL.md del template desde firm_skills (cascade firm_id → builtin)
+    template_md = await _load_template_skill_md(pool, doc_type=doc_type, firm_id=firm_id)
+    if not template_md:
+        logger.info("no SKILL.md template found for doc_type=%s, falling back", doc_type)
+        return None
+
+    # Reconstruir el "user_prompt" desde blocks + extraer datos básicos
+    user_prompt = "Genera el documento .docx final conforme al template. Usa el contenido " \
+                  "existente de los bloques como guía si aplica."
+    data = _blocks_to_data_dict(blocks)
+
+    req = RenderRequest(
+        doc_type=doc_type,
+        template_skill_md=template_md,
+        user_prompt=user_prompt,
+        data=data,
+        firm_id=firm_id,
+        user_id=doc_meta.get("user_id"),
+        matter_id=doc_meta.get("matter_id"),
+        document_id=document_id,
+    )
+
+    try:
+        result = await render_docx(req)
+    except Exception as e:
+        # Auditar el fallo y devolver None para que el caller use el legacy
+        try:
+            await log_audit(pool, req=req, error=e, fallback_used=True, fallback_reason=str(e)[:300])
+        except Exception:
+            pass
+        logger.warning("Claude render failed (%s): %s", type(e).__name__, e)
+        return None
+
+    # Auditar éxito
+    try:
+        await log_audit(pool, req=req, result=result)
+    except Exception:
+        pass
+    return result.docx_bytes
+
+
+async def _load_template_skill_md(pool, *, doc_type: str, firm_id: str | None) -> str | None:
+    """Resuelve SKILL.md del template via cascade firm → builtin.
+
+    Busca en firm_skills.frontmatter->>'doc_type' = $doc_type. Si existe custom
+    de la firma (firm_id no nulo y status=published) → ese. Sino builtin (firm_id NULL).
+    """
+    try:
+        async with pool.acquire() as conn:
+            # Custom de la firma
+            if firm_id:
+                row = await conn.fetchrow(
+                    """
+                    select system_prompt, references_md
+                      from firm_skills
+                     where firm_id = $1::uuid
+                       and status = 'published'
+                       and frontmatter->>'doc_type' = $2
+                     order by version desc
+                     limit 1
+                    """,
+                    firm_id, doc_type,
+                )
+                if row and row["system_prompt"]:
+                    return _compose_template_md(row["system_prompt"], row["references_md"])
+
+            # Builtin
+            row = await conn.fetchrow(
+                """
+                select system_prompt, references_md
+                  from firm_skills
+                 where firm_id is null
+                   and status = 'published'
+                   and frontmatter->>'doc_type' = $1
+                 order by version desc
+                 limit 1
+                """,
+                doc_type,
+            )
+            if row and row["system_prompt"]:
+                return _compose_template_md(row["system_prompt"], row["references_md"])
+    except Exception as e:
+        logger.debug("load_template_skill_md failed: %s", e)
+    return None
+
+
+def _compose_template_md(system_prompt: str, references_md: str | None) -> str:
+    """Combina system_prompt + references_md en formato SKILL.md-like."""
+    parts = [system_prompt or ""]
+    if references_md:
+        parts.append("\n\n---\n\n## References\n\n")
+        parts.append(references_md)
+    return "".join(parts).strip()
+
+
+def _blocks_to_data_dict(blocks: list[dict[str, Any]]) -> dict[str, Any]:
+    """Extrae datos clave desde los bloques persistidos para alimentar el renderer."""
+    data: dict[str, Any] = {
+        "sections": [],
+        "title": None,
+    }
+    for b in blocks or []:
+        section_key = b.get("section_key")
+        block_data = b.get("block_data") or {}
+        block_type = b.get("block_type")
+        if block_type == "heading" and not data["title"]:
+            txt = (block_data.get("text") or "").strip()
+            if txt:
+                data["title"] = txt
+        data["sections"].append({
+            "section_key": section_key,
+            "block_type": block_type,
+            "block_data": block_data,
+        })
+    return data
 
 
 class BlockPatchBody(BaseModel):
