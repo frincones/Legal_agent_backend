@@ -29,6 +29,9 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_05_27_sprint_m19_chat_messages.sql",
     "2026_05_27_sprint_m19_chat_messages_unique.sql",
     "2026_05_27_sprint_m19_document_files.sql",
+    # M19.23 — Structure Discovery + Document Precedents
+    "2026_05_28_sprint_m19_23_structure_recipes.sql",
+    "2026_05_28_sprint_m19_23_document_precedents.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
@@ -50,6 +53,9 @@ EXPECTED_TABLES = {
     "document_versions",
     # Sprint M14 (shadow mode + evidence)
     "verification_shadow_diffs",
+    # M19.23
+    "structure_recipes",
+    "document_precedents",
 }
 
 

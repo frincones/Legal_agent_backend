@@ -50,6 +50,10 @@ class GenerateRequestBody(BaseModel):
     materia: str | None = None
     doc_type: str | None = None
     context: dict[str, Any] | None = None
+    # M19.23.C — modo del data_completeness_gate
+    # True (default, backward compat): modo borrador, continúa con placeholders
+    # False: modo firma, agente pausa si faltan datos críticos
+    borrador_mode: bool = True
 
 
 async def _require_session(request: Request) -> dict[str, Any]:
@@ -82,6 +86,7 @@ async def generate_v2(
         materia=body.materia,
         doc_type=body.doc_type,
         context=body.context or {},
+        borrador_mode=body.borrador_mode,
     )
 
     return StreamingResponse(

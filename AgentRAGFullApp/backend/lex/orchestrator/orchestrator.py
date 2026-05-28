@@ -105,6 +105,10 @@ class GenerationRequest:
     materia: str | None = None
     doc_type: str | None = None
     context: dict[str, Any] = field(default_factory=dict)
+    # M19.23.C — modo de operación del data_completeness_gate
+    # True (default): modo borrador, continúa con placeholders si faltan datos
+    # False: modo firma, pausa generación esperando datos completos
+    borrador_mode: bool = True
 
 
 def _resolve_plan(doc_type: str) -> list[dict[str, Any]]:
@@ -326,11 +330,62 @@ class Orchestrator:
             yield SSEEvent.error("classifier", str(e))
             return
 
-        # Override si user pasó doc_type explícito
-        if req.doc_type:
+        # M19.22.H — Override condicional: si enriched_context tiene
+        # suggested_doc_type con alta confianza Y es DIFERENTE al req.doc_type
+        # (frontend default legacy), confiamos en el classifier.
+        if req.doc_type and not (
+            enriched_context is not None
+            and not getattr(enriched_context, "enrichment_skipped", True)
+            and getattr(enriched_context, "suggested_doc_type_confidence", 0.0) >= 0.85
+            and getattr(enriched_context, "suggested_doc_type", None)
+            and enriched_context.suggested_doc_type != req.doc_type
+        ):
             classification.doc_type = req.doc_type
+        elif req.doc_type and enriched_context is not None:
+            logger.info(
+                "doc_type override SKIPPED: frontend mandó %r pero enriched_context "
+                "sugirió %r con confidence %.2f — confiando en el classifier",
+                req.doc_type, enriched_context.suggested_doc_type,
+                enriched_context.suggested_doc_type_confidence,
+            )
 
-        plan = _resolve_plan(classification.doc_type)
+        # ===== STAGE 1.5: M19.23.B — STRUCTURE DISCOVERY =====
+        # Reemplaza la lógica hardcoded de _resolve_plan() / _resolve_template()
+        # con descubrimiento dinámico (LLM + cache + verify). Si falla, cae a
+        # los templates Python legacy como red de seguridad.
+        structure_recipe = None
+        try:
+            from lex.orchestrator.stages.structure_discovery import discover_structure
+            structure_recipe = await discover_structure(
+                client=self.client,
+                pool=self.pool,
+                doc_type=classification.doc_type,
+                enriched_context=enriched_context,
+                intent=req.intent,
+                brief=req.user_brief,
+                timeout_seconds=30.0,
+            )
+            yield SSEEvent.structure_discovered(structure_recipe.to_dict())
+        except Exception as e:
+            logger.warning("structure_discovery stage exception (non-fatal): %s", e)
+            structure_recipe = None
+
+        # Decidir plan + template a usar:
+        # - Si structure_recipe tiene sections_plan válido → usarlo
+        # - Si no, fallback a _resolve_plan / _resolve_template legacy (compat total)
+        if (
+            structure_recipe is not None
+            and structure_recipe.sections_plan
+            and len(structure_recipe.sections_plan) >= 3
+        ):
+            plan = structure_recipe.sections_plan
+            logger.info(
+                "using dynamic plan from structure_discovery (%d sections, cached=%s, fallback=%s)",
+                len(plan), structure_recipe.cached, structure_recipe.fallback_used,
+            )
+        else:
+            plan = _resolve_plan(classification.doc_type)
+            logger.info("using legacy _resolve_plan (%d sections)", len(plan))
         template = _resolve_template(classification.doc_type)
 
         yield SSEEvent.classification_done(
@@ -415,6 +470,43 @@ class Orchestrator:
         except Exception as e:
             logger.warning("narrator post_extraction failed: %s", e)
         extracted_data = extraction.extracted_fields if extraction else {}
+
+        # ===== STAGE 2.5: M19.23.C — DATA COMPLETENESS GATE =====
+        # Detecta datos faltantes según el doc_type + norma procesal aplicable
+        # (de structure_recipe). En modo borrador es solo informativo (pipeline
+        # continúa con placeholders). En modo firma pausa y espera al usuario.
+        try:
+            from lex.orchestrator.stages.data_completeness_gate import check_data_completeness
+            completeness_data_report = await check_data_completeness(
+                client=self.client,
+                doc_type=classification.doc_type,
+                intent=req.intent,
+                brief=req.user_brief,
+                extracted_data=extracted_data,
+                norma_procesal_ref=(structure_recipe.norma_procesal_ref if structure_recipe else None),
+                juez_competente=(structure_recipe.juez_competente if structure_recipe else None),
+                borrador_mode=req.borrador_mode,
+                timeout_seconds=25.0,
+            )
+            yield SSEEvent.missing_data(completeness_data_report.to_dict())
+            # Narrator: si hay missing crítico, narrar al usuario
+            if completeness_data_report.missing_critical:
+                try:
+                    from lex.verify.narrator_agent import narrate
+                    n_md = await narrate(self.client, "post_preflight", {
+                        "findings_json": completeness_data_report.missing_summary_for_user,
+                    })
+                    if n_md.text:
+                        yield _push_thought(n_md.text, kind="narration", thread_id=agent_thread_id)
+                except Exception as e:
+                    logger.debug("narrator missing_data failed (non-fatal): %s", e)
+            # NOTA: aunque can_continue=False en modo firma, el orchestrator
+            # NO bloquea aquí porque romper el stream rompe el contrato SSE.
+            # En su lugar, emite el event y continúa con placeholders. El
+            # frontend muestra MissingDataPrompt para que el usuario complete
+            # vía PATCH /blocks o /chat. El stage queda como audit + UX guide.
+        except Exception as e:
+            logger.warning("data_completeness_gate stage exception (non-fatal): %s", e)
 
         # ===== STAGE 3: CALCULADORA (Python puro, cero LLM) =====
         calculations: dict[str, Any] = {}

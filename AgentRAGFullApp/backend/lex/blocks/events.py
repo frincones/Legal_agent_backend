@@ -189,6 +189,24 @@ class SSEEvent:
     def context_enrichment_done(report: dict) -> bytes:
         return sse("context_enrichment_done", report)
 
+    # M19.23 — Structure Discovery + Data Completeness Gate
+    @staticmethod
+    def structure_discovered(recipe: dict) -> bytes:
+        """Emitido tras structure_discovery — informa la estructura elegida."""
+        return sse("structure_discovered", recipe)
+
+    @staticmethod
+    def missing_data(report: dict) -> bytes:
+        """Emitido cuando faltan datos críticos. En modo borrador es solo
+        informativo (pipeline sigue). En modo firma pausa la generación
+        esperando POST /documents/v2/resume-generation."""
+        return sse("missing_data", report)
+
+    @staticmethod
+    def missing_data_resolved(filled_fields: dict) -> bytes:
+        """Emitido tras /resume-generation con los datos que el usuario completó."""
+        return sse("missing_data_resolved", {"filled_fields": filled_fields})
+
     # M19.20 — Quality Loop Continuo
     @staticmethod
     def completeness_check_done(report: dict) -> bytes:
