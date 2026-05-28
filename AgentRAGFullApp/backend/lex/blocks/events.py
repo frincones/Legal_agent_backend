@@ -189,6 +189,19 @@ class SSEEvent:
     def context_enrichment_done(report: dict) -> bytes:
         return sse("context_enrichment_done", report)
 
+    # M19.24 — Legal Classifier + Risk Advisory
+    @staticmethod
+    def legal_classification(classification: dict) -> bytes:
+        """Emitido tras legal_classifier (M19.24.B). Contiene régimen, naturaleza,
+        fundamento normativo, premisas corregidas y advertencias de riesgo."""
+        return sse("legal_classification", classification)
+
+    @staticmethod
+    def risk_advisory(advisory: dict) -> bytes:
+        """Emitido por narrator_agent en modo risk_advisory (M19.24.C).
+        Contiene la trinidad falta/consecuencia/recomendación estilo Claude."""
+        return sse("risk_advisory", advisory)
+
     # M19.23 — Structure Discovery + Data Completeness Gate
     @staticmethod
     def structure_discovered(recipe: dict) -> bytes:

@@ -182,6 +182,121 @@ class NarrationResult:
     error: Optional[str] = None
 
 
+# M19.24.C — risk_advisory utilities ====================================
+
+@dataclass
+class RiskAdvisoryFinding:
+    """Trinidad estilo Claude: falta + consecuencia + recomendación."""
+    field_key: str
+    severity: str  # 'critical' | 'warning' | 'info'
+    falta: str
+    consecuencia: str
+    recomendacion: str
+    fuente_legal: Optional[str] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "field_key": self.field_key,
+            "severity": self.severity,
+            "falta": self.falta,
+            "consecuencia": self.consecuencia,
+            "recomendacion": self.recomendacion,
+            "fuente_legal": self.fuente_legal,
+        }
+
+
+async def fetch_risk_advisories(
+    pool,
+    document_family: str,
+    field_keys: list[str],
+) -> list[RiskAdvisoryFinding]:
+    """Consulta risk_advisories table para una familia + lista de field_keys.
+
+    M19.24.C: trae las advertencias curadas (no LLM) para los campos
+    faltantes detectados por el data_completeness_gate. Esto reemplaza
+    la narrativa improvisada por LLM con trinidad estilo Claude.
+
+    Args:
+        pool: asyncpg Pool
+        document_family: e.g. 'notarial_poder', 'judicial_demanda'
+        field_keys: lista de campos faltantes (e.g. ['tope_maximo_cuantia'])
+
+    Returns lista de RiskAdvisoryFinding (puede estar vacía).
+    """
+    if pool is None or not document_family or not field_keys:
+        return []
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT field_key, severity, falta_text, consecuencia_text,
+                       recomendacion_text, fuente_legal
+                FROM risk_advisories
+                WHERE document_family = $1
+                  AND field_key = ANY($2::text[])
+                """,
+                document_family,
+                field_keys,
+            )
+            # Best-effort: bump emitted_count
+            try:
+                await conn.execute(
+                    """
+                    UPDATE risk_advisories SET emitted_count = emitted_count + 1
+                    WHERE document_family = $1 AND field_key = ANY($2::text[])
+                    """,
+                    document_family,
+                    field_keys,
+                )
+            except Exception:
+                pass
+            return [
+                RiskAdvisoryFinding(
+                    field_key=r["field_key"],
+                    severity=r["severity"],
+                    falta=r["falta_text"],
+                    consecuencia=r["consecuencia_text"],
+                    recomendacion=r["recomendacion_text"],
+                    fuente_legal=r.get("fuente_legal"),
+                )
+                for r in rows
+            ]
+    except Exception as e:
+        logger.debug("fetch_risk_advisories failed: %s", e)
+        return []
+
+
+def format_risk_advisory_message(findings: list[RiskAdvisoryFinding]) -> str:
+    """Formatea las advertencias como mensaje markdown estilo Claude.
+
+    Output ejemplo:
+      **Importante**: detecté observaciones críticas antes de firmar:
+
+      ⚠ **Tope máximo de cuantía**
+          Sin esta cifra, el poder para comprometer el patrimonio social es de alto riesgo.
+          → Mi recomendación firme es no firmar hasta fijar un monto en pesos y en letras.
+    """
+    if not findings:
+        return ""
+    lines: list[str] = ["**Importante**: detecté observaciones para tu documento:\n"]
+    critical = [f for f in findings if f.severity == "critical"]
+    warning = [f for f in findings if f.severity == "warning"]
+    info = [f for f in findings if f.severity == "info"]
+    for group, icon, _label in (
+        (critical, "⚠", "críticos"),
+        (warning, "▲", "warnings"),
+        (info, "ⓘ", "info"),
+    ):
+        for f in group:
+            lines.append(f"{icon} **{f.falta}**")
+            lines.append(f"    {f.consecuencia}")
+            lines.append(f"    → {f.recomendacion}")
+            if f.fuente_legal:
+                lines.append(f"    _Fuente: {f.fuente_legal}_")
+            lines.append("")
+    return "\n".join(lines).strip()
+
+
 async def narrate(
     client,
     moment: str,

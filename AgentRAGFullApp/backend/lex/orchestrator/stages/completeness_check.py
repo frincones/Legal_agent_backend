@@ -445,14 +445,74 @@ Revisa truncamientos y vacíos sustantivos. Devuelve JSON."""
 # Orchestration helper
 # ============================================================
 
+def _derive_contract_from_recipe(structure_recipe: dict | None) -> TemplateContract | None:
+    """M19.24.D.5 — Deriva un TemplateContract dinámicamente del structure_recipe.
+
+    Si el recipe tiene sections_plan y los campos requires_*, construye un
+    contrato sin depender de TEMPLATE_CONTRACTS hardcoded. Esto permite
+    validar documentos no-demanda (poderes, contratos, etc.) correctamente.
+
+    Returns None si el recipe no tiene info suficiente.
+    """
+    if not structure_recipe:
+        return None
+    sections_plan = structure_recipe.get("sections_plan") or []
+    if not isinstance(sections_plan, list) or len(sections_plan) == 0:
+        return None
+
+    secciones_obligatorias = [
+        s.get("key", "") for s in sections_plan if isinstance(s, dict) and s.get("key")
+    ]
+    if not secciones_obligatorias:
+        return None
+
+    # secciones_no_aplican: si NO requiere pretensiones, hechos o juramento,
+    # las marcamos como no aplican
+    no_aplican = []
+    req_pret = structure_recipe.get("requires_pretensiones")
+    req_hechos = structure_recipe.get("requires_hechos")
+    req_juramento = structure_recipe.get("requires_juramento")
+    if req_pret is False:
+        no_aplican.append("pretensiones")
+    if req_hechos is False:
+        no_aplican.append("hechos")
+    if req_juramento is False:
+        no_aplican.append("juramento")
+        no_aplican.append("competencia_cuantia")
+
+    # Construir TemplateContract dict-like
+    contract: dict = {
+        "doc_type": structure_recipe.get("doc_type", "default"),
+        "area": structure_recipe.get("jurisdiccion", "general"),
+        "descripcion": f"Recipe M19.24 ({structure_recipe.get('document_family', '?')})",
+        "secciones_obligatorias": secciones_obligatorias,
+        "secciones_no_aplican": no_aplican,
+        "min_bloques_por_seccion": {},
+        "juramento_norma_ref": structure_recipe.get("juramento_norma_ref", "") or "",
+        "competencia_juez_default": structure_recipe.get("juez_competente", "") or "",
+        "cuerpos_normativos_minimos": structure_recipe.get("cuerpos_normativos_minimos", []) or [],
+        "pretensiones_verbos_validos": ["DECLARAR", "CONDENAR", "ORDENAR", "SOLICITAR"],
+        "requires_liquidacion": False,
+        "requires_juramento": bool(req_juramento) if req_juramento is not None else False,
+        "requires_firma": True,
+        "notas_calidad": [],
+    }
+    return contract  # type: ignore[return-value]
+
+
 async def check_completeness(
     client,
     blocks: list[dict],
     doc_type: str | None,
     run_llm_check: bool = True,
+    structure_recipe: dict | None = None,
 ) -> CompletenessReport:
-    """Punto de entrada principal. El orchestrator lo invoca post-block_gen."""
-    contract = get_contract(doc_type)
+    """Punto de entrada principal. El orchestrator lo invoca post-block_gen.
+
+    M19.24.D.5: si structure_recipe está presente, deriva el contrato
+    dinámicamente. Si no, fallback a get_contract() hardcoded.
+    """
+    contract = _derive_contract_from_recipe(structure_recipe) or get_contract(doc_type)
     rule_gaps = _check_rules(blocks, contract)
     # Score rule-based: % de validaciones que pasaron
     # Estimación: 5 categorías × 2 puntos cada una = 10. Cada gap critical resta 2, warning resta 1, info resta 0.5

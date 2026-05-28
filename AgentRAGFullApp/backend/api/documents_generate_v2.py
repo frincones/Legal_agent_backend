@@ -63,6 +63,50 @@ async def _require_session(request: Request) -> dict[str, Any]:
     return {"token": auth[7:]}
 
 
+class LegalClassifyRequestBody(BaseModel):
+    """M19.24.B — Request body para /legal-classify (pre-research conceptual).
+
+    Lo usa el BriefModal y el LegalReasoningCard del frontend para mostrar
+    el análisis legal previo (régimen, naturaleza, correcciones de premisas,
+    advertencias de riesgo) ANTES de generar el documento.
+    """
+    intent: str = Field(..., min_length=5, max_length=4000)
+    doc_type: str | None = None
+
+
+@router.post("/legal-classify")
+async def legal_classify(
+    body: LegalClassifyRequestBody,
+    _claims: dict = Depends(_require_session),
+):
+    """M19.24.B — Clasifica conceptualmente el caso legal.
+
+    Reproduce el Paso 3 de Claude (clasificación + corrección de premisas).
+    Devuelve régimen aplicable, naturaleza del acto, fundamento normativo,
+    premisas corregidas (e.g. Art. 836 CGP no existe) y advertencias de riesgo.
+
+    Latencia esperada: 3-15s (cache HIT instantáneo).
+    """
+    if not _flag_enabled():
+        raise HTTPException(status_code=503, detail="docgen_v2_disabled")
+
+    client = get_openai_client()
+    if client is None:
+        raise HTTPException(status_code=503, detail="llm_client_unavailable")
+
+    storage = await get_storage()
+    from lex.orchestrator.stages.legal_classifier import classify_legal_case
+
+    classification = await classify_legal_case(
+        client=client,
+        pool=storage.pool,
+        intent=body.intent,
+        doc_type_hint=body.doc_type,
+        timeout_seconds=30.0,
+    )
+    return classification.to_dict()
+
+
 class PreviewFieldsRequestBody(BaseModel):
     """M19.23.K — Request body para /preview-required-fields.
 

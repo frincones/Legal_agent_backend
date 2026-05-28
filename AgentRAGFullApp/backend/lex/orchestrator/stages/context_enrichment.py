@@ -320,6 +320,45 @@ async def _enrich_context_inner(
     citations_corrections, data_warnings = await _detect_inconsistencies(
         client, intent, brief, verified_dicts
     )
+
+    # M19.24.E.2 — Validar Art. X dentro de Ley Y usando article_index
+    # Detecta el clásico "Art. 836 CGP" (no existe, CGP llega al 627)
+    try:
+        from lex.verify.article_index import verify_article_batch
+        # Recopilar citas tipo "Art. X Y" del intent + brief + verified
+        import re as _re
+        intent_text = (intent or "") + " " + (brief or "")
+        article_refs: list[str] = []
+        seen = set()
+        for m in _re.finditer(
+            r"art(?:[íi]culo|\.?)\s+\d{1,5}\s+[A-Za-zÁÉÍÓÚáéíóúñÑ\.\s]{2,60}",
+            intent_text,
+            _re.IGNORECASE,
+        ):
+            candidate = _re.sub(r"\s+", " ", m.group(0).strip())[:80]
+            if candidate.lower() not in seen:
+                seen.add(candidate.lower())
+                article_refs.append(candidate)
+            if len(article_refs) >= 10:
+                break
+        if article_refs and pool is not None:
+            verdicts = await verify_article_batch(pool, article_refs)
+            for v in verdicts:
+                if v.parse_ok and not v.exists and v.suggested_correction:
+                    # Añadir como CitationCorrection
+                    try:
+                        citations_corrections.append(CitationCorrection(
+                            original_ref=v.cita_original,
+                            issue=f"Artículo inexistente — el máximo de {v.ley_resolved or 'esa ley'} es {v.max_articulo_in_law}",
+                            suggested_replacement=None,
+                            suggested_replacement_reason=v.suggested_correction[:300],
+                            confidence=0.95,
+                        ))
+                    except Exception:
+                        pass
+    except Exception as e:
+        logger.debug("article_index validation in context_enrichment failed: %s", e)
+
     logger.info(
         "context_enrichment: %d citation corrections, %d data warnings",
         len(citations_corrections), len(data_warnings),

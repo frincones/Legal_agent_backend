@@ -379,6 +379,278 @@ def _add_native_numbering(paragraph, num_format: str = "decimal", level: int = 0
         pass
 
 
+def _ciudad_fecha_default(ciudad_default: str = "Bogotá D.C.") -> str:
+    """Genera ciudad_fecha string del día actual con mes en español."""
+    from datetime import datetime
+    meses = ("enero","febrero","marzo","abril","mayo","junio","julio",
+             "agosto","septiembre","octubre","noviembre","diciembre")
+    hoy = datetime.now()
+    return f"{ciudad_default}, {hoy.day} de {meses[hoy.month-1]} de {hoy.year}"
+
+
+def _render_firma_apoderado_judicial(doc, bd: dict) -> None:
+    """Variante clásica de demanda (Atentamente + T.P. C.S.J.). Legacy."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.shared import Cm
+    import re as _re
+
+    ciudad_fecha = (bd.get("ciudad_fecha") or "").strip()
+    if not ciudad_fecha or _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", ciudad_fecha):
+        ciudad_fecha = _ciudad_fecha_default()
+
+    doc.add_paragraph("")
+    doc.add_paragraph("")
+    p1 = doc.add_paragraph()
+    p1.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    p1.paragraph_format.first_line_indent = Cm(0)
+    r = p1.add_run(ciudad_fecha); r.italic = True
+
+    doc.add_paragraph("")
+    doc.add_paragraph("Atentamente,")
+    doc.add_paragraph("")
+    doc.add_paragraph("_____________________________________")
+    p2 = doc.add_paragraph()
+    p2.paragraph_format.first_line_indent = Cm(0)
+    r2 = p2.add_run(bd.get("nombre", "")); r2.bold = True
+
+    tp_raw = (bd.get("tp") or "").strip()
+    tp_raw = _re.sub(r"(?i)\bt\.?p\.?\s*(no\.?|n[º°]\.?)?\s*", "", tp_raw)
+    tp_raw = _re.sub(r"(?i)\s*del\s+c\.?\s*s\.?\s*j\.?\s*$", "", tp_raw).strip()
+    if not tp_raw or _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", tp_raw):
+        tp_raw = "__________"
+    p3 = doc.add_paragraph()
+    p3.paragraph_format.first_line_indent = Cm(0)
+    p3.add_run(f"Abogada(o) · T.P. No. {tp_raw} del C.S.J.")
+
+    cc_raw = (bd.get("cc") or "").strip()
+    if cc_raw and not _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", cc_raw):
+        cc_clean = _re.sub(r"(?i)\bc\.?\s*c\.?\s*(no\.?|n[º°]\.?)?\s*", "", cc_raw).strip()
+        if cc_clean:
+            p4 = doc.add_paragraph()
+            p4.paragraph_format.first_line_indent = Cm(0)
+            p4.add_run(f"C.C. No. {cc_clean}")
+    contact = []
+    email_raw = (bd.get("email") or "").strip()
+    if email_raw and not _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", email_raw):
+        contact.append(f"Email: {email_raw}")
+    tel_raw = (bd.get("telefono") or "").strip()
+    if tel_raw and not _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", tel_raw):
+        contact.append(f"Tel.: {tel_raw}")
+    if contact:
+        p5 = doc.add_paragraph()
+        p5.paragraph_format.first_line_indent = Cm(0)
+        p5.add_run(" · ".join(contact))
+
+
+def _render_firma_partes_notarial(doc, bd: dict) -> None:
+    """Variante notarial: EL PODERDANTE + EL APODERADO (ACEPTO) con dos firmas."""
+    from docx.shared import Cm
+    ciudad_fecha = (bd.get("ciudad_fecha") or "").strip() or _ciudad_fecha_default("Medellín, Antioquia")
+
+    # Lugar y fecha
+    doc.add_paragraph("")
+    p_cf = doc.add_paragraph()
+    p_cf.add_run(f"Para constancia se firma en {ciudad_fecha}.")
+
+    # Parties — si bd trae `parties`, las usa; sino infiere de nombre + cc
+    parties = bd.get("parties") or []
+    if not parties:
+        # Inferir poderdante de los campos planos
+        parties = [{
+            "rol": "EL PODERDANTE",
+            "nombre": bd.get("nombre", ""),
+            "cc": bd.get("cc", ""),
+            "cargo": bd.get("cargo", ""),
+            "razon_social": bd.get("razon_social", ""),
+            "nit": bd.get("nit_sociedad", ""),
+        }]
+        # Si hay un apoderado declarado en detalle_adicional, añadirlo
+        if bd.get("detalle_adicional"):
+            parties.append({
+                "rol": "EL APODERADO (ACEPTO)",
+                "nombre": bd.get("detalle_adicional", ""),
+            })
+
+    for party in parties[:6]:
+        doc.add_paragraph("")
+        rp = doc.add_paragraph().add_run(party.get("rol", "EL FIRMANTE") + ",")
+        rp.bold = True
+        doc.add_paragraph("_________________________________________")
+        pn = doc.add_paragraph()
+        rn = pn.add_run(party.get("nombre", "")); rn.bold = True
+        cc = (party.get("cc") or "").strip()
+        if cc:
+            doc.add_paragraph(f"C.C. No. {cc}")
+        cargo = (party.get("cargo") or "").strip()
+        razon = (party.get("razon_social") or "").strip()
+        nit = (party.get("nit") or "").strip()
+        if cargo or razon:
+            line = cargo or ""
+            if razon: line = (line + " de " + razon) if line else razon
+            if nit: line += f" — NIT {nit}"
+            doc.add_paragraph(line)
+
+
+def _render_firma_natural(doc, bd: dict) -> None:
+    """Variante simple: nombre + CC, sin T.P."""
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    ciudad_fecha = (bd.get("ciudad_fecha") or "").strip() or _ciudad_fecha_default()
+    doc.add_paragraph("")
+    p_cf = doc.add_paragraph(); p_cf.alignment = WD_ALIGN_PARAGRAPH.LEFT
+    rcf = p_cf.add_run(ciudad_fecha); rcf.italic = True
+    doc.add_paragraph("")
+    doc.add_paragraph("Atentamente,")
+    doc.add_paragraph("")
+    doc.add_paragraph("_____________________________________")
+    pn = doc.add_paragraph()
+    rn = pn.add_run(bd.get("nombre", "")); rn.bold = True
+    cc = (bd.get("cc") or "").strip()
+    if cc:
+        doc.add_paragraph(f"C.C. No. {cc}")
+    if bd.get("email"):
+        doc.add_paragraph(f"Email: {bd.get('email')}")
+
+
+def _render_diligencia_notarial(doc, bd: dict) -> None:
+    """Bloque adicional con espacio reservado para la Notaría."""
+    doc.add_paragraph("")
+    pt = doc.add_paragraph()
+    r = pt.add_run("DILIGENCIA NOTARIAL DE AUTENTICACIÓN / PRESENTACIÓN PERSONAL")
+    r.bold = True
+
+    detail = (bd.get("detalle_adicional") or "").strip() or (
+        "(Espacio reservado para la Notaría correspondiente. La nota notarial "
+        "dará fe de la presentación personal y/o reconocimiento de contenido y "
+        "firma, dejando constancia de haber tenido a la vista las pruebas de la "
+        "calidad alegada por el otorgante, conforme al Estatuto Notarial.)"
+    )
+    doc.add_paragraph(detail)
+    doc.add_paragraph("")
+    doc.add_paragraph("Fecha: ________________   Escritura/Acta No.: ________________")
+    doc.add_paragraph("Firma y sello del Notario: ______________________________")
+
+
+def _render_firma_consultor(doc, bd: dict) -> None:
+    """Variante de consultor (concepto jurídico, opinión legal)."""
+    ciudad_fecha = (bd.get("ciudad_fecha") or "").strip() or _ciudad_fecha_default()
+    doc.add_paragraph("")
+    doc.add_paragraph(ciudad_fecha)
+    doc.add_paragraph("")
+    doc.add_paragraph("Cordialmente,")
+    doc.add_paragraph("")
+    doc.add_paragraph("_____________________________________")
+    pn = doc.add_paragraph()
+    rn = pn.add_run(bd.get("nombre", "")); rn.bold = True
+    cargo = (bd.get("cargo") or "").strip()
+    if cargo:
+        doc.add_paragraph(cargo)
+    tp = (bd.get("tp") or "").strip()
+    if tp:
+        doc.add_paragraph(f"T.P. No. {tp}")
+    if bd.get("email"):
+        doc.add_paragraph(f"Email: {bd.get('email')}")
+
+
+def _render_firma_representante_legal(doc, bd: dict) -> None:
+    """Variante para reglamentos / políticas corporativas firmados por rep legal."""
+    ciudad_fecha = (bd.get("ciudad_fecha") or "").strip() or _ciudad_fecha_default()
+    doc.add_paragraph("")
+    doc.add_paragraph(ciudad_fecha)
+    doc.add_paragraph("")
+    doc.add_paragraph("_____________________________________")
+    pn = doc.add_paragraph()
+    rn = pn.add_run(bd.get("nombre", "")); rn.bold = True
+    doc.add_paragraph("Representante Legal")
+    razon = (bd.get("razon_social") or "").strip()
+    nit = (bd.get("nit_sociedad") or "").strip()
+    if razon:
+        line = razon + (f" — NIT {nit}" if nit else "")
+        doc.add_paragraph(line)
+
+
+def _render_firma_partes_contractuales(doc, bd: dict) -> None:
+    """Variante contractual: LAS PARTES con N firmas (arrendador/arrendatario, etc.)."""
+    from docx.shared import Cm
+    ciudad_fecha = (bd.get("ciudad_fecha") or "").strip() or _ciudad_fecha_default()
+    doc.add_paragraph("")
+    pcf = doc.add_paragraph()
+    pcf.add_run(f"Para constancia, las partes firman en {ciudad_fecha}.")
+
+    parties = bd.get("parties") or []
+    if not parties:
+        parties = [
+            {"rol": "PARTE 1", "nombre": bd.get("nombre", "[NOMBRE_PARTE_1]"),
+             "cc": bd.get("cc", "")},
+            {"rol": "PARTE 2", "nombre": "[NOMBRE_PARTE_2]", "cc": "[CC_PARTE_2]"},
+        ]
+
+    for party in parties[:8]:
+        doc.add_paragraph("")
+        rp = doc.add_paragraph().add_run(party.get("rol", "PARTE") + ",")
+        rp.bold = True
+        doc.add_paragraph("_________________________________________")
+        pn = doc.add_paragraph()
+        rn = pn.add_run(party.get("nombre", "")); rn.bold = True
+        cc = (party.get("cc") or "").strip()
+        if cc:
+            doc.add_paragraph(f"C.C. No. {cc}")
+
+
+def _render_firma_corporativa_organos(doc, bd: dict) -> None:
+    """Variante acta corporativa: Presidente + Secretario."""
+    doc.add_paragraph("")
+    doc.add_paragraph("En constancia firman:")
+    parties = bd.get("parties") or [
+        {"rol": "Presidente de la Asamblea", "nombre": bd.get("nombre", "[NOMBRE_PRESIDENTE]")},
+        {"rol": "Secretario de la Asamblea", "nombre": "[NOMBRE_SECRETARIO]"},
+    ]
+    for party in parties[:4]:
+        doc.add_paragraph("")
+        doc.add_paragraph("_____________________________________")
+        pn = doc.add_paragraph()
+        rn = pn.add_run(party.get("nombre", "")); rn.bold = True
+        doc.add_paragraph(party.get("rol", ""))
+
+
+def _render_firma_block(doc, bd: dict) -> None:
+    """M19.24.D.4 — dispatcher de firma. Decide variante según cierre_tipo.
+
+    Si cierre_tipo viene compuesto (e.g. "firma_partes_notarial+diligencia_notarial"),
+    renderiza ambas en orden.
+    """
+    cierre = (bd.get("cierre_tipo") or "").strip()
+    if not cierre:
+        # Backward-compat: sin cierre_tipo → comportamiento legacy (demanda)
+        _render_firma_apoderado_judicial(doc, bd)
+        return
+
+    parts = [p.strip() for p in cierre.split("+") if p.strip()]
+    dispatch = {
+        "firma_apoderado_judicial": _render_firma_apoderado_judicial,
+        "firma_partes_notarial": _render_firma_partes_notarial,
+        "firma_natural": _render_firma_natural,
+        "diligencia_notarial": _render_diligencia_notarial,
+        "firma_consultor": _render_firma_consultor,
+        "firma_representante_legal": _render_firma_representante_legal,
+        "firma_partes_contractuales": _render_firma_partes_contractuales,
+        "firma_corporativa_organos": _render_firma_corporativa_organos,
+    }
+    rendered_any = False
+    for p in parts:
+        fn = dispatch.get(p)
+        if fn is None:
+            continue
+        try:
+            fn(doc, bd)
+            rendered_any = True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("firma variant %s failed: %s", p, e)
+    if not rendered_any:
+        # Fallback final si ningún tipo matcheó
+        _render_firma_apoderado_judicial(doc, bd)
+
+
 def _render_block(doc, btype: str, bd: dict[str, Any], derog_lookup: dict[str, str] | None = None) -> None:
     from docx.shared import Cm, Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -663,63 +935,7 @@ def _render_block(doc, btype: str, bd: dict[str, Any], derog_lookup: dict[str, s
         return
 
     if btype == "firma":
-        # M19.15.A.4 — auto-rellenar ciudad_fecha si llega vacío o con placeholder
-        ciudad_fecha = (bd.get("ciudad_fecha") or "").strip()
-        import re as _re
-        if not ciudad_fecha or _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", ciudad_fecha):
-            from datetime import datetime
-            meses = ("enero","febrero","marzo","abril","mayo","junio","julio",
-                     "agosto","septiembre","octubre","noviembre","diciembre")
-            hoy = datetime.now()
-            ciudad_fecha = f"Bogotá D.C., {hoy.day} de {meses[hoy.month-1]} de {hoy.year}"
-
-        doc.add_paragraph("")
-        doc.add_paragraph("")
-        p1 = doc.add_paragraph()
-        p1.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-        p1.paragraph_format.first_line_indent = Cm(0)
-        r = p1.add_run(ciudad_fecha)
-        r.italic = True
-
-        doc.add_paragraph("")
-        doc.add_paragraph("Atentamente,")
-        doc.add_paragraph("")
-        doc.add_paragraph("_____________________________________")
-
-        p2 = doc.add_paragraph()
-        p2.paragraph_format.first_line_indent = Cm(0)
-        r2 = p2.add_run(bd.get("nombre", ""))
-        r2.bold = True
-
-        # M19.15.A.3 — sanitizar tp por si llegó con prefijo/sufijo del LLM
-        tp_raw = (bd.get("tp") or "").strip()
-        tp_raw = _re.sub(r"(?i)\bt\.?p\.?\s*(no\.?|n[º°]\.?)?\s*", "", tp_raw)
-        tp_raw = _re.sub(r"(?i)\s*del\s+c\.?\s*s\.?\s*j\.?\s*$", "", tp_raw).strip()
-        if not tp_raw or _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", tp_raw):
-            tp_raw = "__________"
-        p3 = doc.add_paragraph()
-        p3.paragraph_format.first_line_indent = Cm(0)
-        p3.add_run(f"Abogada(o) · T.P. No. {tp_raw} del C.S.J.")
-
-        # M19.15.A.5 — solo mostrar C.C. si es un número plausible (no nombre/placeholder)
-        cc_raw = (bd.get("cc") or "").strip()
-        if cc_raw and not _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", cc_raw):
-            cc_clean = _re.sub(r"(?i)\bc\.?\s*c\.?\s*(no\.?|n[º°]\.?)?\s*", "", cc_raw).strip()
-            if cc_clean:
-                p4 = doc.add_paragraph()
-                p4.paragraph_format.first_line_indent = Cm(0)
-                p4.add_run(f"C.C. No. {cc_clean}")
-        contact = []
-        email_raw = (bd.get("email") or "").strip()
-        if email_raw and not _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", email_raw):
-            contact.append(f"Email: {email_raw}")
-        tel_raw = (bd.get("telefono") or "").strip()
-        if tel_raw and not _re.search(r"\[[A-Z_][A-Z_0-9 ]*\]", tel_raw):
-            contact.append(f"Tel.: {tel_raw}")
-        if contact:
-            p5 = doc.add_paragraph()
-            p5.paragraph_format.first_line_indent = Cm(0)
-            p5.add_run(" · ".join(contact))
+        _render_firma_block(doc, bd)
         return
 
     if btype == "blank":
@@ -727,8 +943,70 @@ def _render_block(doc, btype: str, bd: dict[str, Any], derog_lookup: dict[str, s
         return
 
 
+def _add_run_with_optional_shading(paragraph, text: str, *, bold: bool, italic: bool,
+                                    underline: bool, font_name: str, font_size_pt: float):
+    """M19.24.C.3 — Crea un run y, si el texto contiene un placeholder tipo
+    [NOMBRE_X], le aplica shading amarillo (FFF2CC) para que sea visible
+    como pendiente. Si el texto NO es placeholder, crea run regular.
+
+    Detecta:
+      - [NOMBRE_DEMANDANTE]   (uppercase + underscore + brackets)
+      - [FECHA_X]             (similar)
+      - [____]                 (underscores entre brackets)
+    """
+    import re as _re
+    from docx.shared import Pt as _Pt
+    from docx.oxml.ns import qn as _qn
+    from docx.oxml import OxmlElement as _OxmlElement
+
+    PH_PATTERN = _re.compile(r"\[([A-Z_][A-Z_0-9 ]{0,80}|_{2,})\]")
+    last = 0
+    matches = list(PH_PATTERN.finditer(text))
+
+    def _make_run(t: str, is_placeholder: bool):
+        r = paragraph.add_run(t)
+        r.font.name = font_name
+        r.font.size = _Pt(font_size_pt)
+        if bold: r.bold = True
+        if italic: r.italic = True
+        if underline: r.underline = True
+        if is_placeholder:
+            r.bold = True
+            # Aplicar shading amarillo al run (rPr/shd)
+            try:
+                rPr = r._element.get_or_add_rPr()
+                shd = _OxmlElement("w:shd")
+                shd.set(_qn("w:val"), "clear")
+                shd.set(_qn("w:color"), "auto")
+                shd.set(_qn("w:fill"), "FFF2CC")
+                rPr.append(shd)
+            except Exception:
+                pass
+        return r
+
+    if not matches:
+        _make_run(text, False)
+        return
+
+    for m in matches:
+        if m.start() > last:
+            pre = text[last:m.start()]
+            if pre:
+                _make_run(pre, False)
+        _make_run(m.group(0), True)
+        last = m.end()
+    if last < len(text):
+        tail = text[last:]
+        if tail:
+            _make_run(tail, False)
+
+
 def _add_runs(paragraph, runs: list[dict[str, Any]], italic_default: bool = False) -> None:
-    """Inserta runs con bold/italic/underline. Detecta urls inline `[texto](url)`."""
+    """Inserta runs con bold/italic/underline. Detecta urls inline `[texto](url)`.
+
+    M19.24.C.3: además detecta placeholders [NOMBRE_X] y los renderiza con
+    shading amarillo (FFF2CC) para que sean visibles como pendientes.
+    """
     from docx.shared import Pt
     import re
 
@@ -759,12 +1037,10 @@ def _add_runs(paragraph, runs: list[dict[str, Any]], italic_default: bool = Fals
                 if m.start() > last_pos:
                     plain = text[last_pos:m.start()]
                     if plain:
-                        run = paragraph.add_run(plain)
-                        run.font.name = FONT
-                        run.font.size = Pt(FONT_SIZE_PT)
-                        if bold: run.bold = True
-                        if italic: run.italic = True
-                        if underline: run.underline = True
+                        _add_run_with_optional_shading(
+                            paragraph, plain, bold=bold, italic=italic,
+                            underline=underline, font_name=FONT, font_size_pt=FONT_SIZE_PT,
+                        )
                 # hyperlink
                 _add_hyperlink(paragraph, m.group(1), m.group(2), bold=bold, italic=italic)
                 last_pos = m.end()
@@ -772,18 +1048,14 @@ def _add_runs(paragraph, runs: list[dict[str, Any]], italic_default: bool = Fals
             if last_pos < len(text):
                 tail = text[last_pos:]
                 if tail:
-                    run = paragraph.add_run(tail)
-                    run.font.name = FONT
-                    run.font.size = Pt(FONT_SIZE_PT)
-                    if bold: run.bold = True
-                    if italic: run.italic = True
-                    if underline: run.underline = True
+                    _add_run_with_optional_shading(
+                        paragraph, tail, bold=bold, italic=italic,
+                        underline=underline, font_name=FONT, font_size_pt=FONT_SIZE_PT,
+                    )
             continue
 
-        # Run regular
-        run = paragraph.add_run(text)
-        run.font.name = FONT
-        run.font.size = Pt(FONT_SIZE_PT)
-        if bold: run.bold = True
-        if italic: run.italic = True
-        if underline: run.underline = True
+        # Run regular (con detección de placeholders M19.24.C.3)
+        _add_run_with_optional_shading(
+            paragraph, text, bold=bold, italic=italic,
+            underline=underline, font_name=FONT, font_size_pt=FONT_SIZE_PT,
+        )

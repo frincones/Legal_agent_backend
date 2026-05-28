@@ -349,6 +349,46 @@ class Orchestrator:
                 enriched_context.suggested_doc_type_confidence,
             )
 
+        # ===== STAGE 1.3: M19.24.B — LEGAL CLASSIFIER (pre-research conceptual) =====
+        # Reproduce el "Paso 3" de Claude (clasificación conceptual + corrección
+        # de premisas legales del usuario). Output: LegalClassification con
+        # régimen, naturaleza, fundamento, premisas corregidas, advertencias.
+        # Es opcional: si falla, pipeline continúa sin él.
+        legal_classification = None
+        try:
+            from lex.orchestrator.stages.legal_classifier import classify_legal_case
+            legal_classification = await classify_legal_case(
+                client=self.client,
+                pool=self.pool,
+                intent=req.intent,
+                doc_type_hint=classification.doc_type,
+                timeout_seconds=30.0,
+            )
+            if not legal_classification.skipped:
+                yield SSEEvent.legal_classification(legal_classification.to_dict())
+                # Narrator: si hubo premisas corregidas, emitir thought
+                # para que el usuario vea la corrección estilo Claude.
+                if legal_classification.premisas_corregidas:
+                    try:
+                        from lex.verify.narrator_agent import narrate
+                        premisas_txt = "\n".join([
+                            f"⚠ {p.usuario_dijo} → {p.correcto}. {p.razon[:200]}"
+                            for p in legal_classification.premisas_corregidas[:3]
+                        ])
+                        n_lc = await narrate(self.client, "post_preflight", {
+                            "findings_json": (
+                                f"Correcciones de fundamento legal detectadas:\n{premisas_txt}\n\n"
+                                f"Régimen aplicable: {legal_classification.regimen_aplicable or '(por confirmar)'}.\n"
+                                f"Naturaleza del acto: {legal_classification.naturaleza_acto or '(por confirmar)'}."
+                            ),
+                        })
+                        if n_lc.text:
+                            yield _push_thought(n_lc.text, kind="narration", thread_id=agent_thread_id)
+                    except Exception as e:
+                        logger.debug("narrator legal_classification failed (non-fatal): %s", e)
+        except Exception as e:
+            logger.warning("legal_classifier stage exception (non-fatal): %s", e)
+
         # ===== STAGE 1.5: M19.23.B — STRUCTURE DISCOVERY =====
         # Reemplaza la lógica hardcoded de _resolve_plan() / _resolve_template()
         # con descubrimiento dinámico (LLM + cache + verify). Si falla, cae a
@@ -493,8 +533,41 @@ class Orchestrator:
                 model="gpt-4o",
             )
             yield SSEEvent.missing_data(completeness_data_report.to_dict())
-            # Narrator: si hay missing crítico, narrar al usuario
-            if completeness_data_report.missing_critical:
+            # M19.24.C — Risk Advisory: para cada missing crítico, buscar en
+            # risk_advisories table la trinidad curada (falta/consecuencia/recomendación)
+            # y emitirla como evento dedicado. Si no hay match, fallback a narrate().
+            doc_family_for_advisory = (
+                structure_recipe.document_family
+                if structure_recipe and structure_recipe.document_family
+                else None
+            )
+            advisory_findings = []
+            if completeness_data_report.missing_critical and doc_family_for_advisory:
+                try:
+                    from lex.verify.narrator_agent import (
+                        fetch_risk_advisories, format_risk_advisory_message,
+                    )
+                    field_keys = [
+                        f.field_key for f in completeness_data_report.missing_critical
+                    ] + [
+                        f.field_key for f in completeness_data_report.missing_optional
+                    ]
+                    advisory_findings = await fetch_risk_advisories(
+                        self.pool, doc_family_for_advisory, field_keys[:20],
+                    )
+                    # Emitir cada advisory como SSE event individual
+                    for adv in advisory_findings:
+                        yield SSEEvent.risk_advisory(adv.to_dict())
+                    # Mensaje narrativo unificado
+                    if advisory_findings:
+                        narrative_text = format_risk_advisory_message(advisory_findings)
+                        if narrative_text:
+                            yield _push_thought(narrative_text, kind="narration", thread_id=agent_thread_id)
+                except Exception as e:
+                    logger.debug("risk_advisory dispatch failed (non-fatal): %s", e)
+
+            # Fallback al narrator clásico si NO hubo advisory hits curados
+            if completeness_data_report.missing_critical and not advisory_findings:
                 try:
                     from lex.verify.narrator_agent import narrate
                     n_md = await narrate(self.client, "post_preflight", {
@@ -770,6 +843,9 @@ class Orchestrator:
                     section_instruction=extra_instr,
                     expected_blocks=expected_blocks,
                     verified_citations=section_verified_cits,  # M19.8
+                    # M19.24.D — modo universal: pasa recipe completo + bloques previos
+                    structure_recipe=(structure_recipe.to_dict() if structure_recipe else None),
+                    previous_blocks=all_blocks,
                 ):
                     block_order += 1
                     payload = {
@@ -1043,6 +1119,8 @@ class Orchestrator:
                 blocks=all_blocks,
                 doc_type=classification.doc_type,
                 run_llm_check=True,
+                # M19.24.D.5 — recipe deriva contrato dinámicamente
+                structure_recipe=(structure_recipe.to_dict() if structure_recipe else None),
             )
             yield SSEEvent.completeness_check_done(completeness_report.to_dict())
         except Exception as e:
@@ -1127,6 +1205,7 @@ class Orchestrator:
                         blocks=all_blocks,
                         doc_type=classification.doc_type,
                         run_llm_check=False,  # rule-only en iteraciones, más rápido
+                        structure_recipe=(structure_recipe.to_dict() if structure_recipe else None),
                     )
                     yield SSEEvent.completeness_check_done(completeness_report.to_dict())
                     if completeness_report.can_continue:

@@ -32,6 +32,12 @@ SPRINT_L_DOC_MIGRATIONS = [
     # M19.23 — Structure Discovery + Document Precedents
     "2026_05_28_sprint_m19_23_structure_recipes.sql",
     "2026_05_28_sprint_m19_23_document_precedents.sql",
+    # M19.24 — Pipeline universal (cualquier doc legal colombiano)
+    "2026_06_01_sprint_m19_24_a_structure_recipes_v2.sql",
+    "2026_06_01_sprint_m19_24_b_article_index.sql",
+    "2026_06_01_sprint_m19_24_c_legal_classifications.sql",
+    "2026_06_01_sprint_m19_24_d_risk_advisories.sql",
+    "2026_06_01_sprint_m19_24_e_recipes_anchor.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
@@ -56,6 +62,10 @@ EXPECTED_TABLES = {
     # M19.23
     "structure_recipes",
     "document_precedents",
+    # M19.24
+    "article_index",
+    "legal_classifications_cache",
+    "risk_advisories",
 }
 
 

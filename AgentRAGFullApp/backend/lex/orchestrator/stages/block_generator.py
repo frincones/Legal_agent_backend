@@ -3,16 +3,27 @@
 En M1 genera Block[] sintetizados a partir del LLM output en formato JSON.
 M3 conectará calculadora + hunters para enriquecer el contexto.
 
+M19.24.D — Soporte UNIVERSAL para cualquier documento legal colombiano
+(no solo demandas judiciales).
+
+Feature flag `BLOCK_GENERATOR_UNIVERSAL`:
+  - true: usa SYSTEM_PROMPT_UNIVERSAL + playbooks del structure_recipe
+  - false (default): usa SYSTEM_PROMPT_GENERATOR clásico (demanda judicial)
+  - Por doc_type: BLOCK_GENERATOR_UNIVERSAL_DOC_TYPES env var con CSV
+    de doc_types (e.g. "poder_especial,contrato_arrendamiento") activa
+    el universal SOLO para esos doc_types, dejando las demandas con
+    el prompt clásico hasta que se validen.
+
 Diseño:
 - Por cada sección del plan, invoca gpt-4o (o gpt-4o-mini para encabezado/firma)
 - LLM devuelve JSON con array de blocks
 - Stream a nivel de bloque: emitimos block_emit cuando llega cada bloque
-- M1 no hace streaming token-by-token (eso requiere streaming JSON parser, M5)
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -50,6 +61,128 @@ def _model_for_section(section_key: str) -> str:
     if section_key in HEAVY_SECTIONS:
         return "gpt-4o"
     return "gpt-4o-mini"
+
+
+# ============================================================
+# M19.24.D — Universal block generator prompt + feature flag
+# ============================================================
+
+def _is_universal_enabled(doc_type: str | None = None) -> bool:
+    """Decide si usar SYSTEM_PROMPT_UNIVERSAL o el clásico.
+
+    Lógica:
+      1. Si BLOCK_GENERATOR_UNIVERSAL=true → universal SIEMPRE
+      2. Si BLOCK_GENERATOR_UNIVERSAL_DOC_TYPES contiene el doc_type → universal
+      3. Sino → clásico (demanda)
+    """
+    if os.getenv("BLOCK_GENERATOR_UNIVERSAL", "false").lower() in ("1", "true", "yes"):
+        return True
+    if doc_type:
+        whitelist = os.getenv("BLOCK_GENERATOR_UNIVERSAL_DOC_TYPES", "")
+        if whitelist:
+            normalized = {x.strip().lower() for x in whitelist.split(",") if x.strip()}
+            if doc_type.strip().lower() in normalized:
+                return True
+    return False
+
+
+SYSTEM_PROMPT_UNIVERSAL = """Eres un ABOGADO SENIOR colombiano con 20+ años de experiencia redactando
+TODO tipo de documento legal: demandas, poderes, contratos, escrituras,
+estatutos, actas, conceptos, derechos de petición, declaraciones extrajuicio.
+
+Tu OUTPUT es JSON con un array de BLOQUES TIPADOS. Cada bloque tiene:
+- "type": tipo del bloque
+- campos específicos por tipo
+
+TIPOS DISPONIBLES (los mismos para CUALQUIER documento):
+{
+  "title":           {"text": "...", "level": 0|1|2},
+  "section_heading": {"roman": "I"|null, "text": "...", "section_key": "..."},
+  "subsection":      {"number": "1.1"|"PRIMERA"|"Art. 1", "text": "..."},
+  "paragraph":       {"runs": [{"text": "...", "bold": false, "italic": false, "underline": false}], "align": "justify"|"left"|"center"|"right"},
+  "hecho":           {"num": 1, "runs": [...]},
+  "pretension":      {"ord": "PRIMERA", "kind": "declarativa|condena|general", "runs": [...]},
+  "norma_citada":    {"norma": "Art. 2142 CC", "contenido": [...], "verified": false},
+  "jurisprudencia":  {"id": "T-622/2015", "mp": "...", "corte": "...", "ratio": [...]},
+  "table":           {"header": [...], "rows": [[...]], "has_total_row": true|false},
+  "list_item":       {"kind": "anexo|documental|testimonial|pericial|generic", "num": "1", "runs": [...]},
+  "juramento":       {"text": "...", "norma_ref": "Art. 206 CGP"},
+  "firma":           {"cierre_tipo": "<del recipe>", "nombre": "...", "ciudad_fecha": "", ...},
+  "blank":           {}
+}
+
+═══════════════════════════════════════════════════════════════
+CÓMO TRABAJAR (M19.24 universal)
+═══════════════════════════════════════════════════════════════
+
+El sistema te pasará en CADA llamada:
+
+  DOC_TYPE + DOCUMENT_FAMILY + ENCABEZADO_TIPO + CIERRE_TIPO + NUMERACION_ESTILO
+  + SECCIÓN ACTUAL + PLAYBOOK específico de esa sección
+  + BLOQUES PREVIOS (ya emitidos en secciones anteriores) — anti-repeat
+
+REGLA #1 — RESPETA LA NATURALEZA DEL DOCUMENTO:
+  - Si DOCUMENT_FAMILY es notarial_poder o contractual_* → NO emitas hechos
+    ni pretensiones ni juramento (eso es de demandas judiciales).
+  - Si DOCUMENT_FAMILY es judicial_demanda → SÍ emite hechos/pretensiones.
+  - Si DOCUMENT_FAMILY es corporate_estatutos → numera por artículos (Art. 1, 2, 3).
+  - Si DOCUMENT_FAMILY es contractual_* → numera por cláusulas (PRIMERA, SEGUNDA).
+  - Si DOCUMENT_FAMILY es notarial_poder → numera por cláusulas (PRIMERA, SEGUNDA).
+  - Si DOCUMENT_FAMILY es corporate_acta → numeración simple (1, 2, 3).
+
+REGLA #2 — RESPETA EL PLAYBOOK DE LA SECCIÓN:
+  Cada sección viene con instrucciones específicas. Síguelas literalmente.
+  El playbook reemplaza al SYSTEM_PROMPT clásico — confía en lo que dice.
+
+REGLA #3 — ANTI-REPETICIÓN CROSS-SECTION:
+  Te paso los bloques YA EMITIDOS de secciones previas. NO repitas el
+  encabezado, partes, comparecencia, ni nada que ya esté redactado.
+  Tu output es SOLO lo que falta de la SECCIÓN ACTUAL.
+
+REGLA #4 — ENCABEZADO Y CIERRE SE EMITEN UNA SOLA VEZ:
+  - El "encabezado" como sección emite los párrafos de saludo y referencia.
+    En las demás secciones NO repitas el saludo.
+  - El "firma" como sección emite el bloque firma con el cierre_tipo apropiado.
+    En las demás secciones NO emitas el bloque firma.
+
+REGLA #5 — PLACEHOLDERS VISIBLES:
+  Si necesitas un dato no disponible, usa formato [NOMBRE_DESCRIPTIVO_MAYUS]
+  con corchetes. El renderer lo resaltará en amarillo. Ejemplo:
+  [RAZON_SOCIAL], [NIT], [FECHA_MATRIMONIO], [TOPE_MAXIMO_CUANTIA].
+
+REGLA #6 — FIRMA: usa el cierre_tipo del recipe.
+  El bloque firma debe llevar el campo "cierre_tipo" idéntico al del recipe.
+  No improvises. El renderer del docx escoge la variante correcta.
+  Para firmas con múltiples partes (notarial, contractual, corporativa),
+  usa el campo "parties" como array de {rol, nombre, cc, cargo, razon_social}.
+
+REGLA #7 — CITAS NORMATIVAS:
+  Cuando cites una norma usa un bloque norma_citada SEPARADO con su contenido.
+  NO mezcles citas dentro de párrafos en prosa.
+  Usa el fundamento_normativo del legal_classifier como guía.
+
+REGLA #8 — PROHIBIDO:
+  - Emitir caracteres ✓ ✗ ⚠ en el texto del documento (son metadata)
+  - Inventar normas o jurisprudencia que no aparezcan en el contexto
+  - Emitir bloque firma fuera de la sección con section_key="firma"
+  - Repetir contenido que ya esté en BLOQUES PREVIOS
+  - Usar numeración romana en contratos o poderes (van con cláusulas ordinales)
+  - Emitir hechos/pretensiones en documentos no demanda
+
+═══════════════════════════════════════════════════════════════
+OUTPUT
+═══════════════════════════════════════════════════════════════
+
+JSON estricto:
+{
+  "blocks": [
+    {"type": "paragraph", "runs": [{"text": "..."}]},
+    {"type": "subsection", "number": "PRIMERA", "text": "Objeto del Poder"},
+    ...
+  ]
+}
+
+NO devuelvas markdown ni explicaciones. SOLO el JSON."""
 
 
 SYSTEM_PROMPT_GENERATOR = """Eres un ABOGADO LITIGANTE SENIOR colombiano con más de 20 años de experiencia en redacción forense.
@@ -309,6 +442,9 @@ async def generate_section_blocks(
     section_instruction: str = "",
     expected_blocks: list[str] | None = None,
     verified_citations: list[dict] | None = None,  # M19.8: citas pre-verificadas
+    # M19.24.D — modo universal
+    structure_recipe: dict | None = None,
+    previous_blocks: list[dict] | None = None,
 ) -> AsyncIterator[Block]:
     """Genera bloques tipados para una sección. Yield Block uno por uno.
 
@@ -317,6 +453,7 @@ async def generate_section_blocks(
     para que el LLM las use literalmente sin "inventar" o citar mal.
     """
     model = _model_for_section(section_key)
+    use_universal = _is_universal_enabled(doc_type)
 
     # Construir contexto enriquecido
     ctx_parts = [
@@ -326,6 +463,30 @@ async def generate_section_blocks(
         f"BRIEF: {brief}",
         f"DATOS EXTRAÍDOS: {json.dumps(extracted_data, ensure_ascii=False)}",
     ]
+
+    # M19.24.D — metadata universal (siempre se incluye, pero solo si es modo universal afecta)
+    if use_universal and structure_recipe:
+        recipe_summary = {
+            "document_family": structure_recipe.get("document_family"),
+            "regimen_aplicable": structure_recipe.get("regimen_aplicable"),
+            "naturaleza_acto": structure_recipe.get("naturaleza_acto"),
+            "encabezado_tipo": structure_recipe.get("encabezado_tipo"),
+            "cierre_tipo": structure_recipe.get("cierre_tipo"),
+            "numeracion_estilo": structure_recipe.get("numeracion_estilo"),
+            "requires_pretensiones": structure_recipe.get("requires_pretensiones"),
+            "requires_hechos": structure_recipe.get("requires_hechos"),
+            "requires_juramento": structure_recipe.get("requires_juramento"),
+        }
+        ctx_parts.append("RECIPE M19.24:\n" + json.dumps(recipe_summary, ensure_ascii=False, indent=2))
+
+        # Playbook específico de esta sección (instrucciones curadas)
+        playbooks = structure_recipe.get("playbooks") or {}
+        section_playbook = playbooks.get(section_key) if isinstance(playbooks, dict) else None
+        if section_playbook and isinstance(section_playbook, list):
+            ctx_parts.append("PLAYBOOK DE LA SECCIÓN ACTUAL (sigue cada bullet):")
+            for i, b in enumerate(section_playbook[:10], 1):
+                ctx_parts.append(f"  {i}. {b}")
+
     if section_instruction:
         ctx_parts.append(f"INSTRUCCIÓN ESPECÍFICA DE LA SECCIÓN: {section_instruction}")
     if expected_blocks:
@@ -370,6 +531,32 @@ async def generate_section_blocks(
     if previous_sections_summary:
         ctx_parts.append(f"\nSECCIONES PREVIAS (resumen): {previous_sections_summary}")
 
+    # M19.24.D.3 — cross-section blocks completos (anti-repeat) en modo universal
+    if use_universal and previous_blocks:
+        # Resumen estructurado de cada bloque previo (block_id + type + preview)
+        prev_lines = []
+        total_chars = 0
+        for pb in previous_blocks:
+            if total_chars > 3500:  # token budget ~1000
+                break
+            try:
+                preview = _block_text_preview_for_context(pb)
+                bt = pb.get("block_type") or pb.get("type", "?")
+                sk = pb.get("section_key", "?")
+                line = f"  [{sk}/{bt}] {preview[:120]}"
+                if line.strip():
+                    prev_lines.append(line)
+                    total_chars += len(line)
+            except Exception:
+                continue
+        if prev_lines:
+            ctx_parts.append(
+                "\nBLOQUES YA EMITIDOS (NO los repitas, son contexto solamente):\n"
+                + "\n".join(prev_lines[:60])
+            )
+
+    system_prompt_to_use = SYSTEM_PROMPT_UNIVERSAL if use_universal else SYSTEM_PROMPT_GENERATOR
+
     user_prompt = (
         "\n\n".join(ctx_parts)
         + "\n\nREDACTA AHORA SOLO ESTA SECCIÓN como JSON {\"blocks\": [...]}. NO incluyas título de sección (ya se renderiza aparte)."
@@ -379,7 +566,7 @@ async def generate_section_blocks(
         resp = await client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT_GENERATOR},
+                {"role": "system", "content": system_prompt_to_use},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.2,
@@ -670,13 +857,20 @@ def _materialize_block(raw: dict, doc_type: str | None = None) -> Block | None:
             )
         if btype == "firma":
             # M19.15.A.3/4/5 — sanitización defensiva de campos
+            # M19.24.D.4/6 — propagar cierre_tipo + parties + razon_social + nit + cargo
             return FirmaBlock(
                 block_id=bid,
                 ciudad_fecha=_clean_ciudad_fecha(raw.get("ciudad_fecha", "")),
-                nombre=(raw.get("nombre") or "[NOMBRE_APODERADO]").strip(),
+                nombre=(raw.get("nombre") or "[NOMBRE_FIRMANTE]").strip(),
                 tp=_clean_tp(raw.get("tp", "")),
                 cc=_clean_cc(raw.get("cc")),
                 email=raw.get("email"), telefono=raw.get("telefono"),
+                cierre_tipo=raw.get("cierre_tipo"),
+                parties=raw.get("parties") if isinstance(raw.get("parties"), list) else None,
+                razon_social=raw.get("razon_social"),
+                nit_sociedad=raw.get("nit_sociedad"),
+                cargo=raw.get("cargo"),
+                detalle_adicional=raw.get("detalle_adicional"),
             )
         if btype == "blank":
             return BlankBlock(block_id=bid)
@@ -686,3 +880,42 @@ def _materialize_block(raw: dict, doc_type: str | None = None) -> Block | None:
 
     logger.warning("Unknown block type: %s", btype)
     return None
+
+
+def _block_text_preview_for_context(pb: dict) -> str:
+    """M19.24.D.3 — extrae preview text de un bloque persistido (dict) para
+    incluirlo como contexto cross-section en el prompt del LLM.
+
+    Soporta block_data anidado (formato persistencia) y campos planos.
+    """
+    bd = pb.get("block_data") or pb
+    bt = pb.get("block_type") or bd.get("type", "")
+    if bt == "title":
+        return bd.get("text", "")[:120]
+    if bt == "section_heading":
+        return f"§{bd.get('roman','')}. {bd.get('text','')}"[:120]
+    if bt == "subsection":
+        return f"{bd.get('number','')}. {bd.get('text','')}"[:120]
+    if bt == "paragraph":
+        runs = bd.get("runs") or []
+        if isinstance(runs, list):
+            return "".join(r.get("text", "") if isinstance(r, dict) else str(r) for r in runs)[:200]
+    if bt == "hecho":
+        runs = bd.get("runs") or []
+        text = "".join(r.get("text", "") if isinstance(r, dict) else str(r) for r in runs)
+        return f"hecho#{bd.get('num','?')}: {text[:120]}"
+    if bt == "pretension":
+        runs = bd.get("runs") or []
+        text = "".join(r.get("text", "") if isinstance(r, dict) else str(r) for r in runs)
+        return f"pretension {bd.get('ord','?')}: {text[:120]}"
+    if bt == "list_item":
+        runs = bd.get("runs") or []
+        text = "".join(r.get("text", "") if isinstance(r, dict) else str(r) for r in runs)
+        return f"item {bd.get('num','?')}: {text[:120]}"
+    if bt == "norma_citada":
+        return f"norma: {bd.get('norma','')}"[:120]
+    if bt == "jurisprudencia":
+        return f"juris: {bd.get('id','?')}"[:120]
+    if bt == "firma":
+        return f"firma: {bd.get('nombre','')}"[:80]
+    return f"{bt}"[:60]

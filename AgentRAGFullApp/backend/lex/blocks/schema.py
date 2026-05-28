@@ -172,14 +172,37 @@ class JuramentoBlock(_BaseBlock):
 
 
 class FirmaBlock(_BaseBlock):
-    """Bloque final de firma con datos del apoderado."""
+    """Bloque final de firma. M19.24.D.6: extendido para soportar 5 variantes
+    de cierre además del clásico apoderado judicial.
+
+    Variantes (cierre_tipo):
+      - firma_apoderado_judicial (default): Atentamente + T.P. C.S.J.
+      - firma_partes_notarial: EL PODERDANTE / EL APODERADO (ACEPTO) con
+        dos firmas separadas. Puede combinarse con diligencia_notarial.
+      - firma_natural: solo nombre + CC sin T.P.
+      - diligencia_notarial: bloque adicional con espacio reservado notaría
+      - firma_consultor: Cordialmente + cargo + empresa
+      - firma_representante_legal: Rep Legal + NIT + sociedad
+      - firma_partes_contractuales: LAS PARTES con N firmas
+      - firma_corporativa_organos: Presidente + Secretario de asamblea
+    """
     type: Literal["firma"] = "firma"
     ciudad_fecha: str
     nombre: str
-    tp: str
+    tp: str = ""
     cc: str | None = None
     email: str | None = None
     telefono: str | None = None
+    # M19.24.D.6 — variante de cierre. Default mantiene compat con apoderado judicial
+    cierre_tipo: str | None = None
+    # Para firmas con múltiples partes (notarial, contractual, corporativa)
+    parties: list[dict] | None = None  # [{rol, nombre, cc, cargo, ...}]
+    # Para firma representante legal: identifica la sociedad
+    razon_social: str | None = None
+    nit_sociedad: str | None = None
+    cargo: str | None = None
+    # Para diligencia notarial / consultor
+    detalle_adicional: str | None = None
 
 
 class BlankBlock(_BaseBlock):

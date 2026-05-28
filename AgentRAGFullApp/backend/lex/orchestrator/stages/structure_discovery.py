@@ -48,7 +48,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class StructureRecipe:
-    """Plan de estructura descubierto para un documento legal."""
+    """Plan de estructura descubierto para un documento legal.
+
+    M19.24: extendido con 10 campos universales para soportar cualquier
+    documento legal colombiano (no solo demandas).
+    """
     structure_key: str
     doc_type: str
     jurisdiccion: Optional[str] = None
@@ -64,6 +68,18 @@ class StructureRecipe:
     juramento_norma_ref: Optional[str] = None
     juez_competente: Optional[str] = None
     cuerpos_normativos_minimos: list[str] = field(default_factory=list)
+
+    # M19.24 — Campos universales (cualquier doc legal)
+    document_family: Optional[str] = None       # 'judicial_demanda', 'notarial_poder', etc
+    regimen_aplicable: Optional[str] = None     # 'procesal_judicial', 'notarial_extrajudicial', etc
+    naturaleza_acto: Optional[str] = None       # 'declarativo', 'de_disposicion', 'de_mandato', etc
+    encabezado_tipo: Optional[str] = None       # 'memorial_juzgado', 'memorial_notario', etc
+    cierre_tipo: Optional[str] = None           # 'firma_apoderado_judicial', 'firma_partes_notarial', etc
+    numeracion_estilo: Optional[str] = None     # 'romana_secciones', 'clausulas_ordinales', etc
+    requires_pretensiones: Optional[bool] = None
+    requires_hechos: Optional[bool] = None
+    requires_juramento: Optional[bool] = None
+    playbooks: dict = field(default_factory=dict)  # {section_key: [bullet1, bullet2]}
 
     # Trazabilidad
     fuentes_consultadas: list[str] = field(default_factory=list)
@@ -88,6 +104,18 @@ class StructureRecipe:
             "juramento_norma_ref": self.juramento_norma_ref,
             "juez_competente": self.juez_competente,
             "cuerpos_normativos_minimos": self.cuerpos_normativos_minimos,
+            # M19.24 — campos universales
+            "document_family": self.document_family,
+            "regimen_aplicable": self.regimen_aplicable,
+            "naturaleza_acto": self.naturaleza_acto,
+            "encabezado_tipo": self.encabezado_tipo,
+            "cierre_tipo": self.cierre_tipo,
+            "numeracion_estilo": self.numeracion_estilo,
+            "requires_pretensiones": self.requires_pretensiones,
+            "requires_hechos": self.requires_hechos,
+            "requires_juramento": self.requires_juramento,
+            "playbooks": self.playbooks,
+            # Trazabilidad
             "fuentes_consultadas": self.fuentes_consultadas,
             "generated_by": self.generated_by,
             "cached": self.cached,
@@ -193,17 +221,37 @@ async def _cache_get(pool, structure_key: str) -> Optional[StructureRecipe]:
         return None
     try:
         async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT doc_type, jurisdiccion, cuantia_rango, demandado_tipo, procedimiento,
-                       sections_plan, norma_procesal_ref, juramento_norma_ref,
-                       juez_competente, cuerpos_normativos_minimos,
-                       fuentes_consultadas, generated_by, generation_reasoning
-                FROM structure_recipes
-                WHERE structure_key = $1
-                """,
-                structure_key,
-            )
+            # M19.24: lectura tolerante — columnas nuevas pueden no existir
+            # en bases que aún no aplicaron migration A.1
+            try:
+                row = await conn.fetchrow(
+                    """
+                    SELECT doc_type, jurisdiccion, cuantia_rango, demandado_tipo, procedimiento,
+                           sections_plan, norma_procesal_ref, juramento_norma_ref,
+                           juez_competente, cuerpos_normativos_minimos,
+                           fuentes_consultadas, generated_by, generation_reasoning,
+                           document_family, regimen_aplicable, naturaleza_acto,
+                           encabezado_tipo, cierre_tipo, numeracion_estilo,
+                           requires_pretensiones, requires_hechos, requires_juramento,
+                           playbooks
+                    FROM structure_recipes
+                    WHERE structure_key = $1
+                    """,
+                    structure_key,
+                )
+            except Exception:
+                # Fallback a query legacy si columnas M19.24 no existen
+                row = await conn.fetchrow(
+                    """
+                    SELECT doc_type, jurisdiccion, cuantia_rango, demandado_tipo, procedimiento,
+                           sections_plan, norma_procesal_ref, juramento_norma_ref,
+                           juez_competente, cuerpos_normativos_minimos,
+                           fuentes_consultadas, generated_by, generation_reasoning
+                    FROM structure_recipes
+                    WHERE structure_key = $1
+                    """,
+                    structure_key,
+                )
             if row is None:
                 return None
             # bump usage_count + last_used_at (best effort)
@@ -217,6 +265,20 @@ async def _cache_get(pool, structure_key: str) -> Optional[StructureRecipe]:
         sp = row["sections_plan"] if isinstance(row["sections_plan"], list) else json.loads(row["sections_plan"] or "[]")
         cn = row["cuerpos_normativos_minimos"] if isinstance(row["cuerpos_normativos_minimos"], list) else json.loads(row["cuerpos_normativos_minimos"] or "[]")
         fc = row["fuentes_consultadas"] if isinstance(row["fuentes_consultadas"], list) else json.loads(row["fuentes_consultadas"] or "[]")
+        # M19.24: playbooks puede ser dict (JSONB) o str (JSON serializado)
+        pb_raw = row.get("playbooks") if hasattr(row, "get") else None
+        try:
+            pb_raw = row["playbooks"] if "playbooks" in row.keys() else {}
+        except Exception:
+            pb_raw = {}
+        pb = pb_raw if isinstance(pb_raw, dict) else (json.loads(pb_raw) if pb_raw else {})
+
+        def _opt(name: str):
+            try:
+                return row[name] if name in row.keys() else None
+            except Exception:
+                return None
+
         return StructureRecipe(
             structure_key=structure_key,
             doc_type=row["doc_type"],
@@ -229,6 +291,17 @@ async def _cache_get(pool, structure_key: str) -> Optional[StructureRecipe]:
             juramento_norma_ref=row["juramento_norma_ref"],
             juez_competente=row["juez_competente"],
             cuerpos_normativos_minimos=cn,
+            # M19.24 (tolerantes a None si columnas no existen)
+            document_family=_opt("document_family"),
+            regimen_aplicable=_opt("regimen_aplicable"),
+            naturaleza_acto=_opt("naturaleza_acto"),
+            encabezado_tipo=_opt("encabezado_tipo"),
+            cierre_tipo=_opt("cierre_tipo"),
+            numeracion_estilo=_opt("numeracion_estilo"),
+            requires_pretensiones=_opt("requires_pretensiones"),
+            requires_hechos=_opt("requires_hechos"),
+            requires_juramento=_opt("requires_juramento"),
+            playbooks=pb,
             fuentes_consultadas=fc,
             generated_by=row["generated_by"] or "cache",
             generation_reasoning=row["generation_reasoning"] or "",
@@ -245,35 +318,88 @@ async def _cache_write(pool, recipe: StructureRecipe) -> None:
         return
     try:
         async with pool.acquire() as conn:
-            await conn.execute(
-                """
-                INSERT INTO structure_recipes (
-                    structure_key, doc_type, jurisdiccion, cuantia_rango,
-                    demandado_tipo, procedimiento, sections_plan,
-                    norma_procesal_ref, juramento_norma_ref, juez_competente,
-                    cuerpos_normativos_minimos, fuentes_consultadas,
-                    generated_by, generation_reasoning, usage_count, last_used_at
-                ) VALUES (
-                    $1, $2, $3, $4, $5, $6, $7::jsonb,
-                    $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, 1, now()
+            # M19.24: intentar INSERT con campos nuevos. Si falla por
+            # columnas inexistentes, fallback al INSERT legacy.
+            try:
+                await conn.execute(
+                    """
+                    INSERT INTO structure_recipes (
+                        structure_key, doc_type, jurisdiccion, cuantia_rango,
+                        demandado_tipo, procedimiento, sections_plan,
+                        norma_procesal_ref, juramento_norma_ref, juez_competente,
+                        cuerpos_normativos_minimos, fuentes_consultadas,
+                        generated_by, generation_reasoning,
+                        document_family, regimen_aplicable, naturaleza_acto,
+                        encabezado_tipo, cierre_tipo, numeracion_estilo,
+                        requires_pretensiones, requires_hechos, requires_juramento,
+                        playbooks,
+                        usage_count, last_used_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7::jsonb,
+                        $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14,
+                        $15, $16, $17, $18, $19, $20,
+                        $21, $22, $23, $24::jsonb,
+                        1, now()
+                    )
+                    ON CONFLICT (structure_key) DO UPDATE SET
+                        sections_plan = EXCLUDED.sections_plan,
+                        norma_procesal_ref = EXCLUDED.norma_procesal_ref,
+                        juramento_norma_ref = EXCLUDED.juramento_norma_ref,
+                        juez_competente = EXCLUDED.juez_competente,
+                        cuerpos_normativos_minimos = EXCLUDED.cuerpos_normativos_minimos,
+                        generation_reasoning = EXCLUDED.generation_reasoning,
+                        document_family = COALESCE(EXCLUDED.document_family, structure_recipes.document_family),
+                        regimen_aplicable = COALESCE(EXCLUDED.regimen_aplicable, structure_recipes.regimen_aplicable),
+                        naturaleza_acto = COALESCE(EXCLUDED.naturaleza_acto, structure_recipes.naturaleza_acto),
+                        encabezado_tipo = COALESCE(EXCLUDED.encabezado_tipo, structure_recipes.encabezado_tipo),
+                        cierre_tipo = COALESCE(EXCLUDED.cierre_tipo, structure_recipes.cierre_tipo),
+                        numeracion_estilo = COALESCE(EXCLUDED.numeracion_estilo, structure_recipes.numeracion_estilo),
+                        requires_pretensiones = COALESCE(EXCLUDED.requires_pretensiones, structure_recipes.requires_pretensiones),
+                        requires_hechos = COALESCE(EXCLUDED.requires_hechos, structure_recipes.requires_hechos),
+                        requires_juramento = COALESCE(EXCLUDED.requires_juramento, structure_recipes.requires_juramento),
+                        playbooks = COALESCE(EXCLUDED.playbooks, structure_recipes.playbooks),
+                        updated_at = now()
+                    """,
+                    recipe.structure_key, recipe.doc_type, recipe.jurisdiccion,
+                    recipe.cuantia_rango, recipe.demandado_tipo, recipe.procedimiento,
+                    json.dumps(recipe.sections_plan, ensure_ascii=False, default=str),
+                    recipe.norma_procesal_ref, recipe.juramento_norma_ref, recipe.juez_competente,
+                    json.dumps(recipe.cuerpos_normativos_minimos, ensure_ascii=False),
+                    json.dumps(recipe.fuentes_consultadas, ensure_ascii=False),
+                    recipe.generated_by, recipe.generation_reasoning,
+                    # M19.24 nuevos
+                    recipe.document_family, recipe.regimen_aplicable, recipe.naturaleza_acto,
+                    recipe.encabezado_tipo, recipe.cierre_tipo, recipe.numeracion_estilo,
+                    recipe.requires_pretensiones, recipe.requires_hechos, recipe.requires_juramento,
+                    json.dumps(recipe.playbooks or {}, ensure_ascii=False),
                 )
-                ON CONFLICT (structure_key) DO UPDATE SET
-                    sections_plan = EXCLUDED.sections_plan,
-                    norma_procesal_ref = EXCLUDED.norma_procesal_ref,
-                    juramento_norma_ref = EXCLUDED.juramento_norma_ref,
-                    juez_competente = EXCLUDED.juez_competente,
-                    cuerpos_normativos_minimos = EXCLUDED.cuerpos_normativos_minimos,
-                    generation_reasoning = EXCLUDED.generation_reasoning,
-                    updated_at = now()
-                """,
-                recipe.structure_key, recipe.doc_type, recipe.jurisdiccion,
-                recipe.cuantia_rango, recipe.demandado_tipo, recipe.procedimiento,
-                json.dumps(recipe.sections_plan, ensure_ascii=False, default=str),
-                recipe.norma_procesal_ref, recipe.juramento_norma_ref, recipe.juez_competente,
-                json.dumps(recipe.cuerpos_normativos_minimos, ensure_ascii=False),
-                json.dumps(recipe.fuentes_consultadas, ensure_ascii=False),
-                recipe.generated_by, recipe.generation_reasoning,
-            )
+            except Exception as e_new:
+                logger.debug("M19.24 cache write failed, fallback legacy: %s", e_new)
+                await conn.execute(
+                    """
+                    INSERT INTO structure_recipes (
+                        structure_key, doc_type, jurisdiccion, cuantia_rango,
+                        demandado_tipo, procedimiento, sections_plan,
+                        norma_procesal_ref, juramento_norma_ref, juez_competente,
+                        cuerpos_normativos_minimos, fuentes_consultadas,
+                        generated_by, generation_reasoning, usage_count, last_used_at
+                    ) VALUES (
+                        $1, $2, $3, $4, $5, $6, $7::jsonb,
+                        $8, $9, $10, $11::jsonb, $12::jsonb, $13, $14, 1, now()
+                    )
+                    ON CONFLICT (structure_key) DO UPDATE SET
+                        sections_plan = EXCLUDED.sections_plan,
+                        norma_procesal_ref = EXCLUDED.norma_procesal_ref,
+                        updated_at = now()
+                    """,
+                    recipe.structure_key, recipe.doc_type, recipe.jurisdiccion,
+                    recipe.cuantia_rango, recipe.demandado_tipo, recipe.procedimiento,
+                    json.dumps(recipe.sections_plan, ensure_ascii=False, default=str),
+                    recipe.norma_procesal_ref, recipe.juramento_norma_ref, recipe.juez_competente,
+                    json.dumps(recipe.cuerpos_normativos_minimos, ensure_ascii=False),
+                    json.dumps(recipe.fuentes_consultadas, ensure_ascii=False),
+                    recipe.generated_by, recipe.generation_reasoning,
+                )
     except Exception as e:
         logger.warning("structure_recipes cache write failed (non-fatal): %s", e)
 
@@ -282,21 +408,48 @@ async def _cache_write(pool, recipe: StructureRecipe) -> None:
 # LLM-based plan generation
 # ============================================================
 
-STRUCTURE_DISCOVERY_PROMPT = """Eres un ABOGADO LITIGANTE SENIOR colombiano con conocimiento profundo del:
-- Código General del Proceso (Ley 1564/2012) — Arts. 82-83 requisitos demanda
-- Código Procesal Administrativo y de lo Contencioso Administrativo (Ley 1437/2011, CPACA)
-- Código de Procedimiento Penal (Ley 906/2004)
-- Código Procesal del Trabajo y de la Seguridad Social (CPTSS, Decreto-Ley 2158/1948)
-- Constitución Política de 1991 (Art. 86 tutela, Art. 23 derecho de petición)
-- Decreto 2591/1991 (reglamento tutela)
-- Ley 472/1998 (acciones populares y de grupo)
+STRUCTURE_DISCOVERY_PROMPT = """Eres un ABOGADO SENIOR colombiano con 20+ años de experiencia en redacción
+de documentos legales de TODO tipo: judiciales (demandas, recursos, memoriales),
+notariales (poderes, escrituras, declaraciones extrajuicio), contractuales
+(contratos civiles/mercantiles/laborales), corporativos (estatutos, actas,
+políticas), petitorios (derechos de petición, requerimientos), tributarios
+(recursos DIAN, facilidades de pago), conceptuales (conceptos jurídicos,
+opiniones) y demás documentos del ordenamiento jurídico colombiano.
 
-Tu tarea es decidir la ESTRUCTURA (lista ordenada de secciones) que debe tener
-un documento legal colombiano específico, basándote en:
+Conoces a profundidad:
+- Código General del Proceso (Ley 1564/2012) — Arts. 82-83 demandas, 74-77 poderes judiciales
+- Código Civil (Ley 84/1873) — Arts. 2142 ss. mandato (poderes extrajudiciales), contratos
+- Código de Comercio (Decreto 410/1971) — sociedades, contratos mercantiles
+- Decreto 960/1970 — Estatuto Notarial (autenticaciones, escrituras públicas)
+- Constitución Política de 1991 — Art. 86 tutela, Art. 23 derecho de petición
+- CPACA (Ley 1437/2011), CPP (Ley 906/2004), CPTSS, CST, CPS, ET, Ley 1581/2012, etc.
+
+Tu tarea es decidir la ESTRUCTURA del documento legal solicitado, eligiendo:
+  1. La FAMILIA del documento (judicial/notarial/contractual/etc)
+  2. El RÉGIMEN APLICABLE (procesal/sustantivo/notarial/etc)
+  3. La NATURALEZA del acto (declarativo/disposición/mandato/etc)
+  4. El plan de SECCIONES (con playbook por sección)
+  5. El TIPO DE ENCABEZADO y de CIERRE (firma)
+  6. La NUMERACIÓN apropiada (romanos/cláusulas/articulado)
+  7. Qué SECCIONES son REQUERIDAS por la norma específica
+
+IMPORTANTE — NO asumas que todo documento es una demanda. Los siguientes NO son
+demandas y por tanto NO requieren hechos, pretensiones ni juramento:
+  • Poderes (especial, general, judicial) — son MANDATO con representación
+  • Contratos (todos) — son acuerdos de voluntades
+  • Escrituras públicas — instrumentos públicos
+  • Declaraciones extrajuicio — manifestaciones juramentadas
+  • Actas corporativas — registros de decisiones de órganos sociales
+  • Estatutos societarios — normas constitutivas de sociedad
+  • Conceptos jurídicos — opiniones técnicas
+  • Derechos de petición — solicitudes a autoridades
+  • Memoriales procesales (sin pretensiones) — comunicaciones al juez
+
+Basándote en:
   • doc_type
-  • jurisdicción (civil, familia, laboral, admin, penal, constitucional)
-  • cuantia_rango (mayor, menor, mínima, sin_cuantia)
-  • demandado_tipo (persona_natural, persona_juridica, entidad_publica)
+  • jurisdicción (civil, familia, laboral, admin, penal, constitucional, comercial, notarial)
+  • cuantia_rango (si aplica)
+  • demandado_tipo / contraparte (si aplica)
 
 REGLAS CRÍTICAS:
 
@@ -348,26 +501,66 @@ REGLAS CRÍTICAS:
    - Admin → ["CPACA", "CN"]
    - Tutela → ["CN", "Decreto 2591/1991"]
 
-OUTPUT (JSON estricto, sin markdown):
+OUTPUT (JSON estricto, sin markdown) — M19.24 schema universal:
 {
+  "document_family": "judicial_demanda|judicial_recurso|judicial_memorial|judicial_constitucional|criminal_denuncia|notarial_poder|notarial_escritura|notarial_extrajuicio|notarial_acta|contractual_civil|contractual_mercantil|contractual_laboral|contractual_corporate|corporate_estatutos|corporate_acta|corporate_policy|petitorio_admin|petitorio_pqrs|petitorio_extrajudicial|tributario_dian|conceptual|sucesional|otro",
+
+  "regimen_aplicable": "procesal_judicial|sustantivo_civil|sustantivo_mercantil|notarial_extrajudicial|administrativo_publico|tributario_dian|penal_acusatorio|laboral_sustantivo|constitucional",
+
+  "naturaleza_acto": "declarativo|de_disposicion|de_administracion|de_garantia|de_mandato|petitorio|informativo|constitutivo|de_compromiso|extintivo",
+
+  "encabezado_tipo": "memorial_juzgado|memorial_notario|memorial_autoridad_admin|carta_petitoria|instrumento_publico|comparecencia_partes|concepto_consultor|estatutos_societarios|acta_corporativa|politica_corporativa",
+
+  "cierre_tipo": "firma_apoderado_judicial|firma_partes_notarial|firma_natural|diligencia_notarial|firma_consultor|firma_representante_legal|firma_partes_contractuales|firma_corporativa_organos",
+
+  "numeracion_estilo": "romana_secciones|clausulas_ordinales|articulado|numerico_simple|cronologico|alfabetico",
+
+  "requires_pretensiones": true|false,
+  "requires_hechos": true|false,
+  "requires_juramento": true|false,
+
   "sections_plan": [
-    {"key": "encabezado", "title": "ENCABEZADO", "order": 1, "roman": null,
+    {"key": "encabezado", "title": "Encabezado", "order": 1, "roman": null,
      "expected_blocks": ["paragraph"]},
-    {"key": "partes", "title": "PARTES", "order": 2, "roman": "I",
-     "expected_blocks": ["section_heading", "subsection", "paragraph"]},
-    ...
+    {"key": "...", "title": "...", "order": 2, "roman": "I"|null,
+     "expected_blocks": [...]}
   ],
-  "norma_procesal_ref": "Art. 388-389 CGP (Ley 1564/2012)",
-  "juramento_norma_ref": "Art. 206 CGP (Ley 1564/2012)",
-  "juez_competente": "Juez de Familia del Circuito",
-  "cuerpos_normativos_minimos": ["CGP", "CC", "Ley 1098/2006"],
-  "procedimiento": "verbal",
+
+  "playbooks": {
+    "encabezado": ["Dirige al ...", "Indica título centrado en negrita"],
+    "partes": ["Identifica con nombre, CC/NIT, domicilio", "..."],
+    "...": ["Bullet 1", "Bullet 2", "Bullet 3"]
+  },
+
+  "norma_procesal_ref": "Arts. 2142 ss. Código Civil + Decreto 960/1970" (o ref. procesal correspondiente),
+  "juramento_norma_ref": "Art. 206 CGP" (null si requires_juramento=false),
+  "juez_competente": "Juez de Familia del Circuito" (null si no aplica autoridad judicial),
+  "cuerpos_normativos_minimos": ["CC", "Decreto 960/1970"],
+  "procedimiento": "verbal|ordinario|abreviado|sumario|no_aplica",
   "reasoning": "Una frase explicando por qué esta estructura"
 }
 
-NO inventes secciones que no son típicas. NO omitas secciones obligatorias
-del área. Mantén el orden tradicional forense colombiano.
-"""
+REGLAS:
+- Si el documento NO es una demanda, requires_pretensiones=false y requires_hechos=puede ser false.
+- Si el documento NO es procesal judicial, requires_juramento=false.
+- Tipo de cierre debe coincidir con la familia:
+    * judicial → firma_apoderado_judicial
+    * notarial poder → firma_partes_notarial + diligencia
+    * contrato → firma_partes_contractuales
+    * concepto → firma_consultor
+    * derecho petición → firma_natural
+    * acta corporativa → firma_corporativa_organos
+- Numeración:
+    * demandas → romana_secciones (I, II, III)
+    * contratos/poderes/escrituras → clausulas_ordinales (PRIMERA, SEGUNDA)
+    * estatutos/reglamentos → articulado (Art. 1, Art. 2)
+    * cartas/denuncias → numerico_simple
+- Para cada sección llena playbooks con 3-7 bullets específicos de QUÉ debe contener,
+  no instrucciones generales. Esto reemplaza el SYSTEM_PROMPT hardcoded.
+
+NO inventes secciones que no son típicas del documento. Mantén el orden
+tradicional colombiano. Si el doc_type es DESCONOCIDO, infiere familia
+por el intent del usuario y aplica las reglas anteriores."""
 
 
 async def _generate_plan_with_llm(
@@ -405,14 +598,16 @@ Intent del usuario (primeras 800 chars):
 {enriched_block}
 Devuelve el plan en JSON estricto según el schema del system prompt."""
 
+        # M19.24: gpt-4o (no mini) para calidad de discovery en docs no demanda.
+        # Más tokens (3000 vs 1500) porque ahora también devuelve playbooks.
         resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": STRUCTURE_DISCOVERY_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0.1,
-            max_tokens=1500,
+            max_tokens=3000,
             response_format={"type": "json_object"},
         )
         raw = resp.choices[0].message.content or "{}"
@@ -438,6 +633,16 @@ Devuelve el plan en JSON estricto según el schema del system prompt."""
                 "expected_blocks": s.get("expected_blocks") or [],
             })
         data["sections_plan"] = clean_sections
+        # M19.24: sanitizar playbooks (max 20 secciones, max 10 bullets cada una, max 300 chars cada bullet)
+        playbooks_raw = data.get("playbooks") or {}
+        clean_playbooks: dict[str, list[str]] = {}
+        if isinstance(playbooks_raw, dict):
+            for sec_key, bullets in list(playbooks_raw.items())[:20]:
+                if not isinstance(bullets, list):
+                    continue
+                clean_bullets = [str(b)[:300] for b in bullets[:10] if isinstance(b, (str, int, float))]
+                clean_playbooks[str(sec_key)[:60]] = clean_bullets
+        data["playbooks"] = clean_playbooks
         return data
     except Exception as e:
         logger.warning("structure_discovery LLM call failed: %s", e)
@@ -563,7 +768,7 @@ async def _discover_inner(
         logger.warning("structure_discovery: LLM failed, falling back to legacy")
         return _fallback_to_legacy(doc_type)
 
-    # 5. Construir recipe y cachear
+    # 5. Construir recipe y cachear (M19.24: con campos universales)
     recipe = StructureRecipe(
         structure_key=structure_key,
         doc_type=doc_type,
@@ -576,7 +781,18 @@ async def _discover_inner(
         juramento_norma_ref=llm_result.get("juramento_norma_ref"),
         juez_competente=llm_result.get("juez_competente"),
         cuerpos_normativos_minimos=llm_result.get("cuerpos_normativos_minimos", []),
-        generated_by="gpt-4o-mini",
+        # M19.24 — campos universales
+        document_family=str(llm_result.get("document_family", ""))[:60] or None,
+        regimen_aplicable=str(llm_result.get("regimen_aplicable", ""))[:60] or None,
+        naturaleza_acto=str(llm_result.get("naturaleza_acto", ""))[:60] or None,
+        encabezado_tipo=str(llm_result.get("encabezado_tipo", ""))[:60] or None,
+        cierre_tipo=str(llm_result.get("cierre_tipo", ""))[:120] or None,
+        numeracion_estilo=str(llm_result.get("numeracion_estilo", ""))[:60] or None,
+        requires_pretensiones=llm_result.get("requires_pretensiones"),
+        requires_hechos=llm_result.get("requires_hechos"),
+        requires_juramento=llm_result.get("requires_juramento"),
+        playbooks=llm_result.get("playbooks") or {},
+        generated_by="gpt-4o",
         generation_reasoning=str(llm_result.get("reasoning", ""))[:500],
     )
 
