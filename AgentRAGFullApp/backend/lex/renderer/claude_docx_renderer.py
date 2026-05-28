@@ -279,21 +279,40 @@ async def render_docx(req: RenderRequest) -> RenderResult:
     last_error: Optional[NodeExecutionError] = None
     retry_context: Optional[str] = None
 
+    # Some Claude models (Opus 4.7+) deprecated the `temperature` param.
+    # Build kwargs once; drop temperature on demand if the API rejects it.
+    _send_temperature = True
+
     for attempt in range(max_retries + 1):
         user_msg = _build_user_message(req, retry_context=retry_context)
 
         # 1. Llamada a Claude
         llm_t0 = time.perf_counter()
+        kwargs: dict[str, Any] = dict(
+            model=model,
+            max_tokens=DEFAULT_MAX_TOKENS,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_msg}],
+        )
+        if _send_temperature:
+            kwargs["temperature"] = req.temperature
         try:
-            response = await client.messages.create(
-                model=model,
-                max_tokens=DEFAULT_MAX_TOKENS,
-                temperature=req.temperature,
-                system=system_prompt,
-                messages=[{"role": "user", "content": user_msg}],
-            )
+            response = await client.messages.create(**kwargs)
         except Exception as e:
-            raise RuntimeError(f"Claude API error: {e}") from e
+            msg = str(e)
+            # Opus 4.7+: "temperature is deprecated for this model" → retry sin temperature
+            if _send_temperature and "temperature" in msg and (
+                "deprecated" in msg.lower() or "not supported" in msg.lower()
+            ):
+                _send_temperature = False
+                logger.info("Model %s rejected temperature; retrying without it", model)
+                kwargs.pop("temperature", None)
+                try:
+                    response = await client.messages.create(**kwargs)
+                except Exception as e2:
+                    raise RuntimeError(f"Claude API error (sin temperature): {e2}") from e2
+            else:
+                raise RuntimeError(f"Claude API error: {e}") from e
         llm_ms = int((time.perf_counter() - llm_t0) * 1000)
         total_llm_ms += llm_ms
 
