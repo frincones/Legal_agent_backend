@@ -326,10 +326,14 @@ INTENT DEL USUARIO:
 Aplica la METODOLOGÍA OBLIGATORIA (Pasos 1-5). Devuelve JSON estricto."""
 
         # M19.24.H — Multi-provider
+        # M19.30 (P0) · default flipped a 'anthropic'. gpt-4o estaba degradado
+        # en prod causando timeouts de 30s; Sonnet 4.6 responde en 6-30s
+        # estables. Revertir via LLM_PROVIDER_LEGAL_CLASSIFIER=openai si fuera
+        # necesario.
         from utils.llm_provider import chat_complete_json
         data = await chat_complete_json(
             provider_env="LLM_PROVIDER_LEGAL_CLASSIFIER",
-            default_provider="openai",
+            default_provider="anthropic",
             model_env_anthropic="ANTHROPIC_MODEL_LEGAL",
             default_model_openai="gpt-4o",
             default_model_anthropic="claude-sonnet-4-6",

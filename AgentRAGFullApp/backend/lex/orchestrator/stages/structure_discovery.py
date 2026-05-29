@@ -639,10 +639,12 @@ Intent del usuario (primeras 800 chars):
 Devuelve el plan en JSON estricto según el schema del system prompt."""
 
         # M19.24.H — Multi-provider: dispatch OpenAI ↔ Anthropic
+        # M19.30 (P0) · default flipped a 'anthropic' (Sonnet 4.6). Revertir con
+        # LLM_PROVIDER_STRUCTURE=openai si fuera necesario.
         from utils.llm_provider import chat_complete_json
         data = await chat_complete_json(
             provider_env="LLM_PROVIDER_STRUCTURE",
-            default_provider="openai",
+            default_provider="anthropic",
             model_env_anthropic="ANTHROPIC_MODEL_STRUCTURE",
             default_model_openai="gpt-4o",
             default_model_anthropic="claude-sonnet-4-6",

@@ -32,11 +32,72 @@ Pero respeta la elección del usuario de continuar con placeholders
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field, asdict
 from typing import Any, Optional
+
+
+# M19.30 (P1) · in-memory TTL cache compartido entre /preview-required-fields
+# y stage 2.5 del /generate, para evitar la doble ejecución (que costaba 40s
+# cuando gpt-4o estaba degradado).
+# TTL pequeño (default 600s = 10min) porque el preview suele ocurrir
+# segundos antes del /generate en la misma sesión del usuario.
+_DCG_CACHE: dict[str, tuple[float, "DataCompletenessReport"]] = {}
+_DCG_CACHE_TTL_S = float(os.getenv("DCG_CACHE_TTL_S", "600"))
+_DCG_CACHE_MAX_ENTRIES = int(os.getenv("DCG_CACHE_MAX_ENTRIES", "500"))
+
+
+def _dcg_cache_key(
+    doc_type: str,
+    intent: str,
+    brief: Optional[str],
+    borrador_mode: bool,
+    norma_procesal_ref: Optional[str],
+    sections_plan: Optional[list],
+) -> str:
+    """Hash estable del input para cache. extracted_data se omite porque cambia
+    entre preview (None) y stage 2.5 (poblado) — la idea es que el preview
+    ya capturó las preguntas críticas y el stage 2.5 reusa esa respuesta."""
+    payload = json.dumps({
+        "dt": (doc_type or "").strip().lower(),
+        "it": (intent or "").strip()[:4000],
+        "br": (brief or "").strip()[:2000],
+        "bm": bool(borrador_mode),
+        "np": (norma_procesal_ref or "").strip().lower(),
+        # Solo los names de las secciones para que el hash sea estable
+        # frente a pequeñas variaciones del plan.
+        "sp": [
+            (s.get("name") or s.get("key") or "")
+            for s in (sections_plan or []) if isinstance(s, dict)
+        ][:30],
+    }, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _dcg_cache_get(key: str) -> Optional["DataCompletenessReport"]:
+    entry = _DCG_CACHE.get(key)
+    if not entry:
+        return None
+    ts, report = entry
+    if (time.time() - ts) > _DCG_CACHE_TTL_S:
+        _DCG_CACHE.pop(key, None)
+        return None
+    return report
+
+
+def _dcg_cache_put(key: str, report: "DataCompletenessReport") -> None:
+    # Evict simple si crece demasiado (FIFO)
+    if len(_DCG_CACHE) >= _DCG_CACHE_MAX_ENTRIES:
+        try:
+            oldest = next(iter(_DCG_CACHE))
+            _DCG_CACHE.pop(oldest, None)
+        except Exception:
+            pass
+    _DCG_CACHE[key] = (time.time(), report)
 
 logger = logging.getLogger(__name__)
 
@@ -328,10 +389,12 @@ reasoning_chain con tu análisis explícito paso a paso. Devuelve JSON
 estricto válido."""
 
         # M19.24.H — Multi-provider con fallback
+        # M19.30 (P0) · default flipped a 'anthropic' (Sonnet 4.6). Revertir con
+        # LLM_PROVIDER_DATA_COMPLETENESS=openai si fuera necesario.
         from utils.llm_provider import chat_complete_json
         data = await chat_complete_json(
             provider_env="LLM_PROVIDER_DATA_COMPLETENESS",
-            default_provider="openai",
+            default_provider="anthropic",
             model_env_anthropic="ANTHROPIC_MODEL_DATA_COMPLETENESS",
             default_model_openai=model,
             default_model_anthropic="claude-sonnet-4-6",
@@ -373,6 +436,22 @@ async def check_data_completeness(
     (can_continue=True, skipped=True) para no romper el pipeline.
     """
     started = time.time()
+    # M19.30 (P1) · cache cross-endpoint por prompt_hash
+    cache_key = _dcg_cache_key(
+        doc_type, intent, brief, borrador_mode, norma_procesal_ref, sections_plan,
+    )
+    cached = _dcg_cache_get(cache_key)
+    if cached is not None:
+        logger.info(
+            "data_completeness_gate cache HIT (saved up to %.0fs)",
+            timeout_seconds,
+        )
+        # Construir una copia con duration_ms actualizado para no engañar al audit
+        try:
+            from dataclasses import replace as _dc_replace
+            return _dc_replace(cached, duration_ms=int((time.time() - started) * 1000))
+        except Exception:
+            return cached
     try:
         result = await asyncio.wait_for(
             _check_inner(
@@ -383,6 +462,12 @@ async def check_data_completeness(
             timeout=timeout_seconds,
         )
         result.duration_ms = int((time.time() - started) * 1000)
+        # M19.30 (P1) · persistir en cache solo resultados exitosos no-skipped
+        try:
+            if not getattr(result, "skipped", False):
+                _dcg_cache_put(cache_key, result)
+        except Exception:
+            pass
         return result
     except asyncio.TimeoutError:
         logger.warning(
