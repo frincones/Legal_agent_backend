@@ -307,7 +307,7 @@ async def export_forensic_docx(
         raise HTTPException(status_code=503, detail="docgen_v2_disabled")
     storage = await get_storage()
     from lex.storage import BlocksRepo
-    from lex.docx_forensic_builder import build_docx_from_blocks
+    from lex.docx_forensic_builder import build_docx_from_blocks as _legacy_build_docx
     from lex.storage.docx_storage import get_or_build_and_cache_docx
     from fastapi.responses import StreamingResponse
     import io as _io
@@ -317,36 +317,84 @@ async def export_forensic_docx(
     if not blocks:
         raise HTTPException(status_code=404, detail="document_not_found_or_empty")
 
-    # M19.25.E + M19.30 · Try Claude renderer (camino B) por DEFAULT cuando el
-    # flag global CLAUDE_RENDERER_ENABLED=true y hay SKILL.md para el doc_type.
-    # El frontend no necesita pasar ?engine=claude — solo pasarlo si quiere
-    # forzar legacy con ?engine=legacy o desactivarlo con ?engine=off.
+    # Resolver doc_meta y SkillContext UNA SOLA VEZ para ambos caminos
+    doc_meta = await _resolve_document_meta_for_render(storage.pool, document_id)
+    qp_doc_type = (request.query_params.get("doc_type") or "").strip()
+    if qp_doc_type:
+        doc_meta["doc_type"] = qp_doc_type
+    qp_doc_family = (request.query_params.get("doc_family") or "").strip()
+    if qp_doc_family:
+        doc_meta["doc_family"] = qp_doc_family
+    qp_firm_id = (request.query_params.get("firm_id") or "").strip()
+    if qp_firm_id:
+        doc_meta["firm_id"] = qp_firm_id
+    if not doc_meta.get("doc_type"):
+        inferred = await _infer_doc_type_from_blocks(storage.pool, document_id, blocks)
+        if inferred:
+            doc_meta["doc_type"] = inferred
+            doc_meta.setdefault("doc_family", _doc_family_from_doc_type(inferred))
+            logger.info("doc_type inferred for %s: %s", document_id, inferred)
+
+    # M19.31 · Cargar SkillContext del SKILL.md (para builder Python y/o Claude)
+    skill_context = None
+    use_skill_md = os.getenv("USE_SKILL_MD_PIPELINE", "true").strip().lower() in ("1", "true", "yes", "on")
+    if use_skill_md and doc_meta.get("doc_type"):
+        try:
+            from lex.orchestrator.stages.skill_loader import load_skill_context
+            skill_context = await load_skill_context(
+                storage.pool,
+                doc_type=doc_meta["doc_type"],
+                firm_id=doc_meta.get("firm_id"),
+            )
+        except Exception as e:
+            logger.debug("skill_loader for export-forensic failed: %s", e)
+
     engine = (request.query_params.get("engine") or "").strip().lower()
-    # claude por defecto; legacy solo si el caller lo pide explícitamente
-    try_claude = engine in ("", "claude", "auto")
+
+    # M19.31 · ENGINE DEFAULT = python_docx_builder con SkillContext.
+    # El cliente puede forzar otros engines con ?engine=:
+    #   - "skillmd" o vacío (default) → python_docx_builder + SkillContext
+    #   - "claude" → camino B (renderer Claude/Anthropic)
+    #   - "legacy" → docx_forensic_builder.py (compat)
+    try_skillmd = engine in ("", "skillmd", "auto", "python")
+    try_claude = engine in ("claude",)
+    try_legacy = engine in ("legacy", "forensic")
+
+    if try_skillmd:
+        # Builder Python sin LLM — siempre rápido y respeta SKILL.md
+        try:
+            from lex.renderer.python_docx_builder import build_docx_from_blocks as _skillmd_build
+            docx_bytes = _skillmd_build(
+                blocks,
+                title=f"Documento {document_id[:8]}",
+                author="LexAI",
+                skill_context=skill_context,
+            )
+            renderer_label = (
+                "python-docx-skillmd" if skill_context else "python-docx-default"
+            )
+            logger.info(
+                "export-forensic via python_docx_builder doc=%s skill_ctx=%s bytes=%d",
+                document_id, bool(skill_context), len(docx_bytes),
+            )
+            return StreamingResponse(
+                _io.BytesIO(docx_bytes),
+                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                headers={
+                    "Content-Disposition": f'attachment; filename="documento_{document_id[:8]}.docx"',
+                    "X-LexAI-Renderer": renderer_label,
+                },
+            )
+        except Exception as e:
+            logger.warning(
+                "python_docx_builder crashed (%s), falling back to legacy for %s",
+                e, document_id,
+            )
+            # Falla → continúa al fallback legacy debajo
+
     if try_claude:
         try:
             from lex.renderer import claude_docx_renderer as _crd
-            doc_meta = await _resolve_document_meta_for_render(storage.pool, document_id)
-            # M19.30 · permitir override via query param para casos en que
-            # matter_documents no esté poblado (docgen_v2 actualmente no lo persiste).
-            qp_doc_type = (request.query_params.get("doc_type") or "").strip()
-            if qp_doc_type:
-                doc_meta["doc_type"] = qp_doc_type
-            qp_doc_family = (request.query_params.get("doc_family") or "").strip()
-            if qp_doc_family:
-                doc_meta["doc_family"] = qp_doc_family
-            qp_firm_id = (request.query_params.get("firm_id") or "").strip()
-            if qp_firm_id:
-                doc_meta["firm_id"] = qp_firm_id
-            # M19.30 · si no hay doc_type en meta, intentar inferirlo desde
-            # document_blocks.section_key, generation_audit o template_catalog
-            if not doc_meta.get("doc_type"):
-                inferred = await _infer_doc_type_from_blocks(storage.pool, document_id, blocks)
-                if inferred:
-                    doc_meta["doc_type"] = inferred
-                    doc_meta.setdefault("doc_family", _doc_family_from_doc_type(inferred))
-                    logger.info("doc_type inferred for %s: %s", document_id, inferred)
             logger.info("claude renderer doc_meta resolved: %s", {
                 k: (v if k != "user_intent" else (v or "")[:200])
                 for k, v in (doc_meta or {}).items()
@@ -371,20 +419,20 @@ async def export_forensic_docx(
                             "X-LexAI-Renderer": "claude-opus",
                         },
                     )
-                # docx_bytes None → falló y fallback a legacy
                 logger.info("claude renderer returned None, falling back to legacy for %s", document_id)
             else:
                 logger.info("claude renderer disabled (flag/family/firm), using legacy for %s", document_id)
         except Exception as e:
-            # NUNCA romper el endpoint si Claude renderer falla
             logger.warning("claude renderer crashed (%s), falling back to legacy", e)
 
     try:
-        # M19.12.C1: cache en Supabase Storage (fallback a build on-demand si falla)
+        # Fallback final: legacy docx_forensic_builder (sin caché para evitar
+        # contaminar con el builder viejo cuando el python_docx_builder
+        # arroje error inesperado en un caso particular).
         docx_bytes = await get_or_build_and_cache_docx(
             pool=storage.pool,
             document_id=document_id,
-            builder=lambda: build_docx_from_blocks(
+            builder=lambda: _legacy_build_docx(
                 blocks, title=f"Documento {document_id[:8]}", author="LexAI"
             ),
         )

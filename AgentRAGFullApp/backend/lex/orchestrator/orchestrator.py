@@ -408,10 +408,49 @@ class Orchestrator:
             elapsed_ms=int((time.time() - _lc_t0) * 1000),
         )
 
+        # ===== STAGE 1.4: M19.31 — SKILL LOADER =====
+        # Lee el SKILL.md del doc_type desde firm_skills (cascade firm > builtin)
+        # y produce un SkillContext que es CONSUMIDO por structure_discovery,
+        # block_generator y el builder docx. Es nuestra UNA fuente de verdad
+        # para el estilo del documento (PRIMERA/SEGUNDA/... no I/II/III).
+        # NO usa LLM — solo BD + parser Python. Latencia típica <50ms.
+        # Si no encuentra SKILL.md → None y el flujo cae al legacy (compat).
+        skill_context = None
+        _use_skill_md = os.getenv("USE_SKILL_MD_PIPELINE", "true").strip().lower() in ("1", "true", "yes", "on")
+        if _use_skill_md:
+            try:
+                from lex.orchestrator.stages.skill_loader import load_skill_context
+                yield SSEEvent.stage_progress(
+                    stage="skill_loader",
+                    state="running",
+                    label="Cargando estilo del documento…",
+                    timeout_s=2.0,
+                )
+                _skl_t0 = time.time()
+                skill_context = await load_skill_context(
+                    self.pool,
+                    doc_type=classification.doc_type,
+                    firm_id=req.firm_id,
+                )
+                yield SSEEvent.stage_progress(
+                    stage="skill_loader",
+                    state="ok" if skill_context is not None else "skipped",
+                    elapsed_ms=int((time.time() - _skl_t0) * 1000),
+                )
+                if skill_context:
+                    logger.info(
+                        "skill_loader OK %s",
+                        skill_context.to_audit_dict(),
+                    )
+            except Exception as e:
+                logger.warning("skill_loader exception (non-fatal): %s", e)
+                skill_context = None
+
         # ===== STAGE 1.5: M19.23.B — STRUCTURE DISCOVERY =====
         # Reemplaza la lógica hardcoded de _resolve_plan() / _resolve_template()
         # con descubrimiento dinámico (LLM + cache + verify). Si falla, cae a
         # los templates Python legacy como red de seguridad.
+        # M19.31 · si skill_context tiene sections → saltar LLM y usar ese plan.
         structure_recipe = None
         # M19.30 · stage_progress (running) para mostrar al usuario qué está pasando
         yield SSEEvent.stage_progress(
@@ -421,25 +460,57 @@ class Orchestrator:
             timeout_s=30.0,
         )
         _sd_t0 = time.time()
-        try:
-            from lex.orchestrator.stages.structure_discovery import discover_structure
-            structure_recipe = await discover_structure(
-                client=self.client,
-                pool=self.pool,
-                doc_type=classification.doc_type,
-                enriched_context=enriched_context,
-                intent=req.intent,
-                brief=req.user_brief,
-                timeout_seconds=30.0,
-            )
-            yield SSEEvent.structure_discovered(structure_recipe.to_dict())
-        except Exception as e:
-            logger.warning("structure_discovery stage exception (non-fatal): %s", e)
-            structure_recipe = None
+        # M19.31 · si tenemos SkillContext con estructura, usarla directo
+        # (sin llamar al LLM de structure_discovery). Esto elimina:
+        #   - 1 llamada LLM externa (~30s con timeout actual)
+        #   - Dependencia del LLM para definir el estilo del documento
+        # Si NO hay SkillContext o tiene <3 secciones → usamos structure_discovery
+        # tradicional (con su cache SQL).
+        if skill_context is not None and skill_context.has_structure:
+            try:
+                from lex.orchestrator.stages.structure_discovery import StructureRecipe
+                sections_plan_md = skill_context.to_sections_plan()
+                structure_recipe = StructureRecipe(
+                    doc_type=classification.doc_type,
+                    template_used=skill_context.skill_command or classification.doc_type,
+                    sections_plan=sections_plan_md,
+                    norma_procesal_ref=None,
+                    juez_competente=None,
+                    juramento_required=None,
+                    document_family=skill_context.doc_family,
+                    cached=True,
+                    fallback_used=False,
+                    duration_ms=0,
+                )
+                yield SSEEvent.structure_discovered(structure_recipe.to_dict())
+                logger.info(
+                    "structure from SKILL.md (skipped LLM): %d sections",
+                    len(sections_plan_md),
+                )
+            except Exception as e:
+                logger.warning("StructureRecipe build from SKILL.md failed: %s", e)
+                structure_recipe = None
+
+        if structure_recipe is None:
+            try:
+                from lex.orchestrator.stages.structure_discovery import discover_structure
+                structure_recipe = await discover_structure(
+                    client=self.client,
+                    pool=self.pool,
+                    doc_type=classification.doc_type,
+                    enriched_context=enriched_context,
+                    intent=req.intent,
+                    brief=req.user_brief,
+                    timeout_seconds=30.0,
+                )
+                yield SSEEvent.structure_discovered(structure_recipe.to_dict())
+            except Exception as e:
+                logger.warning("structure_discovery stage exception (non-fatal): %s", e)
+                structure_recipe = None
         # M19.30 · stage_progress final structure_discovery
         _sd_state = (
             "fallback" if structure_recipe is None or getattr(structure_recipe, "fallback_used", False)
-            else "ok"
+            else ("ok_skillmd" if skill_context is not None and skill_context.has_structure else "ok")
         )
         yield SSEEvent.stage_progress(
             stage="structure_discovery",
@@ -457,8 +528,9 @@ class Orchestrator:
         ):
             plan = structure_recipe.sections_plan
             logger.info(
-                "using dynamic plan from structure_discovery (%d sections, cached=%s, fallback=%s)",
+                "using dynamic plan (%d sections, cached=%s, fallback=%s, source=%s)",
                 len(plan), structure_recipe.cached, structure_recipe.fallback_used,
+                "skill_md" if skill_context and skill_context.has_structure else "llm",
             )
         else:
             plan = _resolve_plan(classification.doc_type)
@@ -901,6 +973,7 @@ class Orchestrator:
                     # M19.24.D — modo universal: pasa recipe completo + bloques previos
                     structure_recipe=(structure_recipe.to_dict() if structure_recipe else None),
                     previous_blocks=all_blocks,
+                    skill_context=skill_context,  # M19.31 · estilo del SKILL.md
                 ):
                     block_order += 1
                     payload = {
@@ -1240,6 +1313,7 @@ class Orchestrator:
                                 section_instruction=f"REGENERACIÓN AUTO-CORRECCIÓN: la sección anterior fue marcada como incompleta. Genera AHORA todos los bloques sustantivos requeridos.",
                                 expected_blocks=None,
                                 verified_citations=section_verdicts.get(sec_key, []),
+                                skill_context=skill_context,  # M19.31
                             ):
                                 block_order += 1
                                 payload = {

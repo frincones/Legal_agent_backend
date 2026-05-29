@@ -498,6 +498,11 @@ async def generate_section_blocks(
     # M19.24.D — modo universal
     structure_recipe: dict | None = None,
     previous_blocks: list[dict] | None = None,
+    # M19.31 — SkillContext del SKILL.md (sprint A): inyecta nombres reales
+    # de cláusulas (PRIMERA. OBJETO DEL PODER) y convenciones de estilo del
+    # template. Cuando está presente, fuerza al LLM a respetar la estructura
+    # del SKILL.md en lugar de inventar "I./II./III./IV.".
+    skill_context: Any = None,
 ) -> AsyncIterator[Block]:
     """Genera bloques tipados para una sección. Yield Block uno por uno.
 
@@ -609,6 +614,17 @@ async def generate_section_blocks(
             )
 
     system_prompt_to_use = SYSTEM_PROMPT_UNIVERSAL if use_universal else SYSTEM_PROMPT_GENERATOR
+
+    # M19.31 · Inyectar SKILL.md style directive al final del system_prompt.
+    # Esto fuerza al LLM a respetar los nombres de cláusulas del template
+    # (PRIMERA, SEGUNDA, ..., DÉCIMA) en lugar de inventar I./II./III./IV.
+    if skill_context is not None:
+        try:
+            style_directive = skill_context.style_directive_text()
+            if style_directive:
+                system_prompt_to_use = system_prompt_to_use + "\n\n" + style_directive
+        except Exception as e:
+            logger.debug("skill_context style_directive failed: %s", e)
 
     user_prompt = (
         "\n\n".join(ctx_parts)
