@@ -323,6 +323,18 @@ async def export_forensic_docx(
         try:
             from lex.renderer import claude_docx_renderer as _crd
             doc_meta = await _resolve_document_meta_for_render(storage.pool, document_id)
+            # M19.30 · permitir override via query param para casos en que
+            # matter_documents no esté poblado (docgen_v2 actualmente no lo persiste).
+            qp_doc_type = (request.query_params.get("doc_type") or "").strip()
+            if qp_doc_type:
+                doc_meta["doc_type"] = qp_doc_type
+            qp_doc_family = (request.query_params.get("doc_family") or "").strip()
+            if qp_doc_family:
+                doc_meta["doc_family"] = qp_doc_family
+            qp_firm_id = (request.query_params.get("firm_id") or "").strip()
+            if qp_firm_id:
+                doc_meta["firm_id"] = qp_firm_id
+            logger.info("claude renderer doc_meta resolved: %s", doc_meta)
             if _crd.is_renderer_enabled_for(
                 doc_type=doc_meta.get("doc_type"),
                 doc_family=doc_meta.get("doc_family"),
