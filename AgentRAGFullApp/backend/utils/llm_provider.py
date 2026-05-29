@@ -51,6 +51,15 @@ def _get_anthropic_client():
     el startup si el SDK no está instalado.
 
     Returns None si la API key no está configurada (caller usa fallback).
+
+    M19.30 (P0 fix) · timeout HTTP propio (default 20s read, 5s connect) para
+    evitar que el cliente Anthropic se cuelgue sin propagar excepción.
+    Antes: cuando la API estaba lenta, asyncio.wait_for del stage mataba
+    la tarea ANTES de que chat_complete_json hiciera fallback a OpenAI →
+    el stage caía a su EMPTY_REPORT como si Anthropic ni se hubiera intentado.
+    Después: el SDK tira APITimeoutError en <=20s y chat_complete_json
+    cae al fallback OpenAI dentro del wait_for del stage.
+    Override via ANTHROPIC_HTTP_TIMEOUT_S y ANTHROPIC_HTTP_CONNECT_TIMEOUT_S.
     """
     global _anthropic_client
     api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
@@ -59,7 +68,33 @@ def _get_anthropic_client():
     if _anthropic_client is None:
         try:
             from anthropic import AsyncAnthropic
-            _anthropic_client = AsyncAnthropic(api_key=api_key)
+            try:
+                import httpx as _httpx
+                try:
+                    read = float(os.getenv("ANTHROPIC_HTTP_TIMEOUT_S", "20.0"))
+                except ValueError:
+                    read = 20.0
+                try:
+                    connect = float(os.getenv("ANTHROPIC_HTTP_CONNECT_TIMEOUT_S", "5.0"))
+                except ValueError:
+                    connect = 5.0
+                try:
+                    max_retries = int(os.getenv("ANTHROPIC_MAX_RETRIES", "1"))
+                except ValueError:
+                    max_retries = 1
+                logger.info(
+                    "AsyncAnthropic init · timeout=%ss connect=%ss max_retries=%d",
+                    read, connect, max_retries,
+                )
+                _anthropic_client = AsyncAnthropic(
+                    api_key=api_key,
+                    timeout=_httpx.Timeout(read, connect=connect),
+                    max_retries=max_retries,
+                )
+            except Exception as e:
+                # Fallback al constructor por default si httpx/timeout falla
+                logger.warning("AsyncAnthropic with timeout failed (%s) — using defaults", e)
+                _anthropic_client = AsyncAnthropic(api_key=api_key)
         except ImportError:
             logger.warning("anthropic SDK not installed — install: pip install anthropic")
             return None
