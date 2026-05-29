@@ -45,6 +45,8 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_05_28_sprint_m1925_m1926_marketplace_renderer.sql",
     # M19.27 — Seed 12 NEW builtin skills (no duplica sprint_h)
     "2026_05_28_seed_m1927_12_new_builtin_skills.sql",
+    # M19.30 — Seed poder-especial (necesario para resolver template Claude renderer)
+    "2026_05_28_seed_m1930_poder_especial.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.

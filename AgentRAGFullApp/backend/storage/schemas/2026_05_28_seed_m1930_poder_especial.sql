@@ -1,0 +1,53 @@
+-- ============================================================================
+-- Sprint M19.30 · Seed 1 template (poder-especial) para Claude renderer
+-- ============================================================================
+-- Único builtin con frontmatter->>'doc_type' = 'poder_especial' que el
+-- renderer Claude resuelve para ?engine=claude. Idempotente.
+-- ============================================================================
+
+begin;
+
+
+-- /redactar/poder-especial
+insert into firm_skills (
+    firm_id, command, name, description, category, frontmatter,
+    system_prompt, references_md, output_schema, jurisdiction,
+    user_invocable, tier, status, version, metadata
+) values (
+    null, '/redactar/poder-especial',
+    'notarial_poder_especial_co',
+    'Convenciones profesionales para redactar Poderes Especiales notariales en\nColombia. Aplica cuando el documento será autenticado ante notaría y se\nrige por el régimen del mandato (Arts. 2142 ss. CC + Decreto 960/1970),\nNO por el régimen de poderes judiciales (Art. 74 CGP).',
+    'drafting',
+    '{"name": "notarial_poder_especial_co", "description": "Convenciones profesionales para redactar Poderes Especiales notariales en\\nColombia. Aplica cuando el documento será autenticado ante notaría y se\\nrige por el régimen del mandato (Arts. 2142 ss. CC + Decreto 960/1970),\\nNO por el régimen de poderes judiciales (Art. 74 CGP).", "category": "notarial", "doc_family": "notarial_poder", "doc_type": "poder_especial", "default_scope": "doc_type", "language": "es-CO", "jurisdiction": "CO", "version": "1.0.0", "tier": "public", "sources": ["https://www.suin-juriscol.gov.co/viewDocument.asp?ruta=Decretos/1058919", "https://www.secretariasenado.gov.co/senado/basedoc/codigo_civil.html", "https://www.notariado.org.co/portal"]}'::jsonb,
+    E'# Poder Especial Notarial — Colombia\n\n## When to use\nUse este skill cuando el usuario solicita redactar un **poder especial** que\nserá autenticado ante notaría para que el apoderado realice gestiones\nespecíficas en nombre del poderdante. Esto incluye:\n\n- Poderes para venta de inmuebles, vehículos\n- Poderes para gestiones administrativas (DIAN, ICA, EPS, EAAB, etc.)\n- Poderes corporativos para representante legal\n- Poderes para firmar facilidades de pago / acuerdos comerciales\n\n**NO use este skill para**:\n- Poder para actuar en proceso judicial → use `judicial_poder_co`\n- Poder general (todas las facultades) → use `notarial_poder_general_co`\n- Revocatoria de poder → use `notarial_revocatoria_poder_co`\n\n## Document Structure (orden estricto)\n\n1. **Título**: PODER ESPECIAL (centrado, bold)\n2. **Subtítulo italic**: "(Otorgado por [persona natural/representante legal de persona jurídica])"\n3. **Destinatario notarial**: "Señor(a) [NOTARIO(A) ___ DEL CÍRCULO DE _____]" + "E. S. D."\n4. **Comparecencia del poderdante** (párrafo único justificado)\n5. **Designación del apoderado** (párrafo único)\n6. **PRIMERA. Objeto del poder**\n7. **SEGUNDA-N. Facultades específicas** (numeradas en ordinal)\n8. **PENÚLTIMA. Naturaleza y fundamento** (cita Arts. 2142 ss. CC)\n9. **N. Vigencia y revocabilidad**\n10. **N+1. Aceptación expresa del apoderado**\n11. **Lugar, fecha y firmas** (EL PODERDANTE + EL APODERADO (ACEPTO))\n12. **Diligencia notarial de autenticación**\n\n## Style Conventions\n\n### Encabezado\n```\n                    PODER ESPECIAL\n       (Otorgado por representante legal de persona jurídica)\n\n\nSeñor(a) [NOTARIO(A) ___ DEL CÍRCULO DE [CIUDAD]]\nE. S. D.\n```\n\n### Comparecencia (fórmula notarial estándar)\n"Yo, **[NOMBRE COMPLETO EN MAYÚSCULAS]**, mayor de edad, vecino(a) de\n**[CIUDAD]**, identificado(a) con cédula de ciudadanía No. **[NÚMERO]**\nexpedida en **[LUGAR]**, obrando en mi calidad de **[CALIDAD]** de la\nsociedad **[RAZÓN_SOCIAL]**, identificada con NIT **[NIT]**, con matrícula\nmercantil No. **[MATRÍCULA_MERCANTIL]** de la Cámara de Comercio de\n**[CÁMARA_COMERCIO]**, sociedad con domicilio principal en **[CIUDAD]**,\ncalidad y facultades que acredito con el Certificado de Existencia y\nRepresentación Legal vigente que se anexa, manifiesto que mediante el\npresente documento confiero **PODER ESPECIAL, AMPLIO Y SUFICIENTE**, al\nseñor:"\n\n### Designación del apoderado\n"**[NOMBRE COMPLETO EN MAYÚSCULAS]**, mayor de edad, identificado(a) con\ncédula de ciudadanía No. **[NÚMERO]** expedida en **[LUGAR]**, de\nprofesión **[PROFESIÓN]**, con domicilio en **[DIRECCIÓN]** y correo\nelectrónico **[CORREO]**, para que en mi nombre y representación adelante\nlas gestiones y ejerza las facultades que a continuación se detallan."\n\n### Cláusulas (numeración OBLIGATORIA en ordinales)\n- PRIMERA. OBJETO DEL PODER\n- SEGUNDA. FACULTAD PARA [acción específica]\n- TERCERA. FACULTAD PARA [acción específica]\n- CUARTA. NATURALEZA Y FUNDAMENTO\n- QUINTA. VIGENCIA Y REVOCABILIDAD\n- SEXTA. ACEPTACIÓN DEL APODERADO\n\nCada cláusula:\n- Título en **bold**, alineado a la izquierda\n- HeadingLevel.HEADING_1 (size 26, bold)\n- Spacing: before 240, after 200\n- Cuerpo justificado debajo en párrafo regular\n\n### Citas normativas OBLIGATORIAS\n- **"Arts. 2142 y siguientes del Código Civil"** (Mandato)\n- **"Decreto 960 de 1970"** (Estatuto Notarial)\n- Si compromete patrimonio empresarial: **"Art. 196 del Código de Comercio"** (restricciones estatutarias)\n- Si revocabilidad: **"Arts. 2189 y siguientes del Código Civil"**\n\n### Citas PROHIBIDAS (errores comunes)\n- ❌ "Art. 74 CGP" → es para poderes JUDICIALES\n- ❌ "Art. 836 CGP" → NO existe (CGP llega al 627)\n- ❌ Citar el CGP en general en un poder notarial → wrong régimen\n\n### Common Placeholders\n| Placeholder | Tipo | Ejemplo |\n|---|---|---|\n| `[NOMBRE_PODERDANTE]` | string MAYÚSCULAS | LAURA ALEJANDRA ALZATE RESTREPO |\n| `[CC_PODERDANTE]` | número formato | 1.017.207.731 |\n| `[LUGAR_EXPEDICION_CC_PODERDANTE]` | string | Medellín |\n| `[RAZON_SOCIAL]` | string | CONSTRUCTORA XYZ S.A.S. |\n| `[NIT]` | número con DV | 900.123.456-7 |\n| `[MATRICULA_MERCANTIL]` | string | 12345678 |\n| `[CAMARA_COMERCIO]` | string | Medellín para Antioquia |\n| `[NOMBRE_APODERADO]` | string MAYÚSCULAS | CAMILO ANDRÉS MAYORGA GARCÍA |\n| `[CC_APODERADO]` | número | 8.028.112 |\n| `[LUGAR_EXPEDICION_CC_APODERADO]` | string | Medellín |\n| `[PROFESIÓN_APODERADO]` | string | Ingeniero, Abogado, etc. |\n| `[DIRECCIÓN_APODERADO]` | string | Cra 70 # 45-23 |\n| `[CORREO_APODERADO]` | email | apoderado@example.com |\n| `[TOPE_MAXIMO_CUANTIA]` | monetario | hasta $50.000.000 (cincuenta millones M/cte) |\n| `[VIGENCIA_MESES]` | número | 6 |\n| `[NOTARIA_DESTINATARIA]` | string | Notaría 21 |\n| `[DIA]`, `[MES]`, `[ANIO]` | tokens fecha | (separados para fechas notariales) |\n\n### docx-js Style Hints\n- Page: US Letter (12240 × 15840 DXA), 1" margins (1440 DXA each side)\n- Font default: Arial 11pt (`size: 22`)\n- **Heading1** (cláusulas): `size: 26, bold, spacing: { before: 240, after: 200 }`\n- **Title** (PODER ESPECIAL): centered, bold, `size: 30`\n- **Subtitle**: italic centered, `size: 20`\n- **Placeholders** [X]: shading `FFF2CC` (yellow), bold inline\n- **Body paragraphs**: alignment JUSTIFIED, line spacing 1.15\n- **Signature lines**: `_____________________________________` (40 chars)\n\n### Cierre / Firmas\n```\nEL PODERDANTE,\n\n_________________________________________\n[NOMBRE_PODERDANTE en bold]\nC.C. No. [CC_PODERDANTE] de [LUGAR]\nRepresentante Legal de [RAZON_SOCIAL] — NIT [NIT]\nCorreo: [CORREO]  /  Cel.: [CELULAR]\n\n\nEL APODERADO (ACEPTO),\n\n_________________________________________\n[NOMBRE_APODERADO en bold]\nC.C. No. [CC_APODERADO] de [LUGAR_EXPEDICION_CC_APODERADO]\nCorreo: [CORREO_APODERADO]\n```\n\n### Diligencia Notarial (sección final OBLIGATORIA)\n```\nDILIGENCIA NOTARIAL DE AUTENTICACIÓN / PRESENTACIÓN PERSONAL\n\n(Espacio reservado para la Notaría [___] del Círculo de [CIUDAD]. La nota\nnotarial dará fe de la presentación personal y/o reconocimiento de\ncontenido y firma del poderdante, dejando constancia de haber tenido a la\nvista las pruebas de la existencia de la sociedad y de la calidad de\nrepresentante legal de la otorgante, conforme al Estatuto Notarial.)\n\nFecha: ________________   Escritura/Acta No.: ________________\n\nFirma y sello del Notario: ______________________________\n```\n\n## Risk Warnings to Include\n\nSi detectas alguno de estos casos, incluye una **ADVERTENCIA EN MAYÚSCULAS**\nantes del bloque de firmas:\n\n1. **Falta tope máximo de cuantía** (para poderes que comprometen patrimonio):\n   ```\n   ⚠ ADVERTENCIA — TOPE MÁXIMO DE CUANTÍA NO ESTABLECIDO\n   Sin tope máximo, esta facultad es de ALTO RIESGO LEGAL. Se recomienda\n   NO autenticar este poder hasta fijar un monto específico en pesos y\n   en letras.\n   ```\n\n2. **Persona jurídica + restricciones estatutarias no verificadas**:\n   ```\n   ⚠ ADVERTENCIA — RESTRICCIONES ESTATUTARIAS\n   El ejercicio de las facultades queda sujeto a las restricciones que\n   los estatutos sociales impongan. Si requieren autorización previa de\n   junta directiva o asamblea, dicha autorización debe obtenerse y\n   acreditarse (Art. 196 CCo).\n   ```\n\n3. **Garantías sobre inmuebles**:\n   ```\n   ⚠ NOTA — ESCRITURA PÚBLICA REQUERIDA\n   Para constituir garantía sobre bienes inmuebles, el apoderado deberá\n   concurrir al otorgamiento de la respectiva escritura pública.\n   ```\n\n## Bibliography\n1. **Decreto 960 de 1970** — Estatuto del Notariado y del Registro\n   https://www.suin-juriscol.gov.co/viewDocument.asp?ruta=Decretos/1058919\n2. **Código Civil** Arts. 2142-2199 (Mandato)\n   https://www.secretariasenado.gov.co/senado/basedoc/codigo_civil.html\n3. **Código de Comercio** Arts. 196-198 (Representación de sociedades)\n   https://www.secretariasenado.gov.co/senado/basedoc/codigo_comercio.html\n4. **Unión Colegiada del Notariado Colombiano**\n   https://www.notariado.org.co/portal',
+    null,
+    null,
+    'CO',
+    true, 'public', 'published', 1,
+    '{"seeded_by":"sprint_m1927","seed_date":"2026-05-28"}'::jsonb
+)
+on conflict (firm_id, command, version) do update set
+    name = excluded.name,
+    description = excluded.description,
+    category = excluded.category,
+    frontmatter = excluded.frontmatter,
+    system_prompt = excluded.system_prompt,
+    tier = excluded.tier,
+    status = 'published',
+    updated_at = now();
+
+
+do $$
+declare v_id uuid;
+begin
+  select id into v_id from firm_skills
+   where firm_id is null
+     and command = '/redactar/poder-especial'
+     and status = 'published';
+  if v_id is null then
+    raise exception 'M19.30 seed poder-especial NOT FOUND after insert';
+  end if;
+  raise notice 'M19.30 poder-especial seeded id=%', v_id;
+end$$;
+
+commit;
