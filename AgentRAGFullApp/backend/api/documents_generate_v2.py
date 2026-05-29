@@ -391,12 +391,35 @@ async def export_forensic_docx(
 # ----------------------------------------------------------------
 
 async def _resolve_document_meta_for_render(pool, document_id: str) -> dict[str, Any]:
-    """Best-effort: extrae doc_type, doc_family, firm_id, user_id, matter_id
-    desde tablas conocidas (matter_documents, document_blocks metadata).
+    """Best-effort: extrae doc_type, doc_family, firm_id, user_id, matter_id,
+    user_intent desde tablas conocidas (matter_documents, document_blocks,
+    chat_messages).
 
-    Returns dict (puede tener None en cualquier campo).
+    Returns dict (puede tener None en cualquier campo). Las llaves incluyen
+    también ``user_intent`` y ``user_brief`` cuando se encuentran en
+    ``chat_messages`` (M19.30: necesarias para que el renderer Claude
+    regenere desde cero siguiendo el SKILL.md en lugar de copiar la
+    estructura de los bloques persistidos por el block_generator legacy).
     """
     meta: dict[str, Any] = {}
+    # 0. Intent original del usuario via chat_messages (role='user' linked to doc)
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                select content
+                  from chat_messages
+                 where document_id = $1::uuid
+                   and role = 'user'
+                 order by created_at asc
+                 limit 1
+                """,
+                document_id,
+            )
+            if row and row["content"]:
+                meta["user_intent"] = row["content"]
+    except Exception as e:
+        logger.debug("chat_messages user_intent lookup failed: %s", e)
     try:
         async with pool.acquire() as conn:
             # matter_documents may not exist in all envs; try gracefully
@@ -453,7 +476,18 @@ async def _try_render_with_claude(
     blocks: list[dict[str, Any]],
     doc_meta: dict[str, Any],
 ) -> bytes | None:
-    """Intenta renderizar con Claude. None si no se puede (fallback) o si falla."""
+    """Intenta renderizar con Claude. None si no se puede (fallback) o si falla.
+
+    M19.30 · Estrategia "redacta desde cero":
+      - Usa ``doc_meta['user_intent']`` (instrucción original del usuario)
+        como user_prompt si está disponible.
+      - Extrae SOLO datos crudos (nombres, fechas, números) de los bloques.
+        NO pasa la estructura/secciones del orchestrator porque arrastran
+        el estilo "I./II./III./IV." del block_generator legacy que no
+        respeta el SKILL.md del doc_type.
+      - El renderer Claude regenera completamente siguiendo la
+        ``Document Structure`` y ``Style Conventions`` del SKILL.md.
+    """
     from lex.renderer.claude_docx_renderer import RenderRequest, render_docx, log_audit
 
     doc_type = doc_meta.get("doc_type")
@@ -461,16 +495,35 @@ async def _try_render_with_claude(
     if not doc_type:
         return None
 
-    # Resolver SKILL.md del template desde firm_skills (cascade firm_id → builtin)
     template_md = await _load_template_skill_md(pool, doc_type=doc_type, firm_id=firm_id)
     if not template_md:
         logger.info("no SKILL.md template found for doc_type=%s, falling back", doc_type)
         return None
 
-    # Reconstruir el "user_prompt" desde blocks + extraer datos básicos
-    user_prompt = "Genera el documento .docx final conforme al template. Usa el contenido " \
-                  "existente de los bloques como guía si aplica."
-    data = _blocks_to_data_dict(blocks)
+    # M19.30: priorizar intent original del usuario. Si no está, sintetizar
+    # uno corto desde los bloques pero advertir a Claude que NO copie estilos.
+    user_intent = (doc_meta.get("user_intent") or "").strip()
+    if user_intent:
+        user_prompt = (
+            user_intent
+            + "\n\n"
+            "IMPORTANTE: redacta el documento completo DESDE CERO siguiendo "
+            "ESTRICTAMENTE la sección 'Document Structure' y 'Style Conventions' "
+            "del template. NO uses numeración romana (I./II./III./IV.) salvo que "
+            "el template la prescriba explícitamente. Si el template usa cláusulas "
+            "ordinales (PRIMERA, SEGUNDA, TERCERA, …), úsalas exactamente así."
+        )
+    else:
+        user_prompt = (
+            "Redacta este documento completo DESDE CERO siguiendo ESTRICTAMENTE "
+            "la sección 'Document Structure' y 'Style Conventions' del template. "
+            "El objeto `data` contiene los datos del usuario. NO uses numeración "
+            "romana salvo que el template la prescriba; si prescribe cláusulas "
+            "ordinales (PRIMERA, SEGUNDA, …), úsalas literalmente."
+        )
+
+    # Extraer SOLO datos planos de los bloques (sin estructura ni headings)
+    data = _blocks_to_flat_data(blocks, doc_meta)
 
     req = RenderRequest(
         doc_type=doc_type,
@@ -557,13 +610,13 @@ def _compose_template_md(system_prompt: str, references_md: str | None) -> str:
 
 
 def _blocks_to_data_dict(blocks: list[dict[str, Any]]) -> dict[str, Any]:
-    """Extrae datos clave desde los bloques persistidos para alimentar el renderer."""
-    data: dict[str, Any] = {
-        "sections": [],
-        "title": None,
-    }
+    """[Legacy] Extrae datos+estructura desde los bloques persistidos.
+
+    NO usar en el renderer Claude — arrastra el estilo "I./II./III./IV."
+    del block_generator. Mantener solo por compatibilidad de imports.
+    """
+    data: dict[str, Any] = {"sections": [], "title": None}
     for b in blocks or []:
-        section_key = b.get("section_key")
         block_data = b.get("block_data") or {}
         block_type = b.get("block_type")
         if block_type == "heading" and not data["title"]:
@@ -571,11 +624,88 @@ def _blocks_to_data_dict(blocks: list[dict[str, Any]]) -> dict[str, Any]:
             if txt:
                 data["title"] = txt
         data["sections"].append({
-            "section_key": section_key,
+            "section_key": b.get("section_key"),
             "block_type": block_type,
             "block_data": block_data,
         })
     return data
+
+
+# Patrones simples para extraer datos típicos del usuario de los bloques.
+# El objetivo es darle a Claude PLACEHOLDERS limpios sin la estructura
+# de secciones del orchestrator (que arrastra "I./II./III." legacy).
+_DATA_PATTERNS = [
+    # (pattern, dest_key)
+    (r"C\.?C\.?\s*(?:No\.?\s*)?(\d[\d\.\s]{5,})", "cedula"),
+    (r"NIT\s*(?:No\.?\s*)?(\d[\d\.\s\-]{5,})", "nit"),
+    (r"\$\s*([\d\.,]+)", "monto"),
+    (r"tarjeta\s+profesional\s*(?:No\.?\s*)?(\d[\d\.\s]{2,})", "tarjeta_profesional"),
+    (r"(?:proceso|expediente|radicado)\s+(?:ejecutivo\s+singular\s+)?No\.?\s*([\w\d\-]+)", "radicado"),
+]
+
+
+def _blocks_to_flat_data(
+    blocks: list[dict[str, Any]],
+    doc_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """M19.30 · Extrae SOLO datos planos (sin estructura) para Claude renderer.
+
+    Devuelve:
+      - ``raw_text``: texto plano concatenado de TODOS los bloques (para que
+        Claude reconozca placeholders en su prompt).
+      - ``user_intent``: instrucción original del usuario (si está).
+      - ``doc_type``, ``doc_family``: del meta.
+      - Datos extraídos via regex (cédulas, NITs, montos, radicados, ...).
+
+    NO incluye ``sections`` ni ``headings`` ni ``block_type`` — Claude
+    redacta desde cero siguiendo el SKILL.md.
+    """
+    import re
+    flat: dict[str, Any] = {}
+    if doc_meta:
+        for k in ("doc_type", "doc_family", "user_intent"):
+            v = doc_meta.get(k)
+            if v:
+                flat[k] = v
+
+    text_parts: list[str] = []
+    for b in blocks or []:
+        bd = b.get("block_data") or {}
+        for key in ("text", "content", "value", "runs"):
+            v = bd.get(key)
+            if isinstance(v, str) and v.strip():
+                text_parts.append(v.strip())
+            elif isinstance(v, list):
+                for it in v:
+                    if isinstance(it, dict):
+                        t = it.get("text")
+                        if isinstance(t, str) and t.strip():
+                            text_parts.append(t.strip())
+                    elif isinstance(it, str) and it.strip():
+                        text_parts.append(it.strip())
+    raw = "\n".join(text_parts).strip()
+    flat["raw_text"] = raw[:8000] if raw else ""
+
+    # Extraer datos típicos con regex
+    extracted: dict[str, list[str]] = {}
+    for pat, key in _DATA_PATTERNS:
+        try:
+            matches = re.findall(pat, raw, flags=re.IGNORECASE)
+        except Exception:
+            matches = []
+        if matches:
+            seen: list[str] = []
+            for m in matches:
+                if isinstance(m, tuple):
+                    m = " ".join(x for x in m if x)
+                m = (m or "").strip()
+                if m and m not in seen:
+                    seen.append(m)
+            if seen:
+                extracted[key] = seen
+    if extracted:
+        flat["extracted"] = extracted
+    return flat
 
 
 class BlockPatchBody(BaseModel):

@@ -195,6 +195,16 @@ def _build_system_prompt(template_skill_md: str) -> str:
         "6. NO inventes citas normativas: usa exactamente las que aparecen en el template.\n"
         "7. Cuando el template diga 'Risk Warnings', NO incluyas esas advertencias en\n"
         "   el .docx (son para tu validación interna).\n"
+        "8. Sigue la sección 'Document Structure' del template EN ORDEN ESTRICTO.\n"
+        "   Si el template prescribe encabezados con ordinales 'PRIMERA',\n"
+        "   'SEGUNDA', 'TERCERA', ... úsalos LITERALMENTE — NO los reemplaces por\n"
+        "   numeración romana 'I.', 'II.', 'III.' ni por palabras como 'PODERDANTE'\n"
+        "   o 'FACULTADES OTORGADAS' (esos son estilos de demanda judicial, no de\n"
+        "   poder notarial). Cada documento tiene su propio estilo: respétalo.\n"
+        "9. Si en `data` recibes texto crudo (`data.raw_text` o `data.sections`),\n"
+        "   considera ese contenido SOLO como fuente de datos del usuario (nombres,\n"
+        "   fechas, números). NO copies su estructura ni sus encabezados — la\n"
+        "   estructura final viene EXCLUSIVAMENTE del template SKILL.md.\n"
     )
 
 
