@@ -317,9 +317,14 @@ async def export_forensic_docx(
     if not blocks:
         raise HTTPException(status_code=404, detail="document_not_found_or_empty")
 
-    # M19.25.E · Try Claude renderer (camino B) si activado por query param
+    # M19.25.E + M19.30 · Try Claude renderer (camino B) por DEFAULT cuando el
+    # flag global CLAUDE_RENDERER_ENABLED=true y hay SKILL.md para el doc_type.
+    # El frontend no necesita pasar ?engine=claude — solo pasarlo si quiere
+    # forzar legacy con ?engine=legacy o desactivarlo con ?engine=off.
     engine = (request.query_params.get("engine") or "").strip().lower()
-    if engine == "claude":
+    # claude por defecto; legacy solo si el caller lo pide explícitamente
+    try_claude = engine in ("", "claude", "auto")
+    if try_claude:
         try:
             from lex.renderer import claude_docx_renderer as _crd
             doc_meta = await _resolve_document_meta_for_render(storage.pool, document_id)
@@ -334,7 +339,18 @@ async def export_forensic_docx(
             qp_firm_id = (request.query_params.get("firm_id") or "").strip()
             if qp_firm_id:
                 doc_meta["firm_id"] = qp_firm_id
-            logger.info("claude renderer doc_meta resolved: %s", doc_meta)
+            # M19.30 · si no hay doc_type en meta, intentar inferirlo desde
+            # document_blocks.section_key, generation_audit o template_catalog
+            if not doc_meta.get("doc_type"):
+                inferred = await _infer_doc_type_from_blocks(storage.pool, document_id, blocks)
+                if inferred:
+                    doc_meta["doc_type"] = inferred
+                    doc_meta.setdefault("doc_family", _doc_family_from_doc_type(inferred))
+                    logger.info("doc_type inferred for %s: %s", document_id, inferred)
+            logger.info("claude renderer doc_meta resolved: %s", {
+                k: (v if k != "user_intent" else (v or "")[:200])
+                for k, v in (doc_meta or {}).items()
+            })
             if _crd.is_renderer_enabled_for(
                 doc_type=doc_meta.get("doc_type"),
                 doc_family=doc_meta.get("doc_family"),
@@ -358,7 +374,7 @@ async def export_forensic_docx(
                 # docx_bytes None → falló y fallback a legacy
                 logger.info("claude renderer returned None, falling back to legacy for %s", document_id)
             else:
-                logger.info("claude renderer disabled for doc_meta=%s, using legacy", doc_meta)
+                logger.info("claude renderer disabled (flag/family/firm), using legacy for %s", document_id)
         except Exception as e:
             # NUNCA romper el endpoint si Claude renderer falla
             logger.warning("claude renderer crashed (%s), falling back to legacy", e)
@@ -387,8 +403,120 @@ async def export_forensic_docx(
 
 
 # ----------------------------------------------------------------
-# M19.25.E · helpers para integración Claude renderer
+# M19.25.E + M19.30 · helpers para integración Claude renderer
 # ----------------------------------------------------------------
+
+
+# Mapeo doc_type → doc_family (fallback cuando matter_documents/document_generations
+# no tienen la info). Sincronizado con TEST Freddy/templates_review/.
+_DOC_TYPE_TO_FAMILY = {
+    # notarial
+    "poder_especial": "notarial_poder",
+    "poder_general": "notarial_poder",
+    "revocatoria_poder": "notarial_poder",
+    "declaracion_extrajuicio": "notarial_declaracion",
+    "compraventa_inmueble": "notarial_inmuebles",
+    # judicial
+    "demanda_civil_ordinaria": "judicial_civil",
+    "demanda_divorcio": "judicial_familia",
+    "demanda_alimentos": "judicial_familia",
+    "demanda_laboral": "judicial_laboral",
+    "demanda_admin_nulidad": "judicial_admin",
+    "tutela": "judicial_constitucional",
+    "recurso_apelacion": "judicial_recurso",
+    "contestacion_demanda": "judicial_civil",
+    # petitorio
+    "derecho_peticion": "petitorio_admin",
+    "requerimiento_extrajudicial": "petitorio_extrajudicial",
+    # contractual
+    "arrendamiento_vivienda": "contractual_civil",
+    "prestacion_servicios": "contractual_civil",
+    "compraventa_vehiculo": "contractual_mercantil",
+    # corporate
+    "acta_asamblea": "corporate_societario",
+    "estatutos_sas": "corporate_societario",
+    # conceptual
+    "concepto_juridico": "conceptual_opinion",
+}
+
+
+def _doc_family_from_doc_type(doc_type: str | None) -> str | None:
+    if not doc_type:
+        return None
+    return _DOC_TYPE_TO_FAMILY.get(doc_type.strip().lower())
+
+
+async def _infer_doc_type_from_blocks(
+    pool, document_id: str, blocks: list[dict[str, Any]]
+) -> str | None:
+    """Inferir doc_type cuando matter_documents/document_generations no lo tienen.
+
+    Prioridad:
+      1. generation_audit.template_id (si está poblado para este document_id)
+      2. document_blocks.metadata.doc_type del primer block (si existe)
+      3. Heurística sobre block_data[].text del primer heading
+    """
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                select template_id from generation_audit
+                 where document_id = $1::uuid
+                 order by created_at desc limit 1
+                """,
+                document_id,
+            )
+            if row and row["template_id"]:
+                tid = row["template_id"].strip().lower()
+                # Mapping templates comunes
+                if tid in _DOC_TYPE_TO_FAMILY:
+                    return tid
+                # Heurística sobre el template_id
+                if "poder" in tid and "especial" in tid:
+                    return "poder_especial"
+                if "tutela" in tid:
+                    return "tutela"
+                if "peticion" in tid:
+                    return "derecho_peticion"
+    except Exception as e:
+        logger.debug("generation_audit lookup failed: %s", e)
+
+    # Heurística por contenido de los bloques
+    first_text = ""
+    for b in (blocks or [])[:3]:
+        bd = b.get("block_data") or {}
+        for k in ("text", "content", "value"):
+            v = bd.get(k)
+            if isinstance(v, str) and v.strip():
+                first_text += " " + v.strip()
+            elif isinstance(v, list):
+                for it in v:
+                    if isinstance(it, dict) and isinstance(it.get("text"), str):
+                        first_text += " " + it["text"]
+    txt = first_text.lower()
+    if not txt:
+        return None
+    if "poder especial" in txt:
+        return "poder_especial"
+    if "poder general" in txt:
+        return "poder_general"
+    if "revocatoria" in txt and "poder" in txt:
+        return "revocatoria_poder"
+    if "acción de tutela" in txt or "tutela" in txt[:200]:
+        return "tutela"
+    if "derecho de petición" in txt:
+        return "derecho_peticion"
+    if "requerimiento extrajudicial" in txt:
+        return "requerimiento_extrajudicial"
+    if "compraventa de vehículo" in txt:
+        return "compraventa_vehiculo"
+    if "contrato de arrendamiento" in txt:
+        return "arrendamiento_vivienda"
+    if "contrato de prestación de servicios" in txt:
+        return "prestacion_servicios"
+    if "concepto jurídico" in txt:
+        return "concepto_juridico"
+    return None
 
 async def _resolve_document_meta_for_render(pool, document_id: str) -> dict[str, Any]:
     """Best-effort: extrae doc_type, doc_family, firm_id, user_id, matter_id,
