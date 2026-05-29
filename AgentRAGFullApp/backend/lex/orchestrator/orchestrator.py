@@ -470,14 +470,16 @@ class Orchestrator:
             try:
                 from lex.orchestrator.stages.structure_discovery import StructureRecipe
                 sections_plan_md = skill_context.to_sections_plan()
+                structure_key = (
+                    f"{classification.doc_type}:skill_md:"
+                    f"{skill_context.skill_id or 'builtin'}"
+                )
                 structure_recipe = StructureRecipe(
+                    structure_key=structure_key,
                     doc_type=classification.doc_type,
-                    template_used=skill_context.skill_command or classification.doc_type,
                     sections_plan=sections_plan_md,
-                    norma_procesal_ref=None,
-                    juez_competente=None,
-                    juramento_required=None,
                     document_family=skill_context.doc_family,
+                    generated_by="skill_md",
                     cached=True,
                     fallback_used=False,
                     duration_ms=0,
