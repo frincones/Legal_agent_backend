@@ -49,6 +49,9 @@ EventName = Literal[
     "agent_thought",
     # M19.7: archivo final presentado (DOCX/PDF) con preview
     "presented_file",
+    # M19.30: progreso fino por stage — evita "spinner mudo" cuando un stage
+    # tarda 20-40s (gpt-4o degradado, etc.). El frontend muestra el label.
+    "stage_progress",
 ]
 
 
@@ -255,6 +258,28 @@ class SSEEvent:
     @staticmethod
     def error(stage: str, message: str) -> bytes:
         return sse("error", {"stage": stage, "message": message})
+
+    @staticmethod
+    def stage_progress(
+        stage: str,
+        state: str,
+        label: str | None = None,
+        elapsed_ms: int | None = None,
+        timeout_s: float | None = None,
+    ) -> bytes:
+        """M19.30 · Progreso fino por stage.
+
+        ``state``: ``"running" | "ok" | "skipped" | "timeout" | "error" | "fallback"``.
+        ``label``: texto para mostrar en el frontend (ej. "Clasificando régimen legal…").
+        """
+        payload: dict[str, Any] = {"stage": stage, "state": state}
+        if label is not None:
+            payload["label"] = label
+        if elapsed_ms is not None:
+            payload["elapsed_ms"] = elapsed_ms
+        if timeout_s is not None:
+            payload["timeout_s"] = timeout_s
+        return sse("stage_progress", payload)
 
     @staticmethod
     def presented_file(

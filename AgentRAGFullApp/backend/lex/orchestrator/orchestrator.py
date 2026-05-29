@@ -355,6 +355,15 @@ class Orchestrator:
         # régimen, naturaleza, fundamento, premisas corregidas, advertencias.
         # Es opcional: si falla, pipeline continúa sin él.
         legal_classification = None
+        # M19.30 · stage_progress (running) ANTES de la llamada que puede tardar
+        # 30s si gpt-4o degrada. Evita "spinner mudo" en el frontend.
+        yield SSEEvent.stage_progress(
+            stage="legal_classifier",
+            state="running",
+            label="Clasificando régimen legal aplicable…",
+            timeout_s=30.0,
+        )
+        _lc_t0 = time.time()
         try:
             from lex.orchestrator.stages.legal_classifier import classify_legal_case
             legal_classification = await classify_legal_case(
@@ -388,12 +397,30 @@ class Orchestrator:
                         logger.debug("narrator legal_classification failed (non-fatal): %s", e)
         except Exception as e:
             logger.warning("legal_classifier stage exception (non-fatal): %s", e)
+        # M19.30 · stage_progress final del legal_classifier (siempre)
+        _lc_state = (
+            "skipped" if legal_classification is None or getattr(legal_classification, "skipped", False)
+            else "ok"
+        )
+        yield SSEEvent.stage_progress(
+            stage="legal_classifier",
+            state=_lc_state,
+            elapsed_ms=int((time.time() - _lc_t0) * 1000),
+        )
 
         # ===== STAGE 1.5: M19.23.B — STRUCTURE DISCOVERY =====
         # Reemplaza la lógica hardcoded de _resolve_plan() / _resolve_template()
         # con descubrimiento dinámico (LLM + cache + verify). Si falla, cae a
         # los templates Python legacy como red de seguridad.
         structure_recipe = None
+        # M19.30 · stage_progress (running) para mostrar al usuario qué está pasando
+        yield SSEEvent.stage_progress(
+            stage="structure_discovery",
+            state="running",
+            label="Diseñando estructura del documento…",
+            timeout_s=30.0,
+        )
+        _sd_t0 = time.time()
         try:
             from lex.orchestrator.stages.structure_discovery import discover_structure
             structure_recipe = await discover_structure(
@@ -409,6 +436,16 @@ class Orchestrator:
         except Exception as e:
             logger.warning("structure_discovery stage exception (non-fatal): %s", e)
             structure_recipe = None
+        # M19.30 · stage_progress final structure_discovery
+        _sd_state = (
+            "fallback" if structure_recipe is None or getattr(structure_recipe, "fallback_used", False)
+            else "ok"
+        )
+        yield SSEEvent.stage_progress(
+            stage="structure_discovery",
+            state=_sd_state,
+            elapsed_ms=int((time.time() - _sd_t0) * 1000),
+        )
 
         # Decidir plan + template a usar:
         # - Si structure_recipe tiene sections_plan válido → usarlo
@@ -515,6 +552,15 @@ class Orchestrator:
         # Detecta datos faltantes según el doc_type + norma procesal aplicable
         # (de structure_recipe). En modo borrador es solo informativo (pipeline
         # continúa con placeholders). En modo firma pausa y espera al usuario.
+        # M19.30 · stage_progress (running) para evitar silencio durante 40s
+        yield SSEEvent.stage_progress(
+            stage="data_completeness_gate",
+            state="running",
+            label="Verificando que tengamos toda la información necesaria…",
+            timeout_s=40.0,
+        )
+        _dcg_t0 = time.time()
+        _dcg_state = "skipped"
         try:
             from lex.orchestrator.stages.data_completeness_gate import check_data_completeness
             completeness_data_report = await check_data_completeness(
@@ -582,8 +628,17 @@ class Orchestrator:
             # En su lugar, emite el event y continúa con placeholders. El
             # frontend muestra MissingDataPrompt para que el usuario complete
             # vía PATCH /blocks o /chat. El stage queda como audit + UX guide.
+            _dcg_state = (
+                "skipped" if getattr(completeness_data_report, "skipped", False) else "ok"
+            )
         except Exception as e:
             logger.warning("data_completeness_gate stage exception (non-fatal): %s", e)
+        # M19.30 · stage_progress final data_completeness_gate
+        yield SSEEvent.stage_progress(
+            stage="data_completeness_gate",
+            state=_dcg_state,
+            elapsed_ms=int((time.time() - _dcg_t0) * 1000),
+        )
 
         # ===== STAGE 3: CALCULADORA (Python puro, cero LLM) =====
         calculations: dict[str, Any] = {}

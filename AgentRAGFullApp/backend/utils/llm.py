@@ -2,22 +2,61 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import List, Optional
 
+import httpx
 from openai import AsyncOpenAI
 
 from utils.usage_tracker import tracker
+
+logger = logging.getLogger(__name__)
 
 
 _client: Optional[AsyncOpenAI] = None
 
 
+# M19.30 — Fix bloqueo del chat: el SDK de OpenAI por default usa timeout
+# de 600 s. Cuando gpt-4o degrada, las llamadas se cuelgan hasta que el
+# wrapper asyncio.wait_for de cada stage corta (20-40 s) y el usuario ve
+# el spinner mudo. Fijamos timeout=15s para fallar rápido y caer al
+# fallback (Anthropic/legacy) sin esperar al timeout del stage. Overridable
+# vía OPENAI_HTTP_TIMEOUT_S y OPENAI_HTTP_CONNECT_TIMEOUT_S.
+def _openai_timeout() -> httpx.Timeout:
+    try:
+        read = float(os.getenv("OPENAI_HTTP_TIMEOUT_S", "15.0"))
+    except ValueError:
+        read = 15.0
+    try:
+        connect = float(os.getenv("OPENAI_HTTP_CONNECT_TIMEOUT_S", "5.0"))
+    except ValueError:
+        connect = 5.0
+    return httpx.Timeout(read, connect=connect)
+
+
 def get_openai_client() -> AsyncOpenAI:
-    """Get or create a shared AsyncOpenAI client."""
+    """Get or create a shared AsyncOpenAI client.
+
+    Configura timeout HTTP propio para que si gpt-4o no responde, falle
+    en segundos en lugar de quedarse colgado el default de 600s del SDK.
+    """
     global _client
     if _client is None:
-        _client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        timeout = _openai_timeout()
+        try:
+            max_retries = int(os.getenv("OPENAI_MAX_RETRIES", "1"))
+        except ValueError:
+            max_retries = 1
+        logger.info(
+            "AsyncOpenAI init · timeout=%ss connect=%ss max_retries=%d",
+            timeout.read, timeout.connect, max_retries,
+        )
+        _client = AsyncOpenAI(
+            api_key=os.getenv("OPENAI_API_KEY"),
+            timeout=timeout,
+            max_retries=max_retries,
+        )
     return _client
 
 
