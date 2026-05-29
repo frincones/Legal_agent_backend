@@ -70,18 +70,21 @@ def _get_anthropic_client():
             from anthropic import AsyncAnthropic
             try:
                 import httpx as _httpx
+                # M19.30 (P0 v2) · timeout HTTP bajado a 12s + max_retries=0
+                # para fallar rápido y dar más margen al fallback OpenAI
+                # dentro del wait_for de cada stage (que tiene 30-40s).
                 try:
-                    read = float(os.getenv("ANTHROPIC_HTTP_TIMEOUT_S", "20.0"))
+                    read = float(os.getenv("ANTHROPIC_HTTP_TIMEOUT_S", "12.0"))
                 except ValueError:
-                    read = 20.0
+                    read = 12.0
                 try:
-                    connect = float(os.getenv("ANTHROPIC_HTTP_CONNECT_TIMEOUT_S", "5.0"))
+                    connect = float(os.getenv("ANTHROPIC_HTTP_CONNECT_TIMEOUT_S", "3.0"))
                 except ValueError:
-                    connect = 5.0
+                    connect = 3.0
                 try:
-                    max_retries = int(os.getenv("ANTHROPIC_MAX_RETRIES", "1"))
+                    max_retries = int(os.getenv("ANTHROPIC_MAX_RETRIES", "0"))
                 except ValueError:
-                    max_retries = 1
+                    max_retries = 0
                 logger.info(
                     "AsyncAnthropic init · timeout=%ss connect=%ss max_retries=%d",
                     read, connect, max_retries,

@@ -24,14 +24,19 @@ _client: Optional[AsyncOpenAI] = None
 # fallback (Anthropic/legacy) sin esperar al timeout del stage. Overridable
 # vía OPENAI_HTTP_TIMEOUT_S y OPENAI_HTTP_CONNECT_TIMEOUT_S.
 def _openai_timeout() -> httpx.Timeout:
+    # M19.30 (P0 fix v2) · default bajado de 15s → 10s. El SDK OpenAI hace
+    # retries internos con backoff: si max_retries=1 y timeout=15s, una
+    # llamada lenta puede costar ~30s antes de fallar → no le da margen al
+    # fallback dentro del wait_for del stage. Bajar a 10s + max_retries=0
+    # garantiza fallar en <12s.
     try:
-        read = float(os.getenv("OPENAI_HTTP_TIMEOUT_S", "15.0"))
+        read = float(os.getenv("OPENAI_HTTP_TIMEOUT_S", "10.0"))
     except ValueError:
-        read = 15.0
+        read = 10.0
     try:
-        connect = float(os.getenv("OPENAI_HTTP_CONNECT_TIMEOUT_S", "5.0"))
+        connect = float(os.getenv("OPENAI_HTTP_CONNECT_TIMEOUT_S", "3.0"))
     except ValueError:
-        connect = 5.0
+        connect = 3.0
     return httpx.Timeout(read, connect=connect)
 
 
@@ -45,9 +50,11 @@ def get_openai_client() -> AsyncOpenAI:
     if _client is None:
         timeout = _openai_timeout()
         try:
-            max_retries = int(os.getenv("OPENAI_MAX_RETRIES", "1"))
+            # M19.30 (P0 v2) · max_retries=0 por default. Con APIs degradadas
+            # cada retry agrega 5-10s más. Mejor fallar rápido.
+            max_retries = int(os.getenv("OPENAI_MAX_RETRIES", "0"))
         except ValueError:
-            max_retries = 1
+            max_retries = 0
         logger.info(
             "AsyncOpenAI init · timeout=%ss connect=%ss max_retries=%d",
             timeout.read, timeout.connect, max_retries,
