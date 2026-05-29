@@ -59,16 +59,124 @@ class SkillContext:
     def to_sections_plan(self) -> list[dict[str, Any]]:
         """Convierte sections → formato esperado por orchestrator/structure_discovery.
 
+        Filtra SOLO secciones clausulares (las que van a tener heading numerado
+        en el documento). Items meta del MD ("Título", "Subtítulo italic",
+        "Destinatario notarial", "Comparecencia del poderdante", "Designación
+        del apoderado", "Lugar, fecha y firmas", "Diligencia notarial", etc.)
+        quedan FUERA del plan: no son cláusulas, son lineamientos editoriales.
+
+        Asigna ordinales secuenciales (PRIMERA, SEGUNDA, ..., DÉCIMA, ÚLTIMA)
+        a las cláusulas que no tengan uno propio detectado por el parser.
+
         Formato compatible con el `plan` que consume el block_generator:
           [{key, title, order, roman, expected_blocks?, section_instruction?}, ...]
         """
+        import re as _re
+
+        # Palabras clave que indican que una sección del MD es clausular
+        clausular_kw = _re.compile(
+            r"^\s*(PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA|SEXTA|S[EÉ]PTIMA|"
+            r"OCTAVA|NOVENA|D[EÉ]CIMA|UND[EÉ]CIMA|DUOD[EÉ]CIMA|"
+            r"PEN[UÚ]LTIMA|[UÚ]LTIMA|"
+            r"HECHOS|PRETENSIONES|FUNDAMENTOS|OBJETO|"
+            r"ANTECEDENTES|PARTES|PETICIONES|VIGENCIA|FACULTADES|"
+            r"CL[AÁ]USULA|CLAUSE|ART[IÍ]CULO|"
+            r"I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII|XIII)[\.\s]",
+            _re.IGNORECASE,
+        )
+        # Patrones de items meta del MD que NO son cláusulas
+        # NOTA: "N. Vigencia" y "N+1. Aceptación" no son meta — son cláusulas
+        # con placeholder ordinal. Las dejamos pasar y luego les asignamos
+        # el ordinal real (SEPTIMA, OCTAVA, ...).
+        meta_kw = _re.compile(
+            r"^\s*(T[ií]tulo|Subt[ií]tulo|Destinatario\s+notarial|"
+            r"Comparecencia|Designaci[oó]n|Lugar[,\s]+fecha|"
+            r"Lugar\s+y\s+fecha|^Firmas\b|Diligencia\s+notarial|"
+            r"Encabezado(\s+\(notarial\))?)\b",
+            _re.IGNORECASE,
+        )
+        # Patrón para limpiar placeholders "N." / "N+1." al inicio de un title
+        # ("N. Vigencia y revocabilidad" → "Vigencia y revocabilidad")
+        placeholder_n_re = _re.compile(
+            r"^\s*N(?:\s*\+\s*\d+)?\.\s*",
+            _re.IGNORECASE,
+        )
+
+        # 1. Filtrar candidatos: cualquier sección con roman O título clausular
+        candidates: list[Any] = []
+        for s in self.sections:
+            title = (s.title or "").replace("**", "").strip()
+            if not title:
+                continue
+            # Limpiar placeholder ordinal "N." o "N+1." si lo tiene
+            cleaned_title = placeholder_n_re.sub("", title).strip()
+            if meta_kw.match(cleaned_title):
+                continue
+            # Aceptar como cláusula si:
+            #   - tenía roman propio detectado, o
+            #   - el title (limpio) empieza con ordinal/keyword clausular, o
+            #   - originalmente tenía placeholder "N." (se limpió → es cláusula)
+            had_n_placeholder = placeholder_n_re.match(title) is not None
+            if s.roman or clausular_kw.match(cleaned_title) or had_n_placeholder:
+                candidates.append((s, cleaned_title))
+
+        # Fallback: si la heurística filtró demasiado (<3), usar todas
+        # las secciones excepto las claramente meta
+        if len(candidates) < 3:
+            candidates = []
+            for s in self.sections:
+                title = (s.title or "").replace("**", "").strip()
+                cleaned = placeholder_n_re.sub("", title).strip()
+                if not cleaned or meta_kw.match(cleaned):
+                    continue
+                candidates.append((s, cleaned))
+
+        # 2. Asignar romans secuenciales si no hay
+        ordinals = [
+            "PRIMERA", "SEGUNDA", "TERCERA", "CUARTA", "QUINTA",
+            "SEXTA", "SÉPTIMA", "OCTAVA", "NOVENA", "DÉCIMA",
+            "UNDÉCIMA", "DUODÉCIMA", "DÉCIMA TERCERA", "DÉCIMA CUARTA",
+            "DÉCIMA QUINTA",
+        ]
+
+        # Regex amplio para "ya tiene ordinal" — captura PRIMERA, SEGUNDA-N,
+        # PENÚLTIMA, DÉCIMA TERCERA, I., II., etc. seguidos de cualquier
+        # delimitador (`.`, ` `, `-`, `:`).
+        ordinal_prefix_re = _re.compile(
+            r"^\s*(PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA|SEXTA|S[EÉ]PTIMA|"
+            r"OCTAVA|NOVENA|D[EÉ]CIMA(?:\s+(?:PRIMERA|SEGUNDA|TERCERA))?|"
+            r"UND[EÉ]CIMA|DUOD[EÉ]CIMA|PEN[UÚ]LTIMA|[UÚ]LTIMA|"
+            r"I|II|III|IV|V|VI|VII|VIII|IX|X|XI|XII|XIII)\b"
+            r"[\.\-\s:]*([A-Z]\.)?",
+            _re.IGNORECASE,
+        )
+        # Patrón para limpiar "SEGUNDA-N. X" → "X" antes de prefijar
+        cleanup_dash_n_re = _re.compile(
+            r"^\s*(?:PRIMERA|SEGUNDA|TERCERA|CUARTA|QUINTA|SEXTA|S[EÉ]PTIMA|"
+            r"OCTAVA|NOVENA|D[EÉ]CIMA|PEN[UÚ]LTIMA|[UÚ]LTIMA|"
+            r"I|II|III|IV|V|VI|VII|VIII|IX|X)\s*-\s*[A-Z]+\.?\s*",
+            _re.IGNORECASE,
+        )
+
         out: list[dict[str, Any]] = []
-        for i, s in enumerate(self.sections, start=1):
+        for i, (s, clean_title) in enumerate(candidates, start=1):
+            roman = s.roman or (ordinals[i - 1] if i <= len(ordinals) else f"CL.{i}")
+            already_has_ordinal = bool(ordinal_prefix_re.match(clean_title))
+            if already_has_ordinal:
+                # Normalizar "SEGUNDA-N. Facultades específicas" → "SEGUNDA. Facultades específicas"
+                normalized = cleanup_dash_n_re.sub("", clean_title).strip()
+                if normalized and not ordinal_prefix_re.match(normalized):
+                    # Si el cleanup quitó el ordinal, volverlo a poner
+                    final_title = f"{roman}. {normalized}"
+                else:
+                    final_title = normalized or clean_title
+            else:
+                final_title = f"{roman}. {clean_title}"
             out.append({
-                "key": s.key or f"section_{i}",
-                "title": s.title,
-                "order": s.order or i,
-                "roman": s.roman,          # "PRIMERA" o "I" o None
+                "key": (s.key or f"clausula_{i}")[:60],
+                "title": final_title,
+                "order": i,
+                "roman": roman,
                 "section_instruction": s.instruction or "",
                 "expected_blocks": [],
                 "sacramental": s.sacramental,
