@@ -42,8 +42,13 @@ logger = logging.getLogger(__name__)
 _BUILTIN_SKILL_DIR = Path(__file__).parent / "skills" / "docx"
 _BUILTIN_SKILL_FILE = _BUILTIN_SKILL_DIR / "SKILL.md"
 
-# Default model: Claude Opus 4.7
-DEFAULT_MODEL = "claude-opus-4-7"
+# M19.30 (29 may 2026) · Default model bajado de Opus 4.7 → Sonnet 4.6.
+# Opus 4.7 estaba intermitente en producción (timeouts a 12s + bug de
+# parámetro `temperature` deprecado). Sonnet 4.6 responde más rápido y
+# consistente con calidad suficiente para generar el .docx del SKILL.md.
+# Revertir a Opus via env CLAUDE_RENDERER_MODEL=claude-opus-4-7 si se
+# estabiliza la API.
+DEFAULT_MODEL = "claude-sonnet-4-6"
 DEFAULT_MAX_RETRIES = 2
 DEFAULT_MAX_TOKENS = 8192
 

@@ -617,25 +617,53 @@ async def generate_section_blocks(
 
     # M19.24.H — Multi-provider: dispatcha entre OpenAI y Anthropic Claude
     # según env var LLM_PROVIDER_BLOCK_GEN. Default openai (backward compat).
-    try:
+    # M19.30 (29 may 2026) · Si la primera llamada falla por timeout de
+    # API, reintentamos UNA vez con gpt-4o (no -mini) que suele tener
+    # más estabilidad. Esto evita que secciones críticas como "encabezado"
+    # u "objeto" queden con el texto literal "[Error generando sección...]"
+    # cuando ambas APIs (Anthropic+OpenAI) están degradadas.
+    async def _do_call(_model_openai: str):
         from utils.llm_provider import chat_complete_json
-        data = await chat_complete_json(
+        return await chat_complete_json(
             provider_env="LLM_PROVIDER_BLOCK_GEN",
-            default_provider="openai",
+            default_provider="anthropic",  # M19.30: default a Anthropic
             model_env_anthropic="ANTHROPIC_MODEL_BLOCK_GEN",
-            default_model_openai=model,                       # respeta gpt-4o/gpt-4o-mini por sección
+            default_model_openai=_model_openai,
             default_model_anthropic="claude-sonnet-4-6",
             system_prompt=system_prompt_to_use,
             user_prompt=user_prompt,
             temperature=0.2,
             max_tokens=4000,
         )
-        raw_blocks = data.get("blocks", [])
-    except Exception as e:
-        logger.exception("block_generator failed for section %s: %s", section_key, e)
-        # Fallback: bloque de error visible
-        yield ParagraphBlock(runs=[Run(text=f"[Error generando sección {section_title}: {str(e)[:120]}]")])
+
+    data = None
+    last_err = None
+    for attempt, m_openai in enumerate([model, "gpt-4o"], start=1):
+        try:
+            data = await _do_call(m_openai)
+            break
+        except Exception as e:
+            last_err = e
+            logger.warning(
+                "block_generator section=%s attempt=%d model_openai=%s failed: %s",
+                section_key, attempt, m_openai, str(e)[:160],
+            )
+    if data is None:
+        logger.exception(
+            "block_generator failed for section %s after 2 attempts: %s",
+            section_key, last_err,
+        )
+        # M19.30 · NO contaminar el .docx con "[Error generando sección...]"
+        # literal. En su lugar, emitimos un párrafo placeholder limpio que
+        # el usuario puede editar/completar en el canvas.
+        placeholder_msg = (
+            f"Esta sección ({section_title}) no pudo generarse "
+            f"automáticamente y debe completarse manualmente. "
+            f"Use el editor del canvas para agregar el contenido."
+        )
+        yield ParagraphBlock(runs=[Run(text=placeholder_msg, italic=True)])
         return
+    raw_blocks = data.get("blocks", [])
 
     for rb in raw_blocks:
         try:
