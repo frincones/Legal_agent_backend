@@ -58,6 +58,14 @@ class FetchMcpOfficialTool(ToolDef):
         clients = self.mcp_clients or getattr(ctx, "mcp_clients", {}) or {}
         client = clients.get(server)
 
+        # M20.09: usar los 6 MCP servers CO si están registrados
+        if client is None and server in ("corte_cc", "csj", "suin", "senado", "funcpub", "datosgov"):
+            try:
+                from lex.mcp import get_mcp_client
+                client = get_mcp_client(server)
+            except Exception as e:
+                logger.warning("get_mcp_client(%s) falló: %s", server, e)
+
         # Fallback S1: si no hay client específico, intentar legal_data_hunter como genérico
         if client is None and server != "legal_data_hunter":
             client = clients.get("legal_data_hunter")
@@ -69,15 +77,26 @@ class FetchMcpOfficialTool(ToolDef):
                 "server": server,
                 "method": method,
                 "_warning": (
-                    f"MCP server {server!r} no inicializado en este deploy. "
-                    f"Sprint S9 implementará los 6 servers oficiales. "
-                    f"Por ahora usa verify_citation o search_jurisprudence."
+                    f"MCP server {server!r} no inicializado en este deploy."
                 ),
                 "params": params,
                 "data": None,
             }
 
         try:
+            # MCP CO clients exponen .call(method, params); legacy expone .call_tool
+            if hasattr(client, "call"):
+                from lex.mcp.base import MCPResult
+                result = await client.call(method, params)
+                if isinstance(result, MCPResult):
+                    return {
+                        "server": server, "method": method, "params": params,
+                        "data": result.data, "cached": result.cached,
+                        "duration_ms": result.duration_ms,
+                        "success": result.success,
+                        "error": result.error,
+                    }
+                return {"server": server, "method": method, "params": params, "data": result}
             result = await client.call_tool(method, params)
             return {"server": server, "method": method, "params": params, "data": result}
         except Exception as e:
