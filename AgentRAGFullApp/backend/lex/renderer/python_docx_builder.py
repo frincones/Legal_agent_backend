@@ -335,9 +335,9 @@ def _render_list_item(doc: Document, cfg: StyleConfig, *, num: str, runs_data: l
 
 
 def _tier_from_data(data: dict) -> str:
-    """M20.10: extrae tier 4-state. Backwards compat con verified/derogada."""
+    """M20.10/M20.13: extrae tier 5-state. Backwards compat con verified/derogada."""
     tier = (data.get("tier") or "").upper().strip()
-    if tier in ("GROUNDED", "DEROGADA", "VERIFY_FLAG", "NOT_FOUND"):
+    if tier in ("GROUNDED", "DEROGADA", "VERIFY_FLAG", "NOT_FOUND", "MODULADA"):
         return tier
     # Legacy mapping
     if data.get("derogada"):
@@ -369,6 +369,13 @@ def _render_tier_badge(p, cfg: StyleConfig, tier: str, *, fuente_url: str | None
         if suggested:
             note = p.add_run(f"  [sugerencia: {suggested}]")
             _set_run_font(note, cfg, italic=True, color=_hex_to_rgb("C00000"))
+    elif tier == "MODULADA":
+        # M20.13: 5° tier - vigente con modulación constitucional
+        badge = p.add_run("  ⚖ MODULADA")
+        _set_run_font(badge, cfg, bold=True, color=_hex_to_rgb("8B6F00"))
+        if suggested:
+            note = p.add_run(f"  [aplicar con limitaciones de: {suggested}]")
+            _set_run_font(note, cfg, italic=True, color=_hex_to_rgb("8B6F00"))
     else:   # VERIFY_FLAG
         badge = p.add_run("  ⚠ [verificar]")
         _set_run_font(badge, cfg, bold=True, color=_hex_to_rgb("BF8F00"))

@@ -23,11 +23,15 @@ from .base import ToolContext, ToolDef, ToolError
 logger = logging.getLogger(__name__)
 
 
-def _estado_to_tier(estado: str, derogada: bool) -> str:
+def _estado_to_tier(estado: str, derogada: bool, modulada: bool = False) -> str:
+    """M20.13: agregamos 5° tier MODULADA (norma vigente pero modulada
+    por jurisprudencia constitucional - aplicable con limitaciones)."""
     if estado == "no_encontrada":
         return "NOT_FOUND"
     if estado == "superada" or derogada:
         return "DEROGADA"
+    if estado == "modulada" or modulada:
+        return "MODULADA"
     if estado == "sospechosa":
         return "VERIFY_FLAG"
     if estado == "verificada":
@@ -85,7 +89,14 @@ class VerifyCitationTool(ToolDef):
         verdict = await agent.verify(citation, kind)
 
         audit = verdict.to_audit_dict() if hasattr(verdict, "to_audit_dict") else {}
-        tier = _estado_to_tier(verdict.estado, bool(getattr(verdict, "derogada", False)))
+        # M20.13: detectar modulación vía legal_note (e.g., "modulada por C-XXX/YY")
+        legal_note = getattr(verdict, "legal_note", "") or ""
+        is_modulada = any(kw in legal_note.lower() for kw in ["modulad", "exequibilidad condicionad"])
+        tier = _estado_to_tier(
+            verdict.estado,
+            bool(getattr(verdict, "derogada", False)),
+            modulada=is_modulada,
+        )
 
         return {
             "citation": citation,

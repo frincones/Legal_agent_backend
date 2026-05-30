@@ -19,6 +19,10 @@ class TestTierExtraction:
     def test_not_found_explicit(self):
         assert _tier_from_data({"tier": "NOT_FOUND"}) == "NOT_FOUND"
 
+    def test_modulada_explicit(self):
+        """M20.13: 5° tier."""
+        assert _tier_from_data({"tier": "MODULADA"}) == "MODULADA"
+
     def test_legacy_verified_true_maps_grounded(self):
         assert _tier_from_data({"verified": True}) == "GROUNDED"
 
@@ -76,6 +80,19 @@ class TestDocxRendererWithTiers:
         blocks = [
             {"block_type": "norma_citada",
              "block_data": {"norma": "Algo no verificable", "tier": "VERIFY_FLAG"}},
+        ]
+        docx_bytes = build_docx_from_blocks(blocks, title="Test")
+        assert isinstance(docx_bytes, bytes)
+
+    def test_builds_docx_with_modulada(self):
+        """M20.13: 5° tier MODULADA."""
+        blocks = [
+            {"block_type": "norma_citada",
+             "block_data": {
+                 "norma": "Ley 1437 de 2011 art. 4",
+                 "tier": "MODULADA",
+                 "suggested_correction": "C-1011/2008",
+             }},
         ]
         docx_bytes = build_docx_from_blocks(blocks, title="Test")
         assert isinstance(docx_bytes, bytes)
