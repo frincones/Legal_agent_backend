@@ -84,7 +84,10 @@ class ToolDispatcher:
             result.status = "error"
             result.error_class = type(e).__name__
             result.error_message = str(e)[:500]
-            logger.exception("tool %s unexpected error", call.tool_name)
+            # M20.14 fix: incluir mensaje en log explícitamente (logger.exception()
+            # en Railway no siempre incluye traceback completo en stdout)
+            logger.exception("tool %s unexpected error: %s: %s",
+                              call.tool_name, type(e).__name__, str(e)[:300])
             ctx.metadata.setdefault("errors", []).append({
                 "tool": call.tool_name,
                 "trace": traceback.format_exc()[-500:],
@@ -122,6 +125,10 @@ class ToolDispatcher:
 
     async def _persist(self, call: ToolCall, result: ToolResult, ctx: ToolContext) -> None:
         """INSERT en tool_call_audit (tabla M20.01)."""
+        # M20.14 fix: duration_ms es INTEGER en la tabla; usar make_interval()
+        # en vez de concat con texto ($N || ' milliseconds') que fuerza coerción
+        # a TEXT y rompe el cast subsiguiente. Usar `make_interval(secs => N/1000)`
+        # mantiene $N como integer puro para ambos usos.
         sql = """
             insert into tool_call_audit (
               generation_id, firm_id, user_id, tool_name, iteration,
@@ -130,8 +137,10 @@ class ToolDispatcher:
               model_used, tokens_in, tokens_out, cost_usd,
               cache_creation_tokens, cache_read_tokens, metadata
             ) values (
-              $1,$2,$3,$4,$5, now() - ($6 || ' milliseconds')::interval, $6,
-              $7,$8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
+              $1,$2,$3,$4,$5,
+              now() - make_interval(secs => $6::int / 1000.0),
+              $6::int,
+              $7,$8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19::jsonb
             )
         """
         success_val: Optional[bool]

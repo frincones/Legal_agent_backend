@@ -43,12 +43,32 @@ class LoadSkillMdTool(ToolDef):
 
     async def run(self, ctx: ToolContext, doc_type: str, jurisdiction: str = "CO") -> dict:
         firm_id = str(ctx.firm_id) if ctx.firm_id else None
-        skill_ctx = await load_skill_context(
-            self.pool or ctx.pool,
-            doc_type=doc_type,
-            firm_id=firm_id,
-            use_cache=True,
-        )
+        pool = self.pool or ctx.pool
+        # M20.14 fix: degradación graceful sin pool (test/dev sin Supabase).
+        # Sin esto, load_skill_context(None, ...) crashea con AttributeError
+        # en pool.acquire().
+        if pool is None:
+            return {
+                "found": False,
+                "doc_type": doc_type,
+                "jurisdiction": jurisdiction,
+                "note": ("Pool Supabase no disponible. Brain debe inferir la estructura "
+                          f"del documento ({doc_type}) desde su conocimiento."),
+                "_warning": "no_pool_skill_loader",
+            }
+        try:
+            skill_ctx = await load_skill_context(
+                pool, doc_type=doc_type, firm_id=firm_id, use_cache=True,
+            )
+        except Exception as e:
+            logger.warning("load_skill_md degraded (%s): %s", type(e).__name__, e)
+            return {
+                "found": False,
+                "doc_type": doc_type,
+                "jurisdiction": jurisdiction,
+                "note": f"Error cargando SKILL.md ({type(e).__name__}); Brain infiere estructura.",
+                "_error": str(e)[:200],
+            }
         if skill_ctx is None:
             return {
                 "found": False,
