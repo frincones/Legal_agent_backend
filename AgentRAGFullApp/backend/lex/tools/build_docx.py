@@ -81,18 +81,29 @@ class BuildDocxTool(ToolDef):
         download_url = None
 
         # Persistir cache si tenemos pool + document_id
+        # M20.14 fix: el schema (2026_05_27_sprint_m19_document_files.sql) usa
+        # `content_bytes` + `format` con UNIQUE (document_id, format) como
+        # clave de UPSERT — NO existe la columna `docx_bytes`. El INSERT viejo
+        # crasheaba con "column docx_bytes does not exist" cada generación.
         if document_id and (self.pool or ctx.pool):
             try:
                 pool = self.pool or ctx.pool
                 async with pool.acquire() as conn:
                     await conn.execute(
                         """
-                        insert into document_files (document_id, docx_bytes, created_at, updated_at)
-                        values ($1::uuid, $2, now(), now())
-                        on conflict (document_id) do update set
-                          docx_bytes = excluded.docx_bytes, updated_at = now()
+                        insert into document_files
+                          (document_id, format, content_bytes, size_bytes,
+                           filename, generated_by, created_at, updated_at)
+                        values ($1::uuid, 'docx', $2, $3,
+                                $4, 'lex_docx_builder', now(), now())
+                        on conflict (document_id, format) do update set
+                          content_bytes = excluded.content_bytes,
+                          size_bytes    = excluded.size_bytes,
+                          filename      = excluded.filename,
+                          updated_at    = now()
                         """,
-                        document_id, docx_bytes,
+                        document_id, docx_bytes, len(docx_bytes),
+                        f"{(title or 'documento').strip().replace(' ', '_')[:80]}.docx",
                     )
             except Exception as e:
                 logger.warning("build_docx cache persist failed: %s", e)
