@@ -197,7 +197,12 @@ async def generate_v2(
     body: GenerateRequestBody,
     _claims: dict = Depends(_require_session),
 ):
-    """Generación de documento v2 con block-level streaming."""
+    """Generación de documento v2 con block-level streaming.
+
+    M20.03: si feature_flags.should_use_lean → enrutar al LeanOrchestrator
+    (ReAct nativo + 18 tools). Si no → orchestrator legacy (17 stages).
+    El contrato SSE es idéntico, frontend no requiere cambios.
+    """
     if not _flag_enabled():
         raise HTTPException(
             status_code=503,
@@ -207,6 +212,67 @@ async def generate_v2(
     storage = await get_storage()
     client = get_openai_client()
 
+    # ---- M20.03 · routing por feature flag USE_LEAN_ORCHESTRATOR ----
+    from utils.feature_flags import should_use_lean, orchestrator_kind
+    from uuid import uuid4, UUID
+
+    generation_id = uuid4()
+    firm_uuid: UUID | None = None
+    user_uuid: UUID | None = None
+    matter_uuid: UUID | None = None
+    try:
+        firm_uuid = UUID(body.firm_id) if body.firm_id else None
+    except Exception:
+        firm_uuid = None
+    try:
+        matter_uuid = UUID(body.matter_id) if body.matter_id else None
+    except Exception:
+        matter_uuid = None
+
+    chosen = orchestrator_kind(firm_id=firm_uuid, generation_id=generation_id)
+    logger.info(
+        "documents/v2/generate orchestrator=%s firm=%s generation=%s",
+        chosen, firm_uuid, generation_id,
+    )
+
+    if chosen == "lean":
+        # ---- nuevo path: LeanOrchestrator + AnthropicBrain ----
+        from lex.orchestrator.lean_orchestrator import LeanOrchestrator
+        anthropic_client = None
+        try:
+            from utils.llm_provider import _get_anthropic_client
+            anthropic_client = _get_anthropic_client()
+        except Exception as e:
+            logger.warning("Anthropic client no disponible para LeanOrchestrator: %s", e)
+
+        if anthropic_client is None:
+            logger.warning("Forzando fallback a legacy orchestrator: Anthropic client none")
+        else:
+            orchestrator = LeanOrchestrator(
+                anthropic_client=anthropic_client,
+                openai_client=client,
+                pool=storage.pool,
+                firm_id=firm_uuid,
+                user_id=user_uuid,
+                generation_id=generation_id,
+            )
+            return StreamingResponse(
+                orchestrator.run(
+                    intent=body.intent,
+                    brief=body.user_brief or "",
+                    doc_type_hint=body.doc_type or "",
+                    matter_id=matter_uuid,
+                ),
+                media_type="text/event-stream",
+                headers={
+                    "X-Accel-Buffering": "no",
+                    "Cache-Control": "no-cache, no-transform",
+                    "Connection": "keep-alive",
+                    "X-Orchestrator": "lean",
+                },
+            )
+
+    # ---- legacy path: Orchestrator 17 stages (default) ----
     req = GenerationRequest(
         intent=body.intent,
         user_brief=body.user_brief or "",
@@ -225,6 +291,7 @@ async def generate_v2(
             "X-Accel-Buffering": "no",
             "Cache-Control": "no-cache, no-transform",
             "Connection": "keep-alive",
+            "X-Orchestrator": "legacy",
         },
     )
 
