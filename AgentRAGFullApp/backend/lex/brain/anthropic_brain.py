@@ -41,9 +41,14 @@ OPUS_DOC_TYPES = {
 }
 
 # Tokens caps por modelo (mantener conservador para evitar timeouts)
-DEFAULT_MAX_TOKENS = 8192
+# M20.14 Opcion B: cuenta Anthropic en Build Tier 1 (8K output tokens/min).
+# Bajamos paralelismo + max_tokens para no saturar el rate limit en bursts
+# de generate_clause + verify_citation (cada uno con su LLM downstream).
+# Subimos fallback threshold para tolerar mejor los 429 transitorios.
+DEFAULT_MAX_TOKENS = 4096                 # antes 8192 — cada respuesta del Brain ~mitad
 DEFAULT_MAX_ITERATIONS = 30
-DEFAULT_MAX_PARALLEL_TOOLS = 10
+DEFAULT_MAX_PARALLEL_TOOLS = 3            # antes 10 — burst limitado a 3 tools simultaneas
+DEFAULT_RATE_LIMIT_RETRY_S = 8.0          # backoff base cuando llega RateLimitError
 
 
 @dataclass
@@ -56,7 +61,10 @@ class BrainConfig:
     max_parallel_tools: int = DEFAULT_MAX_PARALLEL_TOOLS
     enable_prompt_caching: bool = True
     enable_parallel_tools: bool = True
-    fallback_to_openai_after_failures: int = 2
+    # antes 2 — subimos a 4 porque ahora hacemos backoff por 429 y la mayoria
+    # de 429 son transitorios (la ventana de 60s del rate limit se libera).
+    fallback_to_openai_after_failures: int = 4
+    rate_limit_retry_s: float = DEFAULT_RATE_LIMIT_RETRY_S
 
 
 @dataclass
@@ -167,6 +175,28 @@ class AnthropicBrain:
                 err_msg = str(e)[:300]
                 logger.warning("Anthropic iter %d failed (%d) %s: %s",
                                 iteration, consecutive_failures, err_class, err_msg)
+                # M20.14 Opcion B: backoff exponencial cuando es RateLimitError.
+                # Anthropic envia `retry-after` header en segundos; si no lo
+                # parseamos (sdk-dependent), usamos retry_s * consecutive_failures.
+                # Esto le da tiempo al rate limit de 60s/8K-tokens de liberarse
+                # antes de seguir contando fallos hacia el graceful_close.
+                is_rate_limit = err_class == "RateLimitError" or "429" in err_msg
+                if is_rate_limit:
+                    retry_after_s = self._extract_retry_after(e) or (
+                        self.config.rate_limit_retry_s * consecutive_failures
+                    )
+                    retry_after_s = min(retry_after_s, 45.0)  # cap razonable
+                    logger.info(
+                        "anthropic_brain rate_limited iter=%d attempt=%d "
+                        "sleeping=%.1fs before retry",
+                        iteration, consecutive_failures, retry_after_s,
+                    )
+                    yield _sse_bytes("stage_progress", {
+                        "stage": f"brain_iter_{iteration}_backoff",
+                        "state": "waiting",
+                        "label": f"Rate limit Anthropic · esperando {retry_after_s:.0f}s antes de reintentar…",
+                    })
+                    await asyncio.sleep(retry_after_s)
                 if (
                     consecutive_failures >= self.config.fallback_to_openai_after_failures
                 ):
@@ -389,6 +419,42 @@ class AnthropicBrain:
             if getattr(block, "type", None) == "text":
                 out.append(getattr(block, "text", "") or "")
         return "\n\n".join(out).strip()
+
+    @staticmethod
+    def _extract_retry_after(exc: Exception) -> Optional[float]:
+        """Extrae el `retry-after` (segundos) del response header de un 429.
+
+        El SDK Anthropic adjunta el response del HTTPError al excepcion via
+        exc.response.headers. Si no esta disponible, parsea el body JSON o
+        retorna None — el caller usa un default basado en consecutive_failures.
+        """
+        try:
+            # 1) Header retry-after (numerico, en segundos)
+            resp = getattr(exc, "response", None)
+            if resp is not None:
+                headers = getattr(resp, "headers", {}) or {}
+                ra = headers.get("retry-after") or headers.get("Retry-After")
+                if ra is not None:
+                    try:
+                        return float(ra)
+                    except (TypeError, ValueError):
+                        pass
+                # 2) Header `anthropic-ratelimit-output-tokens-reset` (ISO timestamp)
+                reset_iso = headers.get("anthropic-ratelimit-output-tokens-reset")
+                if reset_iso:
+                    try:
+                        from datetime import datetime, timezone
+                        reset_dt = datetime.fromisoformat(
+                            reset_iso.replace("Z", "+00:00")
+                        )
+                        delta = (reset_dt - datetime.now(timezone.utc)).total_seconds()
+                        if delta > 0:
+                            return delta
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return None
 
 
 def _anthropic_block_to_dict(block) -> dict:
