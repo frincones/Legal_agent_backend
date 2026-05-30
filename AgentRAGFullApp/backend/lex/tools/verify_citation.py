@@ -67,7 +67,10 @@ class VerifyCitationTool(ToolDef):
 
     def __init__(self, pool=None, anthropic_client=None, openai_client=None, **_: Any):
         self.pool = pool
-        self.client = anthropic_client or openai_client
+        # M20.14 fix: VerificationAgent → JudgeAgent + llm_normalizer usan API
+        # estilo OpenAI (client.chat.completions.create) sobre gpt-4o-mini.
+        # Si recibe AsyncAnthropic falla con AttributeError. Preferir OpenAI.
+        self.client = openai_client or anthropic_client
 
     async def run(
         self,
@@ -75,7 +78,8 @@ class VerifyCitationTool(ToolDef):
         citation: str,
         kind: str = "norma",
     ) -> dict:
-        client = self.client or ctx.anthropic_client or ctx.openai_client
+        # M20.14 fix: igual razón — preferir OpenAI sobre Anthropic.
+        client = self.client or ctx.openai_client or ctx.anthropic_client
         pool = self.pool or ctx.pool
         if pool is None:
             # M20.13: degradación graceful (dev/test sin BD): heurística sólo.

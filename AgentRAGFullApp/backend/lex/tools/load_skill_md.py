@@ -76,6 +76,16 @@ class LoadSkillMdTool(ToolDef):
                 "jurisdiction": jurisdiction,
                 "note": f"No hay SKILL.md registrado para doc_type={doc_type!r}; el agente debe inferir estructura.",
             }
+        # M20.14 fix: el wrapper antes accedía a `skill_ctx.parsed.*` pero
+        # SkillContext tiene los campos a nivel raíz (frontmatter, sections,
+        # raw_system_prompt, raw_references_md). No existe `.parsed`.
+        fm = skill_ctx.frontmatter
+        sections_plan = []
+        try:
+            sections_plan = skill_ctx.to_sections_plan()
+        except Exception as e:
+            logger.warning("to_sections_plan failed (%s): %s", type(e).__name__, e)
+            sections_plan = [{"key": (s.key or "")[:60]} for s in (skill_ctx.sections or [])]
         return {
             "found": True,
             "doc_type": skill_ctx.doc_type,
@@ -83,14 +93,19 @@ class LoadSkillMdTool(ToolDef):
             "skill_command": skill_ctx.skill_command,
             "source": skill_ctx.source,
             "frontmatter": {
-                "doc_type": skill_ctx.parsed.frontmatter.doc_type,
-                "jurisdiction": getattr(skill_ctx.parsed.frontmatter, "jurisdiction", jurisdiction),
-                "allowed_tools": getattr(skill_ctx.parsed.frontmatter, "allowed_tools", []),
+                "doc_type": getattr(fm, "doc_type", None) if fm else skill_ctx.doc_type,
+                "name": getattr(fm, "name", None) if fm else None,
+                "jurisdiction": getattr(fm, "jurisdiction", jurisdiction) if fm else jurisdiction,
+                "allowed_tools": getattr(fm, "allowed_tools", []) if fm else [],
+                "doc_family": getattr(fm, "doc_family", None) if fm else None,
             },
-            "system_prompt_excerpt": (skill_ctx.parsed.system_prompt or "")[:600],
+            "system_prompt_excerpt": (skill_ctx.raw_system_prompt or "")[:600],
             "sections": [s.get("key") if isinstance(s, dict) else str(s)
-                          for s in (getattr(skill_ctx.parsed, "sections_plan", None) or [])],
-            "has_references": bool(getattr(skill_ctx.parsed, "references_md", None)),
+                          for s in sections_plan],
+            "sections_count": len(sections_plan),
+            "placeholders_count": len(skill_ctx.placeholders or []),
+            "has_references": bool(skill_ctx.raw_references_md),
+            "has_structure": skill_ctx.has_structure,
         }
 
 
