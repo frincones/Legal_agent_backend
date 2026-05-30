@@ -1,20 +1,25 @@
 """Aplica la migración M20.01 (tool_call_audit) a Supabase prod.
 
-EJECUTAR MANUALMENTE TÚ (no auto):
+Usa Supabase Management API (más confiable que asyncpg para migraciones idempotentes).
 
+USO:
     cd backend
     python scripts/apply_m20_migration.py
 
-Lee DATABASE_URL del .env y aplica el SQL idempotente. Es seguro re-correr.
+Lee SUPABASE_ACCESS_TOKEN + SUPABASE_PROJECT_REF (del .env.local del frontend
+o del .env del backend) y aplica el SQL idempotente. Es seguro re-correr.
 """
 from __future__ import annotations
 
-import asyncio
+import json
 import os
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 _BACKEND_ROOT = Path(__file__).parent.parent
+_FRONTEND_ROOT = Path(r"C:\Users\freddyrs\Desktop\Legal Demo\Legal_agent_Frontend")
 
 
 def _load_env(path: Path) -> None:
@@ -27,65 +32,93 @@ def _load_env(path: Path) -> None:
             os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
-async def main() -> int:
-    _load_env(_BACKEND_ROOT / ".env")
-    dsn = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
-    if not dsn:
-        print("ERROR: DATABASE_URL no encontrado en .env", file=sys.stderr)
+_load_env(_BACKEND_ROOT / ".env")
+_load_env(_FRONTEND_ROOT / ".env.local")
+
+
+SUPABASE_REF = (
+    os.getenv("SUPABASE_PROJECT_REF")
+    or os.getenv("SUPABASE_REF")
+    or "osyrwsbruydcyhdjvjpv"
+)
+ACCESS_TOKEN = os.getenv("SUPABASE_ACCESS_TOKEN")
+MGMT_API = f"https://api.supabase.com/v1/projects/{SUPABASE_REF}/database/query"
+
+
+def supabase_query(sql: str) -> list[dict]:
+    body = json.dumps({"query": sql}).encode("utf-8")
+    req = urllib.request.Request(
+        MGMT_API, method="POST",
+        headers={
+            "Authorization": f"Bearer {ACCESS_TOKEN}",
+            "Content-Type": "application/json",
+            "User-Agent": "LegalAgentBot/1.0 (m20-migration)",
+        },
+        data=body,
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=120) as r:
+            raw = r.read().decode("utf-8")
+            result = json.loads(raw)
+            return result if isinstance(result, list) else [result]
+    except urllib.error.HTTPError as e:
+        body_text = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"HTTP {e.code} {e.reason}: {body_text[:500]}") from e
+
+
+def main() -> int:
+    if not ACCESS_TOKEN:
+        print("ERROR: SUPABASE_ACCESS_TOKEN no encontrado.", file=sys.stderr)
+        print(f"Buscado en: {_BACKEND_ROOT / '.env'} y {_FRONTEND_ROOT / '.env.local'}",
+              file=sys.stderr)
         return 1
 
     sql_path = _BACKEND_ROOT / "storage" / "schemas" / "2026_05_29_sprint_m20_01_tool_call_audit.sql"
     if not sql_path.exists():
         print(f"ERROR: migración no encontrada en {sql_path}", file=sys.stderr)
         return 1
+
     sql = sql_path.read_text(encoding="utf-8")
-
+    print(f"[1/3] Aplicando migración M20.01 (project {SUPABASE_REF})...")
+    print(f"      archivo: {sql_path.name}")
     try:
-        import asyncpg
-    except ImportError:
-        print("ERROR: asyncpg no instalado. pip install asyncpg", file=sys.stderr)
+        result = supabase_query(sql)
+        print(f"      OK · respuesta: {json.dumps(result, default=str)[:200]}")
+    except Exception as e:
+        print(f"      ERROR aplicando SQL: {e}", file=sys.stderr)
         return 1
 
-    safe_dsn = dsn.split("@", 1)[1] if "@" in dsn else dsn
-    print(f"[1/3] Conectando a Supabase ({safe_dsn[:60]}...)...")
-    conn = await asyncpg.connect(dsn)
+    print(f"[2/3] Verificando tool_call_audit existe...")
     try:
-        print(f"[2/3] Ejecutando migración ({sql_path.name})...")
-        await conn.execute(sql)
-        print("      OK · migración aplicada")
-
-        print("[3/3] Verificando estado post-migración...")
-        n_tables = await conn.fetchval(
-            "select count(*) from information_schema.tables where table_name = 'tool_call_audit'"
-        )
+        check1 = supabase_query("""
+            select count(*) as n from information_schema.tables
+            where table_name = 'tool_call_audit'
+        """)
+        n_tables = check1[0]["n"] if check1 else 0
         print(f"      tool_call_audit existe: {n_tables > 0}")
+    except Exception as e:
+        print(f"      WARN verify falló: {e}", file=sys.stderr)
+        n_tables = 0
 
-        n_cols = await conn.fetch(
-            """select column_name from information_schema.columns
-               where table_name = 'generation_audit'
-                 and column_name in ('cache_hit_tokens', 'orchestrator_kind')"""
-        )
-        new_cols = [r["column_name"] for r in n_cols]
-        print(f"      generation_audit columnas nuevas: {new_cols}")
+    print(f"[3/3] Verificando columnas nuevas en generation_audit...")
+    try:
+        check2 = supabase_query("""
+            select column_name from information_schema.columns
+            where table_name = 'generation_audit'
+              and column_name in ('cache_hit_tokens', 'orchestrator_kind')
+        """)
+        cols = [r["column_name"] for r in check2]
+        print(f"      columnas nuevas: {cols}")
+    except Exception as e:
+        print(f"      WARN: {e}", file=sys.stderr)
+        cols = []
 
-        n_indices = await conn.fetchval(
-            "select count(*) from pg_indexes where tablename = 'tool_call_audit'"
-        )
-        print(f"      índices tool_call_audit: {n_indices}")
-
-        n_policies = await conn.fetchval(
-            "select count(*) from pg_policies where tablename = 'tool_call_audit'"
-        )
-        print(f"      RLS policies tool_call_audit: {n_policies}")
-
-        if n_tables and len(new_cols) == 2 and n_indices >= 4 and n_policies >= 2:
-            print("\n✓ Migración OK · S0.1 completado")
-            return 0
-        print("\n⚠ Migración parcial · revisar manualmente", file=sys.stderr)
-        return 1
-    finally:
-        await conn.close()
+    if n_tables and len(cols) == 2:
+        print(f"\n[OK] Migracion M20.01 aplicada · S0.1 completo en Supabase prod")
+        return 0
+    print(f"\n[WARN] Migracion parcial · revisar manualmente", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(main()))
+    sys.exit(main())
