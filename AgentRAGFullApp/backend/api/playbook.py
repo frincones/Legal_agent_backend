@@ -146,3 +146,132 @@ Devuelve JSON ESTRICTO con esta estructura exacta:
         "generated": parsed,
         "persisted": persisted,
     }
+
+
+# ---- M20.12 · Playbook history (versiones archivadas) ----
+
+@router.get("/playbook/history")
+async def get_playbook_history(
+    limit: int = 20,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Sprint M20.12 · lista versiones archivadas del playbook (max 20 default).
+
+    El trigger `firm_playbook_archive_trigger` (M20.12 SQL) archiva
+    automáticamente cada versión anterior en cada UPDATE material.
+    """
+    from utils.db import get_storage
+    storage = await get_storage()
+    limit = max(1, min(50, int(limit)))
+    async with storage.pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            select id, version, jurisdiction_default, redline_style, tone,
+                   forbidden_terms, required_clauses, raw_md,
+                   updated_by, archived_at
+            from firm_playbook_history
+            where firm_id = $1::uuid
+            order by version desc
+            limit $2
+            """,
+            principal.firm_id, limit,
+        )
+    return {
+        "history": [
+            {
+                "id": str(r["id"]),
+                "version": r["version"],
+                "jurisdiction_default": r["jurisdiction_default"],
+                "redline_style": r["redline_style"],
+                "tone": r["tone"],
+                "forbidden_terms": list(r["forbidden_terms"] or []),
+                "required_clauses": list(r["required_clauses"] or []),
+                "raw_md_preview": (r["raw_md"] or "")[:500],
+                "raw_md_length": len(r["raw_md"] or ""),
+                "updated_by": str(r["updated_by"]) if r["updated_by"] else None,
+                "archived_at": str(r["archived_at"]),
+            }
+            for r in rows
+        ],
+        "count": len(rows),
+    }
+
+
+@router.get("/playbook/history/{version}")
+async def get_playbook_version(
+    version: int,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Sprint M20.12 · recupera una versión específica con raw_md completo."""
+    from fastapi import HTTPException
+    from utils.db import get_storage
+    storage = await get_storage()
+    async with storage.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            select version, jurisdiction_default, redline_style, tone,
+                   preferred_clauses, forbidden_terms, required_clauses,
+                   escalation_matrix, raw_md, archived_at
+            from firm_playbook_history
+            where firm_id = $1::uuid and version = $2
+            limit 1
+            """,
+            principal.firm_id, version,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="version_not_found")
+    return {
+        "version": row["version"],
+        "jurisdiction_default": row["jurisdiction_default"],
+        "redline_style": row["redline_style"],
+        "tone": row["tone"],
+        "preferred_clauses": row["preferred_clauses"] or {},
+        "forbidden_terms": list(row["forbidden_terms"] or []),
+        "required_clauses": list(row["required_clauses"] or []),
+        "escalation_matrix": row["escalation_matrix"] or [],
+        "raw_md": row["raw_md"] or "",
+        "archived_at": str(row["archived_at"]),
+    }
+
+
+@router.post("/playbook/restore/{version}")
+async def restore_playbook_version(
+    version: int,
+    principal: Principal = Depends(get_current_firm),
+):
+    """Sprint M20.12 · restaura una versión archivada como la actual.
+
+    Hace upsert con los datos viejos → trigger archiva la versión actual
+    como histórico antes de sobreescribir.
+    """
+    from fastapi import HTTPException
+    from utils.db import get_storage
+    storage = await get_storage()
+    async with storage.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            select jurisdiction_default, redline_style, tone,
+                   preferred_clauses, forbidden_terms, required_clauses,
+                   escalation_matrix, raw_md
+            from firm_playbook_history
+            where firm_id = $1::uuid and version = $2
+            limit 1
+            """,
+            principal.firm_id, version,
+        )
+    if not row:
+        raise HTTPException(status_code=404, detail="version_not_found")
+    persisted = await upsert_firm_playbook(
+        storage.pool, principal.firm_id, principal.user_id,
+        {
+            "jurisdiction_default": row["jurisdiction_default"],
+            "redline_style": row["redline_style"],
+            "tone": row["tone"],
+            "preferred_clauses": row["preferred_clauses"] or {},
+            "forbidden_terms": list(row["forbidden_terms"] or []),
+            "required_clauses": list(row["required_clauses"] or []),
+            "escalation_matrix": row["escalation_matrix"] or [],
+            "raw_md": row["raw_md"] or "",
+        },
+    )
+    return {"ok": True, "restored_from_version": version, "current": persisted}

@@ -4,16 +4,12 @@
 -- Idempotente · additive · no breaking changes
 -- ============================================================
 --
--- agent_memory (creada en M19) ya guarda episodic/semantic memory.
--- Esta migración agrega:
---   1. Columna generada tsvector para FTS rápido (spanish)
---   2. Índice GIN sobre el tsvector
---   3. Helper function lexai_recall_memory(firm_id, query, kind, limit)
---
--- Permite que la tool `recall_memory` haga búsqueda full-text en
--- O(log n) en vez del actual ILIKE O(n).
+-- agent_memory tiene schema: id, firm_id, user_id, scope, scope_ref,
+-- key, value (jsonb), embedding, ttl_until, created_at, updated_at.
+-- Agregamos FTS rápido sobre key+value::text para que la tool
+-- recall_memory haga búsqueda O(log n) en vez de ILIKE O(n).
 
--- 1. Columna generada (computa el tsvector automáticamente)
+-- 1. Columna generada (tsvector spanish sobre key + value)
 do $$
 begin
   if not exists (
@@ -36,6 +32,9 @@ create index if not exists agent_memory_value_tsv_idx
   on agent_memory using gin (value_tsv);
 
 -- 3. Función de búsqueda
+-- Nota: agent_memory usa `scope` (no `kind`) y `ttl_until` (no `expires_at`).
+-- El parámetro p_kind se mantiene por compat con la tool recall_memory,
+-- mapeándose a `scope`.
 create or replace function lexai_recall_memory(
   p_firm_id uuid,
   p_query text,
@@ -44,7 +43,7 @@ create or replace function lexai_recall_memory(
 )
 returns table (
   id uuid,
-  kind text,
+  scope text,
   key text,
   value jsonb,
   rank real,
@@ -56,13 +55,13 @@ security definer
 set search_path = public
 as $$
   select
-    m.id, m.kind, m.key, m.value,
+    m.id, m.scope, m.key, m.value,
     ts_rank(m.value_tsv, plainto_tsquery('spanish', p_query)) as rank,
     m.created_at
   from agent_memory m
   where m.firm_id = p_firm_id
-    and (p_kind is null or m.kind = p_kind)
-    and (m.expires_at is null or m.expires_at > now())
+    and (p_kind is null or m.scope = p_kind)
+    and (m.ttl_until is null or m.ttl_until > now())
     and m.value_tsv @@ plainto_tsquery('spanish', p_query)
   order by rank desc, m.created_at desc
   limit p_limit;
@@ -72,5 +71,5 @@ grant execute on function lexai_recall_memory(uuid, text, text, int) to authenti
 grant execute on function lexai_recall_memory(uuid, text, text, int) to service_role;
 
 comment on function lexai_recall_memory(uuid, text, text, int) is
-  'M20.11: búsqueda FTS sobre agent_memory por firm_id + query + kind opcional.
+  'M20.11: búsqueda FTS sobre agent_memory por firm_id + query + scope opcional.
    Usado por tool recall_memory (Brain ReAct).';

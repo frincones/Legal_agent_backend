@@ -52,35 +52,44 @@ class RecallMemoryTool(ToolDef):
             return {"hits": [], "_warning": "pool o firm_id no disponible"}
 
         limit = max(1, min(20, int(limit)))
-        # FTS simple (sin índice GIN aún → S1.5 puede agregarlo). Usa ILIKE como fallback.
+        # M20.11: usa RPC lexai_recall_memory con FTS index. Fallback a ILIKE si RPC no existe.
+        scope_filter = None if kind == "any" else kind
         try:
             async with pool.acquire() as conn:
-                if kind == "any":
+                # Intentar RPC FTS primero (M20.11)
+                try:
                     rows = await conn.fetch(
-                        """
-                        select id, kind, key, value, created_at
-                        from agent_memory
-                        where firm_id = $1
-                          and (key ilike '%' || $2 || '%' or value::text ilike '%' || $2 || '%')
-                          and (expires_at is null or expires_at > now())
-                        order by created_at desc
-                        limit $3
-                        """,
-                        ctx.firm_id, query, limit,
+                        "select * from lexai_recall_memory($1::uuid, $2, $3, $4)",
+                        ctx.firm_id, query, scope_filter, limit,
                     )
-                else:
-                    rows = await conn.fetch(
-                        """
-                        select id, kind, key, value, created_at
-                        from agent_memory
-                        where firm_id = $1 and kind = $2
-                          and (key ilike '%' || $3 || '%' or value::text ilike '%' || $3 || '%')
-                          and (expires_at is null or expires_at > now())
-                        order by created_at desc
-                        limit $4
-                        """,
-                        ctx.firm_id, kind, query, limit,
-                    )
+                except Exception as rpc_e:
+                    logger.info("lexai_recall_memory RPC no disponible, fallback ILIKE: %s", rpc_e)
+                    if scope_filter is None:
+                        rows = await conn.fetch(
+                            """
+                            select id, scope, key, value, created_at, 1.0::real as rank
+                            from agent_memory
+                            where firm_id = $1
+                              and (key ilike '%' || $2 || '%' or value::text ilike '%' || $2 || '%')
+                              and (ttl_until is null or ttl_until > now())
+                            order by created_at desc
+                            limit $3
+                            """,
+                            ctx.firm_id, query, limit,
+                        )
+                    else:
+                        rows = await conn.fetch(
+                            """
+                            select id, scope, key, value, created_at, 1.0::real as rank
+                            from agent_memory
+                            where firm_id = $1 and scope = $2
+                              and (key ilike '%' || $3 || '%' or value::text ilike '%' || $3 || '%')
+                              and (ttl_until is null or ttl_until > now())
+                            order by created_at desc
+                            limit $4
+                            """,
+                            ctx.firm_id, scope_filter, query, limit,
+                        )
         except Exception as e:
             logger.warning("recall_memory query failed: %s", e)
             return {"hits": [], "_error": str(e)[:200]}
@@ -88,14 +97,15 @@ class RecallMemoryTool(ToolDef):
         hits = [
             {
                 "id": str(r["id"]),
-                "kind": r["kind"],
+                "scope": r["scope"],
                 "key": r["key"],
                 "value_preview": str(r["value"])[:400],
+                "rank": float(r["rank"]) if "rank" in r.keys() else 1.0,
                 "created_at": str(r["created_at"]),
             }
             for r in rows
         ]
-        return {"hits": hits, "count": len(hits), "query": query, "kind_filter": kind}
+        return {"hits": hits, "count": len(hits), "query": query, "scope_filter": scope_filter}
 
 
 def build_tool(pool=None, **_: Any) -> ToolDef:
