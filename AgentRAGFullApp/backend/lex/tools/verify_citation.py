@@ -78,7 +78,35 @@ class VerifyCitationTool(ToolDef):
         client = self.client or ctx.anthropic_client or ctx.openai_client
         pool = self.pool or ctx.pool
         if pool is None:
-            raise ToolError("verify_citation requiere pool Supabase")
+            # M20.13: degradación graceful (dev/test sin BD): heurística sólo.
+            # Permite que el Brain razone aunque no haya verificación contra fuente.
+            from lex.verify.derogation_detector import (
+                detect_explicit_derogation,
+                detect_modulation,
+            )
+            deg = detect_explicit_derogation(citation)
+            mod = detect_modulation(citation)
+            if deg is not None:
+                tier = "DEROGADA"
+                suggested = deg.derogada_por
+            elif mod is not None:
+                tier = "MODULADA"
+                suggested = mod.modulada_por
+            else:
+                tier = "VERIFY_FLAG"
+                suggested = None
+            logger.info("verify_citation sin pool · degradado a %s para %r", tier, citation)
+            return {
+                "citation": citation, "kind": kind, "tier": tier,
+                "exists": tier != "VERIFY_FLAG",
+                "verified": False, "vigente": tier not in ("DEROGADA",),
+                "fuente_url_oficial": None,
+                "suggested_correction": suggested,
+                "method": "heuristic_no_pool",
+                "confidence": 0.9 if tier in ("DEROGADA", "MODULADA") else 0.0,
+                "estado_legacy": "sospechosa" if tier == "VERIFY_FLAG" else "verificada",
+                "audit": {"_warning": "pool no disponible · heurística pura"},
+            }
 
         agent = VerificationAgent(
             client=client,

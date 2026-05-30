@@ -156,21 +156,53 @@ class AnthropicBrain:
                 consecutive_failures = 0
             except Exception as e:
                 consecutive_failures += 1
-                logger.warning("Anthropic iter %d failed (%d): %s", iteration, consecutive_failures, e)
+                err_class = type(e).__name__
+                err_msg = str(e)[:300]
+                logger.warning("Anthropic iter %d failed (%d) %s: %s",
+                                iteration, consecutive_failures, err_class, err_msg)
                 if (
                     consecutive_failures >= self.config.fallback_to_openai_after_failures
-                    and self.openai is not None
                 ):
-                    yield _sse_bytes("stage_progress", {
-                        "stage": "brain_fallback", "state": "fallback",
-                        "label": "Anthropic caído, fallback OpenAI…",
-                    })
-                    stats.fallback_used = True
-                    # En esta versión: si Anthropic cae, emitimos error y salimos.
-                    # Una implementación completa traduciría messages/tools a OpenAI tool_choice.
+                    # M20.13 · Si ya hicimos trabajo útil (≥ 1 tool_use con resultado),
+                    # cerramos graceful con done en vez de error fatal.
+                    if stats.tool_calls_total >= 1:
+                        yield _sse_bytes("stage_progress", {
+                            "stage": "brain_graceful_close", "state": "fallback",
+                            "label": f"Anthropic post-generación caído; cerrando graceful tras {stats.tool_calls_total} tools",
+                        })
+                        yield _sse_bytes("agent_thought", {
+                            "id": f"final-{ctx.generation_id}",
+                            "type": "final_message",
+                            "content": (
+                                f"Generación parcial completada: {stats.tool_calls_total} tools "
+                                f"invocadas en {stats.iterations} iteraciones antes de timeout post-generación. "
+                                f"El documento está disponible en blocks generados. "
+                                f"Causa: {err_class}: {err_msg[:100]}"
+                            ),
+                            "kind": "narration",
+                        })
+                        yield _sse_bytes("done", {
+                            "generation_id": str(ctx.generation_id),
+                            "matter_document_id": None,
+                            "duration_seconds": 0,
+                            "cost_usd": stats.cost_usd,
+                            "total_blocks": 0,
+                            "iterations": stats.iterations,
+                            "tokens_input": stats.tokens_input,
+                            "tokens_output": stats.tokens_output,
+                            "cache_read_tokens": stats.cache_read_tokens,
+                            "model": model,
+                            "graceful_close": True,
+                            "close_reason": f"{err_class}: {err_msg[:100]}",
+                        })
+                        return
+
+                    # Sin trabajo útil → error fatal
                     yield _sse_bytes("error", {
                         "stage": "anthropic_brain",
-                        "message": f"Anthropic falló {consecutive_failures}x; fallback OpenAI no implementado en esta versión",
+                        "error_class": err_class,
+                        "message": err_msg,
+                        "consecutive_failures": consecutive_failures,
                     })
                     return
                 continue
