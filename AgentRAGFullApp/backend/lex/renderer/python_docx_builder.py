@@ -334,26 +334,69 @@ def _render_list_item(doc: Document, cfg: StyleConfig, *, num: str, runs_data: l
             _set_run_font(run, cfg, bold=bold, italic=italic)
 
 
+def _tier_from_data(data: dict) -> str:
+    """M20.10: extrae tier 4-state. Backwards compat con verified/derogada."""
+    tier = (data.get("tier") or "").upper().strip()
+    if tier in ("GROUNDED", "DEROGADA", "VERIFY_FLAG", "NOT_FOUND"):
+        return tier
+    # Legacy mapping
+    if data.get("derogada"):
+        return "DEROGADA"
+    if data.get("verified"):
+        return "GROUNDED"
+    return "VERIFY_FLAG"
+
+
+def _render_tier_badge(p, cfg: StyleConfig, tier: str, *, fuente_url: str | None = None,
+                        derogada_por: str | None = None, suggested: str | None = None) -> None:
+    """M20.10: renderiza badge según tier con color + texto explicativo."""
+    if tier == "GROUNDED":
+        badge = p.add_run("  ✓ verificado")
+        _set_run_font(badge, cfg, bold=False, color=_hex_to_rgb("00B050"))
+        if fuente_url:
+            note = p.add_run(f"  [fuente: {_short_url(fuente_url)}]")
+            _set_run_font(note, cfg, italic=True, size_pt=cfg.body_size_pt - 2,
+                           color=_hex_to_rgb("707070"))
+    elif tier == "DEROGADA":
+        badge = p.add_run("  ✗ DEROGADA")
+        _set_run_font(badge, cfg, bold=True, color=_hex_to_rgb("C00000"))
+        if derogada_por:
+            note = p.add_run(f"  [por {derogada_por}]")
+            _set_run_font(note, cfg, italic=True, bold=True, color=_hex_to_rgb("C00000"))
+    elif tier == "NOT_FOUND":
+        badge = p.add_run("  ⊗ NO ENCONTRADA")
+        _set_run_font(badge, cfg, bold=True, color=_hex_to_rgb("C00000"))
+        if suggested:
+            note = p.add_run(f"  [sugerencia: {suggested}]")
+            _set_run_font(note, cfg, italic=True, color=_hex_to_rgb("C00000"))
+    else:   # VERIFY_FLAG
+        badge = p.add_run("  ⚠ [verificar]")
+        _set_run_font(badge, cfg, bold=True, color=_hex_to_rgb("BF8F00"))
+
+
+def _short_url(url: str, maxlen: int = 60) -> str:
+    if len(url) <= maxlen:
+        return url
+    return url[:maxlen - 3] + "..."
+
+
 def _render_norma_citada(doc: Document, cfg: StyleConfig, *, data: dict) -> None:
     norma = data.get("norma", "")
-    verified = bool(data.get("verified"))
-    derogada = bool(data.get("derogada"))
+    tier = _tier_from_data(data)
+    fuente_url = data.get("fuente_url_oficial") or data.get("fuente_url")
+    derogada_por = data.get("derogada_por")
+    suggested = data.get("suggested_correction")
     contenido_runs = data.get("contenido") or []
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
     p.paragraph_format.left_indent = Cm(0.5)
     p.paragraph_format.space_after = Pt(4)
-    # Bullet + norma + badge
     bullet = p.add_run("· ")
     _set_run_font(bullet, cfg)
     label = p.add_run(norma)
     _set_run_font(label, cfg, bold=True, underline=True, color=_hex_to_rgb("1F3864"))
-    if derogada:
-        badge = p.add_run("  ✗ DEROGADA")
-        _set_run_font(badge, cfg, bold=True, color=_hex_to_rgb("C00000"))
-    elif verified:
-        badge = p.add_run("  ✓")
-        _set_run_font(badge, cfg, bold=False, color=_hex_to_rgb("00B050"))
+    _render_tier_badge(p, cfg, tier, fuente_url=fuente_url,
+                        derogada_por=derogada_por, suggested=suggested)
     if contenido_runs:
         for r in contenido_runs[:3]:
             if isinstance(r, dict):
@@ -372,6 +415,10 @@ def _render_jurisprudencia(doc: Document, cfg: StyleConfig, *, data: dict) -> No
     _set_run_font(bullet, cfg)
     label = p.add_run(f"{data.get('id','')} ({data.get('corte','')}, MP. {data.get('mp','')})")
     _set_run_font(label, cfg, bold=True, italic=True)
+    # M20.10: tier badge para jurisprudencia
+    tier = _tier_from_data(data)
+    fuente_url = data.get("fuente_url_oficial") or data.get("fuente_url")
+    _render_tier_badge(p, cfg, tier, fuente_url=fuente_url)
     ratio = data.get("ratio") or []
     if ratio:
         for r in ratio[:2]:
