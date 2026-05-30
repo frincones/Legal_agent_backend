@@ -848,16 +848,24 @@ def _materialize_block(raw: dict, doc_type: str | None = None) -> Block | None:
         return []
 
     bid = raw.get("block_id") or new_block_id()
+    # M20.14 fix: helper para coercer None → default. raw.get(k, default) NO
+    # protege contra el caso donde la key existe pero el valor es None
+    # (el LLM a veces emite "roman": null explícitamente, especialmente para
+    # headings sin numeración como "ANEXOS"). En ese caso pydantic rechaza
+    # con "Input should be a valid string [input_value=None]".
+    def _s(key: str, default: str = "") -> str:
+        v = raw.get(key)
+        return default if v is None else str(v)
     try:
         if btype == "title":
-            return TitleBlock(block_id=bid, text=raw.get("text", ""), level=int(raw.get("level", 1)))
+            return TitleBlock(block_id=bid, text=_s("text"), level=int(raw.get("level") or 1))
         if btype == "section_heading":
             return SectionHeadingBlock(
-                block_id=bid, roman=raw.get("roman", ""),
-                text=raw.get("text", ""), section_key=raw.get("section_key", ""),
+                block_id=bid, roman=_s("roman"),
+                text=_s("text"), section_key=_s("section_key"),
             )
         if btype == "subsection":
-            return SubsectionBlock(block_id=bid, number=raw.get("number", ""), text=raw.get("text", ""))
+            return SubsectionBlock(block_id=bid, number=_s("number"), text=_s("text"))
         if btype == "paragraph":
             return ParagraphBlock(
                 block_id=bid, runs=_runs(raw.get("runs", [])),

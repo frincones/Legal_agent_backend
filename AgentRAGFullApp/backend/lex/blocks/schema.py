@@ -64,9 +64,12 @@ class TitleBlock(_BaseBlock):
 class SectionHeadingBlock(_BaseBlock):
     """Heading de sección con numeración romana (ej. 'I. PARTES DEL PROCESO')."""
     type: Literal["section_heading"] = "section_heading"
-    roman: str  # 'I', 'II', 'III', ...
+    # M20.14 fix: el Brain a veces emite section_heading sin roman/section_key
+    # (e.g. para "ANEXOS" o headings sin numeración). Permitir defaults vacíos
+    # para no perder el block por pydantic validation.
+    roman: str = Field(default="")  # 'I', 'II', 'III', ... o '' si sin numeración
     text: str
-    section_key: str  # 'partes', 'hechos', etc — vincula al sections_plan
+    section_key: str = Field(default="")  # 'partes', 'hechos', etc
 
 
 class SubsectionBlock(_BaseBlock):
