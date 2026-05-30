@@ -23,6 +23,13 @@ from .runner import (
     run_python_in_sandbox,
     is_bubblewrap_available,
 )
+from .audit import persist_sandbox_execution
+from .network_proxy import (
+    NetworkAllowlistProxy,
+    BlockedHostError,
+    is_host_allowed,
+    DEFAULT_ALLOWED_HOSTS,
+)
 
 __all__ = [
     "SandboxResult",
@@ -30,4 +37,9 @@ __all__ = [
     "SandboxError",
     "run_python_in_sandbox",
     "is_bubblewrap_available",
+    "persist_sandbox_execution",
+    "NetworkAllowlistProxy",
+    "BlockedHostError",
+    "is_host_allowed",
+    "DEFAULT_ALLOWED_HOSTS",
 ]
