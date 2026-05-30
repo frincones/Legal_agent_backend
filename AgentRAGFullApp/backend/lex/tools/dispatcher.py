@@ -114,14 +114,50 @@ class ToolDispatcher:
         ctx: ToolContext,
         max_concurrent: int = 10,
     ) -> list[ToolResult]:
-        """Ejecuta múltiples tools en paralelo (asyncio.gather con semáforo)."""
+        """Ejecuta múltiples tools en paralelo (asyncio.gather con semáforo).
+
+        M20.14 Camino 3A: usa return_exceptions=True para garantizar que
+        siempre len(results) == len(calls) — sin esto, si UN tool lanza
+        excepcion no controlada, asyncio.gather cancela los demás y la
+        lista queda corta, lo que rompe el invariante 1:1 tool_use/tool_result
+        en el siguiente mensaje al Brain y dispara BadRequestError 400 en
+        Anthropic ("tool_use ids were found without tool_result blocks
+        immediately after").
+        """
         sem = asyncio.Semaphore(max_concurrent)
 
         async def _one(call: ToolCall) -> ToolResult:
             async with sem:
                 return await self.execute(call, registry, ctx)
 
-        return await asyncio.gather(*[_one(c) for c in calls])
+        raw = await asyncio.gather(
+            *[_one(c) for c in calls],
+            return_exceptions=True,
+        )
+
+        results: list[ToolResult] = []
+        for call, item in zip(calls, raw):
+            if isinstance(item, BaseException):
+                # Excepción no capturada por execute() (raro pero defensa en
+                # profundidad). Convertir a ToolResult sintético para mantener
+                # el invariante 1:1 que Anthropic exige.
+                err_class = type(item).__name__
+                err_msg = str(item)[:500]
+                logger.exception(
+                    "execute_parallel: tool %r excepcion no controlada: %s: %s",
+                    call.tool_name, err_class, err_msg,
+                )
+                results.append(ToolResult(
+                    tool_use_id=call.tool_use_id,
+                    tool_name=call.tool_name,
+                    status="error",
+                    error_class=err_class,
+                    error_message=f"unhandled exception in dispatcher: {err_msg}",
+                    duration_ms=0,
+                ))
+            else:
+                results.append(item)
+        return results
 
     async def _persist(self, call: ToolCall, result: ToolResult, ctx: ToolContext) -> None:
         """INSERT en tool_call_audit (tabla M20.01)."""

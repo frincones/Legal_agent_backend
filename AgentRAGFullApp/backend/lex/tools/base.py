@@ -73,11 +73,23 @@ class ToolResult:
         return self.status in ("success", "cached")
 
     def to_anthropic_tool_result(self) -> dict:
-        """Formato esperado por Anthropic messages.create() en role=user content[].tool_result."""
+        """Formato esperado por Anthropic messages.create() en role=user content[].tool_result.
+
+        M20.14 Camino 3: garantizar content NON-EMPTY siempre. Anthropic API
+        rechaza tool_result con content vacio (""/None/[]) — especialmente
+        cuando is_error=true necesita un mensaje legible para el modelo.
+        """
         if self.status == "success" or self.status == "cached":
-            content = self.output if isinstance(self.output, str) else _safe_json_dumps(self.output)
+            raw = self.output if isinstance(self.output, str) else _safe_json_dumps(self.output)
+            content = raw if (raw and raw.strip()) else "(tool returned empty output)"
         else:
-            content = f"ERROR ({self.error_class or 'unknown'}): {self.error_message or ''}"
+            cls = self.error_class or "UnknownError"
+            msg = self.error_message or "(no error message)"
+            content = f"ERROR ({cls}): {msg}"
+        # Cap defensivo a 50K chars — Anthropic rechaza tool_result gigantes
+        # y puede inflar mensajes hasta romper context window.
+        if len(content) > 50_000:
+            content = content[:50_000] + "\n...(truncated)"
         return {
             "type": "tool_result",
             "tool_use_id": self.tool_use_id,

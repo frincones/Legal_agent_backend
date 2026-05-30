@@ -356,6 +356,25 @@ class AnthropicBrain:
         tools_schema: list[dict],
         messages: list[dict],
     ):
+        # M20.14 Camino 3B: validar y reparar messages ANTES de llamar al API.
+        # Anthropic rechaza con BadRequestError 400 si cualquier tool_use block
+        # de un assistant message no tiene su tool_result correspondiente en
+        # el siguiente user message. Si por cualquier motivo el dispatcher
+        # perdio un tool_result (excepcion no controlada, race condition,
+        # truncamiento), inyectamos un tool_result sintetico con is_error=true
+        # para preservar el invariante. Esto evita el "messages.N: tool_use
+        # ids were found without tool_result blocks immediately after".
+        try:
+            repaired_count = self._repair_tool_pairing(messages)
+            if repaired_count:
+                logger.warning(
+                    "anthropic_brain: reparados %d tool_use sin tool_result "
+                    "(inyectados como is_error=true)", repaired_count,
+                )
+        except Exception as e:
+            # Nunca dejar que el validador rompa el flujo principal.
+            logger.exception("anthropic_brain _repair_tool_pairing fallo (continua sin reparar): %s", e)
+
         kwargs: dict = {
             "model": model,
             "max_tokens": self.config.max_tokens,
@@ -419,6 +438,111 @@ class AnthropicBrain:
             if getattr(block, "type", None) == "text":
                 out.append(getattr(block, "text", "") or "")
         return "\n\n".join(out).strip()
+
+    @staticmethod
+    def _repair_tool_pairing(messages: list[dict]) -> int:
+        """Repara el invariante tool_use ↔ tool_result que Anthropic exige.
+
+        Walks `messages` y para cada `tool_use` block en un assistant message,
+        verifica que el SIGUIENTE user message tenga un `tool_result` block
+        con el mismo `tool_use_id`. Si falta, lo inyecta como is_error=true.
+
+        También limpia tool_result blocks "huérfanos" (que no matchean ningún
+        tool_use del assistant anterior), que también disparan 400.
+
+        Returns:
+            int: número de tool_results inyectados/sanitizados.
+        """
+        if not messages:
+            return 0
+        repaired = 0
+        i = 0
+        while i < len(messages) - 1:
+            msg = messages[i]
+            next_msg = messages[i + 1]
+            # Solo procesamos pares (assistant con tool_use → user con tool_result)
+            if msg.get("role") != "assistant":
+                i += 1
+                continue
+            content = msg.get("content")
+            if not isinstance(content, list):
+                i += 1
+                continue
+            tool_use_ids: list[str] = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    tid = block.get("id")
+                    if tid:
+                        tool_use_ids.append(tid)
+            if not tool_use_ids:
+                i += 1
+                continue
+            # next_msg debe ser user con tool_result blocks
+            if next_msg.get("role") != "user":
+                # Inyectar un user message completo si falta — pero esto es
+                # señal de bug serio. Lo logueamos y reparamos.
+                injected = [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tid,
+                        "content": "tool_result missing (synthetic placeholder · dispatcher lost result)",
+                        "is_error": True,
+                    }
+                    for tid in tool_use_ids
+                ]
+                messages.insert(i + 1, {"role": "user", "content": injected})
+                repaired += len(injected)
+                i += 2
+                continue
+            next_content = next_msg.get("content")
+            if not isinstance(next_content, list):
+                # user message con content=str pero el assistant tenia tool_use:
+                # reemplazar por una lista con todos los tool_results sinteticos.
+                injected = [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tid,
+                        "content": "tool_result missing (synthetic placeholder · user content was not list)",
+                        "is_error": True,
+                    }
+                    for tid in tool_use_ids
+                ]
+                next_msg["content"] = injected
+                repaired += len(injected)
+                i += 2
+                continue
+            present_ids = {
+                b.get("tool_use_id")
+                for b in next_content
+                if isinstance(b, dict) and b.get("type") == "tool_result"
+            }
+            missing = [tid for tid in tool_use_ids if tid not in present_ids]
+            for tid in missing:
+                next_content.insert(0, {
+                    "type": "tool_result",
+                    "tool_use_id": tid,
+                    "content": (
+                        f"tool_result missing for {tid} (synthetic placeholder · "
+                        "dispatcher did not produce a result for this tool_use)"
+                    ),
+                    "is_error": True,
+                })
+                repaired += 1
+            # Limpiar tool_result blocks huérfanos (sin matching tool_use)
+            valid_ids = set(tool_use_ids)
+            cleaned: list = []
+            removed_orphans = 0
+            for b in next_content:
+                if isinstance(b, dict) and b.get("type") == "tool_result":
+                    if b.get("tool_use_id") not in valid_ids:
+                        removed_orphans += 1
+                        continue
+                cleaned.append(b)
+            if removed_orphans:
+                next_msg["content"] = cleaned
+                repaired += removed_orphans
+            i += 2
+        return repaired
 
     @staticmethod
     def _extract_retry_after(exc: Exception) -> Optional[float]:
