@@ -1,0 +1,216 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "created": "2026-05-29",
+    "sprint": "M20.04 · S3",
+    "description": "20 fixtures de requests legales para A/B testing legacy vs lean orchestrator",
+    "uso": "tests/parity/runner_ab.py los lee y corre N veces contra ambos arms"
+  },
+  "fixtures": [
+    {
+      "id": "poder_1_basico_civil",
+      "doc_type": "poder_especial",
+      "complexity": "low",
+      "expected_opus": false,
+      "intent": "Necesito un poder especial para que mi abogado Sandra López, CC 98.765.432, T.P. 12345 del C.S. de la J. me represente en proceso civil ordinario por incumplimiento contractual contra Constructora Andina Ltda. Poderdante: Carlos Rincones Pérez, CC 12.345.678 de Bogotá.",
+      "user_brief": "Con facultades de sustituir, conciliar y desistir. Vigencia hasta sentencia ejecutoriada.",
+      "expected_sections": ["comparecencia", "objeto", "facultades", "sustitucion", "vigencia", "firma"],
+      "expected_citations": ["Arts. 2142 ss. CC"],
+      "min_blocks": 5
+    },
+    {
+      "id": "poder_2_laboral_con_sustitucion",
+      "doc_type": "poder_especial",
+      "complexity": "low",
+      "intent": "Poder especial para representación en proceso laboral ordinario por reintegro y salarios caídos contra TRANSPORTES LA SABANA SAS. Poderdante: María Camila Torres, CC 52.111.222. Apoderado: Dr. Felipe Ramírez, CC 79.555.444, T.P. 99887.",
+      "user_brief": "Incluir facultad expresa de sustituir el poder.",
+      "expected_sections": ["comparecencia", "objeto", "facultades", "sustitucion", "firma"],
+      "expected_citations": ["Arts. 2142 ss. CC"],
+      "min_blocks": 5
+    },
+    {
+      "id": "poder_3_notarial_familia",
+      "doc_type": "poder_especial",
+      "complexity": "low",
+      "intent": "Poder especial para divorcio express ante notaría. Poderdante: Andrés Felipe Gómez, CC 80.234.567 de Medellín. Apoderada: Dra. Lina Restrepo, CC 43.567.890, T.P. 55432.",
+      "user_brief": "Acuerdo mutuo, sin hijos menores. Notaría 23 de Medellín.",
+      "expected_sections": ["comparecencia", "objeto", "facultades", "firma"],
+      "expected_citations": ["Ley 25 de 1992", "Decreto 4436 de 2005"],
+      "min_blocks": 5
+    },
+    {
+      "id": "poder_4_compleja_facultades",
+      "doc_type": "poder_especial",
+      "complexity": "medium",
+      "intent": "Poder amplio para administrar sociedad mercantil VENTAS CONO SUR SAS NIT 900.555.444-1. Poderdante: Roberto Manrique, CC 19.876.543. Apoderado: Dr. Iván Castro, CC 80.111.222, T.P. 34567.",
+      "user_brief": "Facultades para celebrar contratos, abrir y manejar cuentas bancarias, contratar y despedir personal, representar ante la DIAN y Cámara de Comercio.",
+      "expected_sections": ["comparecencia", "objeto", "facultades", "sustitucion", "vigencia", "firma"],
+      "expected_citations": ["Arts. 196, 832 CCo", "Arts. 2142 ss. CC"],
+      "min_blocks": 6
+    },
+    {
+      "id": "poder_5_minimo_juridico",
+      "doc_type": "poder_especial",
+      "complexity": "low",
+      "intent": "Poder para inscribirme como demandante en proceso ya iniciado de pertenencia. Poderdante: Luisa Hurtado, CC 39.222.111.",
+      "user_brief": "Apoderado: Dr. Mauricio Acosta, T.P. 12121. Solo notificación y representación.",
+      "expected_sections": ["comparecencia", "objeto", "facultades", "firma"],
+      "expected_citations": [],
+      "min_blocks": 4
+    },
+    {
+      "id": "derecho_peticion_1_salud",
+      "doc_type": "derecho_peticion",
+      "complexity": "low",
+      "intent": "Derecho de petición a EPS SURA solicitando autorización de procedimiento quirúrgico ordenado por médico tratante. Peticionario: Diego Suárez, CC 1.014.222.333. Fecha solicitud: 15 de mayo de 2026.",
+      "user_brief": "Llevan 22 días sin responder. Adjunto orden médica y autorización previa #ABC-123.",
+      "expected_sections": ["destinatario", "peticionario", "hechos", "peticion", "fundamentos", "anexos", "notificaciones"],
+      "expected_citations": ["Art. 23 CN", "Ley 1755 de 2015"],
+      "min_blocks": 6
+    },
+    {
+      "id": "derecho_peticion_2_pension",
+      "doc_type": "derecho_peticion",
+      "complexity": "medium",
+      "intent": "Derecho de petición a COLPENSIONES para que reconozca pensión de vejez ya autorizada en resolución GNR-12345 de 2025. Peticionario: Hernán Calderón, CC 17.555.666, 67 años de edad.",
+      "user_brief": "La resolución fue notificada pero no han efectuado el pago retroactivo desde junio 2025.",
+      "expected_sections": ["destinatario", "peticionario", "hechos", "peticion", "fundamentos", "notificaciones"],
+      "expected_citations": ["Art. 23 CN", "Ley 1755 de 2015", "Ley 100 de 1993"],
+      "min_blocks": 6
+    },
+    {
+      "id": "derecho_peticion_3_secretaria_educacion",
+      "doc_type": "derecho_peticion",
+      "complexity": "low",
+      "intent": "Derecho de petición a Secretaría de Educación Distrital de Bogotá para que entregue cupo escolar en colegio público para mi hija menor.",
+      "user_brief": "Peticionaria: Yenny Marcela Ruiz, CC 1.052.333.444. Hija: Sara Beltrán Ruiz, 8 años, T.I. 1.014.555.666. Cercano a barrio Quirigua.",
+      "expected_sections": ["destinatario", "peticionario", "hechos", "peticion", "anexos"],
+      "expected_citations": ["Art. 67 CN", "Ley 115 de 1994"],
+      "min_blocks": 5
+    },
+    {
+      "id": "tutela_1_salud_negada",
+      "doc_type": "tutela",
+      "complexity": "medium",
+      "intent": "Tutela contra EPS SANITAS por negación de medicamento Adalimumab para tratamiento de artritis reumatoide ya prescrito. Accionante: Carlos Andrés Mejía, CC 79.555.222.",
+      "user_brief": "Médico tratante: Dra. Patricia Niño, reumatóloga. Negativa por escrito el 10 de mayo de 2026. Diagnóstico CIE-10: M05.9.",
+      "expected_sections": ["juez", "accionante", "accionado", "hechos", "derechos_violados", "peticion", "pruebas", "juramento", "notificaciones"],
+      "expected_citations": ["Art. 49 CN", "Art. 86 CN", "Decreto 2591 de 1991", "T-760 de 2008"],
+      "min_blocks": 8
+    },
+    {
+      "id": "tutela_2_debido_proceso_administrativo",
+      "doc_type": "tutela",
+      "complexity": "medium",
+      "intent": "Tutela contra Migración Colombia por sanción administrativa impuesta sin garantizar derecho a contradicción. Accionante: Juan Pablo Restrepo, CC 8.222.333.",
+      "user_brief": "Sanción impuesta mediante resolución 99888 de 2026 sin pliego de cargos previo ni oportunidad de pruebas.",
+      "expected_sections": ["juez", "accionante", "accionado", "hechos", "derechos_violados", "peticion", "pruebas", "juramento", "notificaciones"],
+      "expected_citations": ["Art. 29 CN", "Art. 86 CN", "Decreto 2591 de 1991"],
+      "min_blocks": 8
+    },
+    {
+      "id": "tutela_3_minimo_vital",
+      "doc_type": "tutela",
+      "complexity": "medium",
+      "intent": "Tutela contra Banco Davivienda por embargo de cuenta de nómina afectando mínimo vital. Accionante: Patricia Holguín, CC 52.111.333.",
+      "user_brief": "Embargo del 100% del salario depositado en cuenta de nómina. Salario único: $1.500.000 mensuales.",
+      "expected_sections": ["juez", "accionante", "accionado", "hechos", "derechos_violados", "peticion", "pruebas", "notificaciones"],
+      "expected_citations": ["Art. 25 CN", "Art. 86 CN", "Art. 154 CST"],
+      "min_blocks": 7
+    },
+    {
+      "id": "contrato_arrendamiento_1_residencial",
+      "doc_type": "contrato_arrendamiento",
+      "complexity": "low",
+      "intent": "Contrato de arrendamiento residencial. Arrendador: Carlos Tobón, CC 71.222.333. Arrendatario: Sandra Beltrán, CC 52.444.555. Inmueble: Apto 502 edificio Mirador, Calle 100 # 11-50, Bogotá. Canon: $2.500.000/mes. Plazo: 12 meses.",
+      "user_brief": "Depósito 2 meses anticipado. Codeudor: Ramiro Beltrán, CC 17.888.999.",
+      "expected_sections": ["partes", "objeto", "canon", "plazo", "obligaciones", "terminacion", "firmas"],
+      "expected_citations": ["Ley 820 de 2003"],
+      "min_blocks": 7
+    },
+    {
+      "id": "contrato_arrendamiento_2_local_comercial",
+      "doc_type": "contrato_arrendamiento",
+      "complexity": "medium",
+      "intent": "Contrato arrendamiento local comercial. Arrendador: Inversiones del Norte SAS NIT 900.111.222-3. Arrendatario: Café del Bosque SAS NIT 901.555.666-4. Local: 80 m2 en Centro Comercial Andino. Canon: $8.500.000/mes. Plazo: 36 meses con renovación tácita.",
+      "user_brief": "Garantía: póliza de cumplimiento por 6 meses. Reajuste anual IPC + 2 puntos.",
+      "expected_sections": ["partes", "objeto", "canon", "plazo", "garantias", "obligaciones", "renovacion", "firmas"],
+      "expected_citations": ["Ley 820 de 2003", "Arts. 518 ss. CCo"],
+      "min_blocks": 8
+    },
+    {
+      "id": "contrato_prestacion_servicios_1_profesional",
+      "doc_type": "contrato_prestacion_servicios",
+      "complexity": "low",
+      "intent": "Contrato de prestación de servicios profesionales jurídicos. Contratante: Ferretería Industrial SAS NIT 900.444.555-6. Contratista: Dr. Luis Fernando Castro, CC 80.333.444, T.P. 67890. Honorarios: $5.000.000 mensuales por 6 meses.",
+      "user_brief": "Asesoría jurídica permanente en materia comercial. Sin relación laboral.",
+      "expected_sections": ["partes", "objeto", "honorarios", "duracion", "obligaciones", "naturaleza_civil", "firmas"],
+      "expected_citations": ["Art. 1495 CC", "Arts. 2144 ss. CC", "Ley 50 de 1990"],
+      "min_blocks": 7
+    },
+    {
+      "id": "contrato_prestacion_servicios_2_consultoria",
+      "doc_type": "contrato_prestacion_servicios",
+      "complexity": "low",
+      "intent": "Contrato consultoría tributaria por 3 meses. Contratante: Distribuidora del Caribe SAS NIT 900.777.888-9. Contratista: Dra. Mónica Salazar, CC 42.555.666. Valor total: $15.000.000.",
+      "user_brief": "Pago: 50% al inicio, 50% al entregar informe final.",
+      "expected_sections": ["partes", "objeto", "valor", "forma_pago", "obligaciones", "naturaleza_civil"],
+      "expected_citations": ["Art. 1495 CC", "Arts. 2144 ss. CC"],
+      "min_blocks": 6
+    },
+    {
+      "id": "concepto_juridico_1_laboral_complejo",
+      "doc_type": "concepto_juridico",
+      "complexity": "high",
+      "expected_opus": true,
+      "intent": "Concepto jurídico sobre la procedencia de despido sin justa causa de empleado con fuero sindical. Empleado: Juan Pablo García, CC 19.444.555, vicepresidente del sindicato SINTRA-INDUSTRIAL. Empleador: Industrias Metálicas del Pacífico SAS NIT 900.222.333-4. Antigüedad: 8 años.",
+      "user_brief": "Empresa quiere terminar contrato por reestructuración. ¿Es procedente sin levantamiento previo del fuero?",
+      "expected_sections": ["consultante", "antecedentes", "problema_juridico", "marco_normativo", "jurisprudencia", "analisis", "conclusion"],
+      "expected_citations": ["Art. 39 CN", "Arts. 405 ss. CST", "T-1158 de 2008", "C-201 de 2002"],
+      "min_blocks": 7
+    },
+    {
+      "id": "concepto_juridico_2_civil_complejo",
+      "doc_type": "concepto_juridico",
+      "complexity": "high",
+      "expected_opus": true,
+      "intent": "Concepto sobre validez de cláusula penal del 20% del valor del contrato en contrato de obra firmado en 2020 entre PROMOTORA URBANA SAS y CONSTRUCTORA ANDINA LTDA. Contrato: $5.000 millones. Cláusula penal: $1.000 millones.",
+      "user_brief": "Constructora incumplió entrega. Promotora reclama cláusula penal completa. ¿Es enforceable o se considera abusiva?",
+      "expected_sections": ["consultante", "antecedentes", "problema_juridico", "marco_normativo", "jurisprudencia", "analisis", "conclusion"],
+      "expected_citations": ["Arts. 1592, 1596 CC", "Art. 867 CCo", "SC2879-2019", "SC5170-2018"],
+      "min_blocks": 7
+    },
+    {
+      "id": "denuncia_penal_1_hurto_agravado",
+      "doc_type": "denuncia_penal",
+      "complexity": "medium",
+      "intent": "Denuncia penal por hurto agravado. Denunciante: Carolina Vargas, CC 1.020.333.444. Denunciados: dos sujetos desconocidos que ingresaron a oficina la noche del 27 de mayo de 2026 y sustrajeron equipos por valor de $80 millones.",
+      "user_brief": "Oficina: Cra 11 # 93-50 piso 4, Bogotá. Cámaras de seguridad funcionaron. Equipos: 5 portátiles, 3 monitores, 1 servidor.",
+      "expected_sections": ["destinatario", "denunciante", "hechos", "imputacion_juridica", "pretensiones", "pruebas", "anexos"],
+      "expected_citations": ["Arts. 239, 240 CP", "Art. 250 CPP"],
+      "min_blocks": 6
+    },
+    {
+      "id": "demanda_civil_ordinaria_1_incumplimiento",
+      "doc_type": "demanda_civil_ordinaria",
+      "complexity": "high",
+      "expected_opus": false,
+      "intent": "Demanda civil ordinaria por incumplimiento contrato de obra firmado el 15 marzo 2024 entre INVERSIONES TRINIDAD SAS (NIT 900.111.222-3, demandante) y CONSTRUCTORA ANDINA LTDA (demandada). Demandado se obligó a entregar 12 apartamentos para diciembre 2024, solo entregó 7. Cuantía $850 millones.",
+      "user_brief": "Pretensiones: pago saldo + intereses moratorios DTF+1% + cláusula penal del 10% ($85M). Citar Arts. 1546, 1602, 1603, 1613, 1614 CC + SC2879-2019 Sala Civil CSJ sobre cláusulas penales abusivas.",
+      "expected_sections": ["juez_competente", "demandantes", "demandados", "hechos", "pretensiones", "fundamentos_juridicos", "pruebas", "juramento", "notificaciones", "anexos"],
+      "expected_citations": ["Arts. 1546, 1602, 1603, 1613, 1614 CC", "CGP Art. 25", "CCo Art. 884", "SC2879-2019"],
+      "min_blocks": 9
+    },
+    {
+      "id": "recurso_apelacion_1_civil",
+      "doc_type": "recurso_apelacion",
+      "complexity": "high",
+      "expected_opus": true,
+      "intent": "Recurso de apelación contra sentencia 0234 del Juzgado 15 Civil del Circuito de Bogotá del 18 de mayo de 2026, proferida dentro del proceso ejecutivo singular promovido por BANCO BBVA contra mi mandante INVERSIONES ALMEIDA SAS NIT 900.999.888-2. La sentencia ordenó seguir adelante con la ejecución.",
+      "user_brief": "Argumentos de apelación: (a) inexistencia del título ejecutivo por falta de exigibilidad; (b) excepción de pago parcial no valorada; (c) prescripción de la acción cambiaria.",
+      "expected_sections": ["destinatario", "demandante_apelante", "demandado", "antecedentes", "decision_apelada", "fundamentos_apelacion", "pretensiones", "pruebas", "notificaciones"],
+      "expected_citations": ["CGP Art. 320", "CGP Art. 322", "Arts. 488, 489 CGP", "Arts. 488 ss. CCo"],
+      "min_blocks": 8
+    }
+  ]
+}
