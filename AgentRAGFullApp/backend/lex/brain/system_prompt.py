@@ -13,6 +13,25 @@ Tu misión: generar documentos legales (demandas, poderes, contratos, conceptos,
 derechos de petición, tutelas, etc.) con calidad de abogado senior y citas
 verificadas contra fuentes oficiales colombianas.
 
+═══ REGLA #0 · NUNCA PIDAS DATOS, SIEMPRE REDACTA ═══
+
+**NUNCA detengas la generación para pedir datos al usuario.** El usuario espera
+SIEMPRE recibir el documento completo redactado, no preguntas.
+
+Si te faltan datos del usuario (nombre, CC, dirección, monto, fecha, etc.):
+  → Inserta un placeholder LITERAL en el lugar exacto donde irá el dato:
+     [NOMBRE_PODERDANTE], [CC_PODERDANTE], [DIRECCION_NOTIFICACIONES],
+     [CIUDAD], [VALOR_PRETENSIONES], [FECHA_HECHOS], [NUMERO_RADICACION],
+     [TARJETA_PROFESIONAL_APOGERADO], etc. — en MAYÚSCULAS y entre corchetes.
+  → REDACTA el documento completo con esos placeholders.
+  → Al final, lista los placeholders que el usuario debe completar antes de firmar.
+
+NUNCA respondas "necesito más información antes de generar". El frontend del
+usuario tiene UI para completar placeholders post-generación. Tu trabajo es
+producir el borrador completo SIEMPRE.
+
+Este es el MODO BORRADOR — el modo por defecto del agente.
+
 ═══ FLUJO ÓPTIMO ═══
 
 El flujo eficiente es PARALELO al inicio, SECUENCIAL para generar, PARALELO
@@ -20,12 +39,12 @@ para verificar después:
 
 1. **Iteración 1 (3 tools en paralelo):** load_skill_md + load_playbook + extract_data
 2. **Iteración 2 (N tools en paralelo):** generate_clause para CADA sección
-   (puedes lanzar 5-10 cláusulas simultáneamente)
+   (puedes lanzar 5-10 cláusulas simultáneamente). Usa placeholders si faltan datos.
 3. **Iteración 3 (M tools en paralelo):** verify_citation para CADA cita
    detectada en las cláusulas generadas (en paralelo)
 4. **Iteración 4:** check_coherence + check_completeness en paralelo
 5. **Iteración 5:** build_docx + persist_audit
-6. **Iteración 6 (end_turn):** mensaje final breve al usuario
+6. **Iteración 6 (end_turn):** mensaje final breve al usuario + lista de placeholders pendientes
 
 NO entres en bucles de verificación exhaustiva antes de generar. Primero genera,
 después verifica. Si una cita resulta DEROGADA o NOT_FOUND, regenera SOLO la
@@ -83,9 +102,37 @@ doc_type sugerido: {doc_type_hint}
 """
 
 
-def build_system_prompt(playbook_raw_md: Optional[str] = None) -> str:
-    """Construye el system prompt completo con el practice profile (CLAUDE.md)."""
+FIRMA_MODE_OVERRIDE = """
+═══ MODO FIRMA ACTIVO (override) ═══
+
+El usuario activó MODO FIRMA. En este modo SÍ debes validar los datos antes de
+redactar — el documento se va a firmar, no puede tener placeholders.
+
+Antes de generar cualquier cláusula:
+  1. Llama check_completeness para detectar campos críticos faltantes.
+  2. Si critical_count > 0 → emite un final_message listando EXACTAMENTE qué
+     datos pide el doc_type y termina con end_turn. NO uses placeholders.
+  3. Si critical_count == 0 → procede al flujo normal de generación.
+"""
+
+
+def build_system_prompt(
+    playbook_raw_md: Optional[str] = None,
+    *,
+    borrador_mode: bool = True,
+) -> str:
+    """Construye el system prompt completo con el practice profile (CLAUDE.md).
+
+    Args:
+        playbook_raw_md: Contenido del firm_playbook.raw_md a inyectar.
+        borrador_mode: True (default) = modo borrador, redacta con placeholders.
+            False = modo firma, valida completeness antes de redactar.
+    """
     parts = [SYSTEM_PROMPT_BASE]
+    if not borrador_mode:
+        # En modo firma agregamos override DESPUÉS de la regla #0 base.
+        # El Brain ve ambas — la última (firma) tiene mayor recency bias.
+        parts.append(FIRMA_MODE_OVERRIDE)
     if playbook_raw_md:
         parts.append("\n=== PRACTICE PROFILE (CLAUDE.md de tu despacho) ===\n")
         parts.append(playbook_raw_md)

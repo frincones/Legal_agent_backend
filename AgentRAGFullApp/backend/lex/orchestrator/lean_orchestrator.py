@@ -59,8 +59,15 @@ class LeanOrchestrator:
         brief: str = "",
         doc_type_hint: str = "",
         matter_id: Optional[UUID] = None,
+        borrador_mode: bool = True,
     ) -> AsyncIterator[bytes]:
-        """Ejecuta el agente. Yieldea bytes SSE listos para FastAPI StreamingResponse."""
+        """Ejecuta el agente. Yieldea bytes SSE listos para FastAPI StreamingResponse.
+
+        Args:
+            borrador_mode: True (default) = el Brain redacta con [PLACEHOLDER]
+                cuando faltan datos. False = modo firma, el Brain valida
+                completeness antes de redactar.
+        """
         ctx = ToolContext(
             generation_id=self.generation_id,
             firm_id=self.firm_id,
@@ -82,6 +89,7 @@ class LeanOrchestrator:
             brief=brief,
             doc_type_hint=doc_type_hint,
             playbook_raw_md=playbook_raw_md,
+            borrador_mode=borrador_mode,
         ):
             yield sse_bytes
 

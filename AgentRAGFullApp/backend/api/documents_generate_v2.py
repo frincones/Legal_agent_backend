@@ -262,6 +262,10 @@ async def generate_v2(
                     brief=body.user_brief or "",
                     doc_type_hint=body.doc_type or "",
                     matter_id=matter_uuid,
+                    # M20.14: propagar borrador_mode al Brain — sin esto el
+                    # Brain operaba con su default interno sin posibilidad de
+                    # switch a modo firma desde el toggle del frontend.
+                    borrador_mode=body.borrador_mode,
                 ),
                 media_type="text/event-stream",
                 headers={

@@ -95,6 +95,7 @@ class AnthropicBrain:
         brief: str = "",
         doc_type_hint: str = "",
         playbook_raw_md: Optional[str] = None,
+        borrador_mode: bool = True,
     ) -> AsyncIterator[bytes]:
         """Loop ReAct principal. Yieldea bytes SSE listos para el stream HTTP.
 
@@ -104,6 +105,10 @@ class AnthropicBrain:
           3. si stop_reason='end_turn' → emite SSE final + return
           4. si stop_reason='max_tokens' → continúa loop
           5. si error N veces → fallback OpenAI
+
+        Args:
+            borrador_mode: True (default) inyecta regla "redacta con placeholders,
+                no pidas datos". False activa MODO FIRMA con check_completeness gate.
         """
         stats = BrainStats()
         dispatcher = ToolDispatcher(persist_audit=True)
@@ -113,7 +118,9 @@ class AnthropicBrain:
         stats.model_actual = model
 
         # Construir system prompt + primer mensaje user
-        system_prompt = build_system_prompt(playbook_raw_md)
+        # M20.14: borrador_mode controla si el Brain redacta con placeholders
+        # (default) o detiene con check_completeness gate (modo firma).
+        system_prompt = build_system_prompt(playbook_raw_md, borrador_mode=borrador_mode)
         user_msg = build_user_message(
             intent=intent, brief=brief,
             firm_id=str(ctx.firm_id) if ctx.firm_id else "",
@@ -337,12 +344,42 @@ class AnthropicBrain:
             kwargs["system"] = system_prompt
             extra_headers = {}
 
-        if extra_headers:
-            response = await self.anthropic.messages.create(
-                extra_headers=extra_headers, **kwargs,
+        # M20.14: observability — el Brain antes llamaba al SDK directo sin
+        # loggear nada (a diferencia de utils/llm_provider.py). Eso hacía que
+        # cada generación lean fuera caja negra. Loggeamos in/out + duration.
+        import time as _time
+        _start = _time.perf_counter()
+        logger.info(
+            "anthropic_brain call → model=%s msgs=%d tools=%d caching=%s",
+            model, len(messages), len(tools_schema),
+            self.config.enable_prompt_caching,
+        )
+        try:
+            if extra_headers:
+                response = await self.anthropic.messages.create(
+                    extra_headers=extra_headers, **kwargs,
+                )
+            else:
+                response = await self.anthropic.messages.create(**kwargs)
+        except Exception as e:
+            elapsed_ms = int((_time.perf_counter() - _start) * 1000)
+            logger.warning(
+                "anthropic_brain call ✗ model=%s elapsed=%dms err=%s: %s",
+                model, elapsed_ms, type(e).__name__, str(e)[:200],
             )
-        else:
-            response = await self.anthropic.messages.create(**kwargs)
+            raise
+        elapsed_ms = int((_time.perf_counter() - _start) * 1000)
+        usage = getattr(response, "usage", None)
+        tokens_in = getattr(usage, "input_tokens", 0) if usage else 0
+        tokens_out = getattr(usage, "output_tokens", 0) if usage else 0
+        cache_read = getattr(usage, "cache_read_input_tokens", 0) if usage else 0
+        cache_write = getattr(usage, "cache_creation_input_tokens", 0) if usage else 0
+        logger.info(
+            "anthropic_brain call ✓ model=%s elapsed=%dms tokens_in=%d tokens_out=%d "
+            "cache_read=%d cache_write=%d stop=%s",
+            model, elapsed_ms, tokens_in, tokens_out, cache_read, cache_write,
+            getattr(response, "stop_reason", None),
+        )
         return response
 
     @staticmethod
