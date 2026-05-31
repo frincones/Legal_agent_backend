@@ -41,28 +41,37 @@ OPUS_DOC_TYPES = {
 }
 
 # Tokens caps por modelo (mantener conservador para evitar timeouts)
-# M20.14 Opcion B: cuenta Anthropic en Build Tier 1 (8K output tokens/min).
-# Bajamos paralelismo + max_tokens para no saturar el rate limit en bursts
-# de generate_clause + verify_citation (cada uno con su LLM downstream).
-# Subimos fallback threshold para tolerar mejor los 429 transitorios.
-DEFAULT_MAX_TOKENS = 4096                 # antes 8192 — cada respuesta del Brain ~mitad
+# M20.14 Opcion 1 + B: cuenta Anthropic en Build Tier 1.
+# Rate limits separados por modelo (cada uno tiene su pool):
+#   Sonnet 4.x:  30K ITPM /  8K OTPM
+#   Haiku 4.5:   50K ITPM / 10K OTPM (67% mas ITPM, 25% mas OTPM)
+#   Opus 4.x:   500K ITPM / 80K OTPM (16x ITPM, 10x OTPM)
+# Estrategia:
+#   - Brain ReAct loop (planning, tool selection) → Haiku 4.5 (rapido, suficiente
+#     para decisiones discretas; suma su pool al de Sonnet que usan los tools
+#     internos como generate_clause).
+#   - generate_clause y verify_citation (calidad legal) → Sonnet/OpenAI (sin cambio).
+# Resultado: capacidad combinada efectiva ~80K ITPM Tier 1.
+DEFAULT_MAX_TOKENS = 4096
 DEFAULT_MAX_ITERATIONS = 30
-DEFAULT_MAX_PARALLEL_TOOLS = 3            # antes 10 — burst limitado a 3 tools simultaneas
-DEFAULT_RATE_LIMIT_RETRY_S = 8.0          # backoff base cuando llega RateLimitError
+DEFAULT_MAX_PARALLEL_TOOLS = 3
+DEFAULT_RATE_LIMIT_RETRY_S = 8.0
 
 
 @dataclass
 class BrainConfig:
-    sonnet_model: str = "claude-sonnet-4-6"
-    opus_model: str = "claude-opus-4-7"
+    # M20.14 Opcion 1: routing por modelo según complejidad.
+    # `routing_model` es el modelo DEFAULT del Brain ReAct loop (planning).
+    # `sonnet_model` queda como modelo de fallback para doc_types complejos.
+    routing_model: str = "claude-haiku-4-5"   # Brain planning (50K ITPM Tier 1)
+    sonnet_model: str = "claude-sonnet-4-6"   # legacy / fallback medio
+    opus_model: str = "claude-opus-4-7"       # doc_types complejos (500K ITPM)
     fallback_openai_model: str = "gpt-4o"
     max_tokens: int = DEFAULT_MAX_TOKENS
     max_iterations: int = DEFAULT_MAX_ITERATIONS
     max_parallel_tools: int = DEFAULT_MAX_PARALLEL_TOOLS
     enable_prompt_caching: bool = True
     enable_parallel_tools: bool = True
-    # antes 2 — subimos a 4 porque ahora hacemos backoff por 429 y la mayoria
-    # de 429 son transitorios (la ventana de 60s del rate limit se libera).
     fallback_to_openai_after_failures: int = 4
     rate_limit_retry_s: float = DEFAULT_RATE_LIMIT_RETRY_S
 
@@ -121,9 +130,18 @@ class AnthropicBrain:
         stats = BrainStats()
         dispatcher = ToolDispatcher(persist_audit=True)
 
-        # Modelo a usar (Opus para doc_types complejos)
-        model = self.config.opus_model if doc_type_hint in OPUS_DOC_TYPES else self.config.sonnet_model
+        # M20.14 Opcion 1: routing por complejidad.
+        # - Doc types complejos (casacion, demanda_compleja, etc.) → Opus 4.x
+        #   (capacidad 500K ITPM Tier 1, calidad maxima, mas caro).
+        # - Resto (default) → Haiku 4.5 (planning rapido, 50K ITPM Tier 1,
+        #   barato, suficiente para decidir tool_use). Los generate_clause
+        #   internos siguen usando Sonnet/OpenAI para calidad del contenido legal.
+        if doc_type_hint in OPUS_DOC_TYPES:
+            model = self.config.opus_model
+        else:
+            model = self.config.routing_model
         stats.model_actual = model
+        logger.info("react_loop: usando model=%s (doc_type_hint=%r)", model, doc_type_hint)
 
         # Construir system prompt + primer mensaje user
         # M20.14: borrador_mode controla si el Brain redacta con placeholders
@@ -382,13 +400,60 @@ class AnthropicBrain:
             "tools": tools_schema,
         }
         if self.config.enable_prompt_caching:
-            # Marcar system prompt + tools como cacheables (prefix ephemeral)
+            # M20.14 Opcion 3: caching maximizado en 3 niveles.
+            # - system: TTL 1h (mas barato amortizado, este texto NO cambia
+            #   entre generaciones de la misma firm dentro de 1h).
+            # - tools (ultimo tool): cache_control en el ULTIMO tool del
+            #   schema cachea TODO el array (18 tool definitions ~3K tokens).
+            # - messages: cache_control en el ULTIMO bloque del ULTIMO
+            #   mensaje con TTL 5min — captura la conversacion para reuso
+            #   en iteraciones consecutivas del ReAct loop.
+            # Resultado: ~70-80% cache hit rate esperado, baja ITPM 5x.
+            #
+            # cache_read_input_tokens NO cuenta para ITPM rate limit —
+            # esto efectivamente multiplica nuestra capacidad efectiva.
             kwargs["system"] = [
-                {"type": "text", "text": system_prompt,
-                 "cache_control": {"type": "ephemeral"}},
+                {
+                    "type": "text",
+                    "text": system_prompt,
+                    "cache_control": {"type": "ephemeral", "ttl": "1h"},
+                },
             ]
-            # extra_headers para opt-in beta
-            extra_headers = {"anthropic-beta": "prompt-caching-2024-07-31"}
+            # Cachear el array de tools: cache_control en el ULTIMO tool
+            # marca el breakpoint y cachea TODO el array hasta ahi.
+            if tools_schema:
+                cached_tools = [dict(t) for t in tools_schema]
+                cached_tools[-1] = {
+                    **cached_tools[-1],
+                    "cache_control": {"type": "ephemeral", "ttl": "1h"},
+                }
+                kwargs["tools"] = cached_tools
+            # Cachear el ULTIMO bloque del ULTIMO mensaje del historial
+            # (5min TTL — captura la conversacion en curso). Esto solo aplica
+            # si el ultimo content es lista (multi-block); strings no soportan
+            # cache_control.
+            try:
+                if messages:
+                    last_msg = messages[-1]
+                    last_content = last_msg.get("content")
+                    if isinstance(last_content, list) and last_content:
+                        last_msg_copy = dict(last_msg)
+                        new_content = [dict(b) if isinstance(b, dict) else b
+                                         for b in last_content]
+                        if isinstance(new_content[-1], dict):
+                            new_content[-1] = {
+                                **new_content[-1],
+                                "cache_control": {"type": "ephemeral"},
+                            }
+                            last_msg_copy["content"] = new_content
+                            kwargs["messages"] = messages[:-1] + [last_msg_copy]
+            except Exception as e:
+                # Si falla el caching de messages, no rompe — sigue sin cache_control.
+                logger.debug("messages cache_control skip: %s", e)
+            # extra_headers: beta para 1h TTL (extended-cache-ttl-2025-04-11)
+            extra_headers = {
+                "anthropic-beta": "prompt-caching-2024-07-31,extended-cache-ttl-2025-04-11",
+            }
         else:
             kwargs["system"] = system_prompt
             extra_headers = {}
@@ -423,10 +488,18 @@ class AnthropicBrain:
         tokens_out = getattr(usage, "output_tokens", 0) if usage else 0
         cache_read = getattr(usage, "cache_read_input_tokens", 0) if usage else 0
         cache_write = getattr(usage, "cache_creation_input_tokens", 0) if usage else 0
+        # M20.14 Opcion 3: cache hit rate observability.
+        # hit_rate = cache_read / (cache_read + input_tokens) según best practice
+        # del equipo de Claude Code (>60% = bueno, >80% = optimo).
+        total_in_no_write = cache_read + tokens_in
+        hit_rate_pct = round(100.0 * cache_read / total_in_no_write, 1) if total_in_no_write > 0 else 0.0
+        # ITPM rate-counted (cache_read NO cuenta hacia ITPM).
+        itpm_counted = tokens_in + cache_write
         logger.info(
             "anthropic_brain call ✓ model=%s elapsed=%dms tokens_in=%d tokens_out=%d "
-            "cache_read=%d cache_write=%d stop=%s",
+            "cache_read=%d cache_write=%d hit_rate=%.1f%% itpm_counted=%d stop=%s",
             model, elapsed_ms, tokens_in, tokens_out, cache_read, cache_write,
+            hit_rate_pct, itpm_counted,
             getattr(response, "stop_reason", None),
         )
         return response
