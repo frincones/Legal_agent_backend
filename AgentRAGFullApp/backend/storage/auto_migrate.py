@@ -47,6 +47,10 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_05_28_seed_m1927_12_new_builtin_skills.sql",
     # M19.30 — Seed poder-especial (necesario para resolver template Claude renderer)
     "2026_05_28_seed_m1930_poder_especial.sql",
+    # M21.01 — Pre-Sprint · Seed nuevo SKILL poder_general (caso "amplio y suficiente")
+    "2026_06_03_seed_m2101_poder_general.sql",
+    # M21.02 — Pre-Sprint · Update SKILL poder_especial (Art 2158 CC + blacklist + notas)
+    "2026_06_03_update_m2102_poder_especial_pulido.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
