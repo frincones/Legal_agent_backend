@@ -42,11 +42,13 @@ def _estado_to_tier(estado: str, derogada: bool, modulada: bool = False) -> str:
 class VerifyCitationTool(ToolDef):
     name = "verify_citation"
     description = (
-        "Verifica una cita normativa o jurisprudencial colombiana. Retorna el "
-        "tier (GROUNDED / VERIFY_FLAG / DEROGADA / NOT_FOUND), fuente_url oficial, "
-        "y sugerencia de corrección si la cita no existe o está derogada. "
-        "Llamar por CADA cita que el documento contenga (puede invocarse en paralelo "
-        "para múltiples citas)."
+        "★ USAR por CADA cita normativa o jurisprudencial que vayas a incluir "
+        "(MAX 5 por documento — priorizar las críticas según SKILL.md). "
+        "Retorna tier 5-niveles: GROUNDED (vigente y aplica), VERIFY_FLAG (dudosa, "
+        "incluir con marca [verificar]), DEROGADA (no vigente, sugerir reemplazo), "
+        "NOT_FOUND (no existe, posible alucinación), MODULADA (vigente pero "
+        "modulada por jurisprudencia constitucional). Trae fuente_url oficial CO "
+        "y sugerencia de corrección. Paralelizable (asyncio.gather)."
     )
     input_schema = {
         "type": "object",

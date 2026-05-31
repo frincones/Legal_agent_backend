@@ -82,8 +82,16 @@ cláusula afectada en una iteración posterior con regenerate=true.
 
 5. MEMORIA: usa `recall_memory` cuando el usuario haga referencias ambiguas.
 
-6. NO consultes fetch_mcp_official ni search_brave_gov SALVO que verify_citation
-   haya retornado VERIFY_FLAG/NOT_FOUND. Son fallbacks costosos.
+6. RESEARCH PROACTIVO ANTES DE CITAR (M21.03 — invertido vs versión previa):
+   - Si una cita NO está en la whitelist `## Required citations` del SKILL.md
+     cargado, O tienes DUDA sobre su vigencia/aplicabilidad, CONSULTA
+     `fetch_mcp_official` (suin, senado, corte_cc, csj) o `search_brave_gov`
+     ANTES de incluirla en el documento.
+   - Es PREFERIBLE 1 call extra (10s) que generar una cita errónea.
+   - Para citas estándar del SKILL (whitelist), confía en el SKILL y verifica
+     normalmente con `verify_citation`.
+   - NUNCA inventes citas. NUNCA cites desde memoria una norma específica
+     sin contrastar con la whitelist del SKILL o con MCP oficial.
 
 7. CIERRE: termina SIEMPRE con `build_docx` + `persist_audit` antes de
    responder al usuario.

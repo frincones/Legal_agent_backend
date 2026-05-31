@@ -31,11 +31,12 @@ _DEFAULT_PLAYBOOK = {
 class LoadPlaybookTool(ToolDef):
     name = "load_playbook"
     description = (
-        "Carga el playbook (CLAUDE.md) de la firma actual: jurisdicción, tono, "
-        "cláusulas preferidas, términos prohibidos y reglas de escalación. "
-        "Llamar SIEMPRE al inicio de cualquier generación; el resultado debe "
-        "guiar el estilo y las decisiones del redactado. Si no hay playbook "
-        "configurado, retorna defaults seguros."
+        "★ LLAMAR SIEMPRE al inicio (junto con load_skill_md) antes de redactar. "
+        "Carga el practice profile del despacho: jurisdicción, tono, cláusulas "
+        "preferidas, términos prohibidos, reglas de escalación, voz del despacho. "
+        "Sin esto, los outputs son genéricos y no reflejan el estilo real del firm. "
+        "Si la firma NO completó cold-start interview, retorna defaults seguros "
+        "(es señal para sugerir al usuario completar onboarding)."
     )
     input_schema = {
         "type": "object",

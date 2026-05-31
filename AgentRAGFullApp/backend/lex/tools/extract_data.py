@@ -14,10 +14,12 @@ logger = logging.getLogger(__name__)
 class ExtractDataTool(ToolDef):
     name = "extract_data"
     description = (
-        "Extrae datos estructurados del intent + brief del usuario "
-        "(nombres, CC, NIT, fechas, montos, partes, etc.) según el doc_type. "
-        "Devuelve extracted_fields + missing_fields. Llamar UNA vez después de "
-        "load_skill_md y antes de generate_clause."
+        "★ LLAMAR UNA vez después de load_skill_md y ANTES de generate_clause. "
+        "Extrae datos estructurados del intent del usuario: nombres (poderdante/"
+        "apoderado/partes), CC/NIT/T.P., fechas, montos, dirección, profesión, "
+        "matrícula mercantil, etc. Retorna extracted_fields (lo que SÍ se detectó) "
+        "+ missing_fields (lo que falta y debe ir como placeholder). Esto evita "
+        "que generate_clause repita el LLM call para parsear datos."
     )
     input_schema = {
         "type": "object",

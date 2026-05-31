@@ -19,10 +19,14 @@ VALID_SERVERS = {"corte_cc", "csj", "suin", "senado", "funcpub", "datosgov", "le
 class FetchMcpOfficialTool(ToolDef):
     name = "fetch_mcp_official"
     description = (
-        "Consulta directa a uno de los 6 MCP servers oficiales de Colombia. "
-        "Servers disponibles: corte_cc (Corte Constitucional), csj (Corte Suprema), "
-        "suin (SUIN-Juriscol normativa), senado (Sec. Senado leyes), funcpub (Función Pública), "
-        "datosgov (datos.gov.co). Usar cuando verify_citation requiera ir directo a fuente "
+        "★ USAR PROACTIVAMENTE cuando una cita NO esté en la whitelist del SKILL "
+        "cargado, O cuando tengas duda sobre vigencia/aplicabilidad de una norma. "
+        "Es PREFERIBLE 1 call extra (~10s) que generar cita errónea. "
+        "Consulta directa a 6 MCP servers oficiales de Colombia: "
+        "corte_cc (Corte Constitucional), csj (Corte Suprema), "
+        "suin (SUIN-Juriscol normativa), senado (Sec. Senado leyes consolidadas), "
+        "funcpub (Función Pública), datosgov (datos.gov.co). "
+        "USAR también después de verify_citation con VERIFY_FLAG/NOT_FOUND, "
         "o cuando se necesite texto literal de una norma/sentencia conocida."
     )
     input_schema = {

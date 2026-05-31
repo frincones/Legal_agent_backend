@@ -14,10 +14,14 @@ logger = logging.getLogger(__name__)
 class LoadSkillMdTool(ToolDef):
     name = "load_skill_md"
     description = (
-        "Carga el SKILL.md del tipo de documento solicitado (doc_type). "
-        "Retorna el SkillContext con las cláusulas/secciones esperadas, el estilo "
-        "(formal/notarial/judicial), placeholders y referencias normativas obligatorias. "
-        "Llamar SIEMPRE al inicio de cualquier generación de documento."
+        "★ LLAMAR SIEMPRE PRIMERO antes de cualquier otra cosa cuando el usuario "
+        "pide GENERAR cualquier documento (poder, contrato, demanda, concepto, "
+        "tutela, denuncia, etc.). Retorna SkillContext con: estructura de "
+        "secciones del doc_type, estilo notarial/judicial, placeholders, citas "
+        "OBLIGATORIAS (whitelist), citas PROHIBIDAS (blacklist), risk warnings "
+        "y notas para el otorgante. Sin esto, los outputs son genéricos. "
+        "Soporta SKILLs builtin (firm_id=null) y SKILLs custom de la firma "
+        "(cascade: firm primero, builtin fallback)."
     )
     input_schema = {
         "type": "object",

@@ -12,9 +12,11 @@ logger = logging.getLogger(__name__)
 class SearchBraveGovTool(ToolDef):
     name = "search_brave_gov"
     description = (
-        "Búsqueda web limitada a sitios gov.co usando Brave Search API. "
-        "Útil cuando una cita no se encuentra en BD interna ni en los MCP oficiales "
-        "(fallback de última instancia). Resultados deben validarse con verify_citation."
+        "★ USAR cuando necesites validar una cita NUEVA o investigar normativa CO "
+        "que no esté en el SKILL whitelist ni en los MCP oficiales. Búsqueda en "
+        "sitios .gov.co con Brave Search API. Trae top resultados con URL oficial. "
+        "Después de cada resultado relevante, validar con verify_citation o "
+        "fetch_mcp_official antes de incluir en el documento."
     )
     input_schema = {
         "type": "object",

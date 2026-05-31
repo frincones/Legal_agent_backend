@@ -21,10 +21,13 @@ logger = logging.getLogger(__name__)
 class GenerateClauseTool(ToolDef):
     name = "generate_clause"
     description = (
-        "Genera UNA sección/cláusula del documento (e.g., 'objeto', 'hechos', "
-        "'pretensiones', 'facultades'). El Brain debe invocar esta tool por cada "
-        "sección que componga el documento. Múltiples secciones independientes "
-        "PUEDEN invocarse en paralelo (asyncio.gather, hasta 10 simultáneos)."
+        "★ USAR para cada SECCIÓN del documento listada en SKILL.md sections_plan. "
+        "Invocar en PARALELO todas las secciones independientes (asyncio.gather, "
+        "máx 10 simultáneos). El Brain decide el orden: secciones de contexto "
+        "primero (encabezado, partes), después core (cláusulas, hechos, pretensiones), "
+        "finalmente cierre (firmas, diligencia notarial). NO inventar secciones que "
+        "no estén en el SKILL — eso desordena el doc. Usa extracted_data del usuario "
+        "+ verified_citations + previous_blocks para coherencia narrativa."
     )
     input_schema = {
         "type": "object",
