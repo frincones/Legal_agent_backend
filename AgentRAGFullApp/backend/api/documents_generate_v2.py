@@ -328,25 +328,62 @@ async def get_document_id_by_generation(
     """
     if not _flag_enabled():
         raise HTTPException(status_code=503, detail="docgen_v2_disabled")
+    logger.info("get_document_id_by_generation: called generation_id=%s", generation_id)
     storage = await get_storage()
     try:
         async with storage.pool.acquire() as conn:
+            # Primary: document_blocks
             row = await conn.fetchrow(
                 "SELECT document_id FROM document_blocks "
                 "WHERE generation_id = $1::uuid "
                 "ORDER BY block_order ASC LIMIT 1",
                 generation_id,
             )
+            if row and row["document_id"]:
+                doc_id = str(row["document_id"])
+                logger.info(
+                    "get_document_id_by_generation: generation=%s → %s (document_blocks)",
+                    generation_id, doc_id,
+                )
+                return {"generation_id": generation_id, "document_id": doc_id}
+
+            # Diagnóstico: cuántos blocks hay con ese generation_id (sin filtrar)
+            cnt = await conn.fetchval(
+                "SELECT count(*) FROM document_blocks WHERE generation_id = $1::uuid",
+                generation_id,
+            )
+            logger.warning(
+                "get_document_id_by_generation: document_blocks count=%s for generation=%s. "
+                "Probando fallback matter_documents...",
+                cnt, generation_id,
+            )
+
+            # Fallback: matter_documents (algunos paths persisten ahí)
+            try:
+                row2 = await conn.fetchrow(
+                    "SELECT id FROM matter_documents "
+                    "WHERE generation_id = $1::uuid "
+                    "ORDER BY created_at ASC LIMIT 1",
+                    generation_id,
+                )
+                if row2 and row2["id"]:
+                    doc_id = str(row2["id"])
+                    logger.info(
+                        "get_document_id_by_generation: generation=%s → %s (matter_documents fallback)",
+                        generation_id, doc_id,
+                    )
+                    return {"generation_id": generation_id, "document_id": doc_id}
+            except Exception as e2:
+                logger.debug("matter_documents fallback query failed: %s", e2)
     except Exception as e:
-        logger.warning("get_document_id_by_generation(%s) failed: %s", generation_id, e)
+        logger.warning("get_document_id_by_generation(%s) exception: %s", generation_id, e)
         raise HTTPException(status_code=500, detail=str(e)[:200])
 
-    if not row or not row["document_id"]:
-        raise HTTPException(status_code=404, detail="no_blocks_for_generation")
-    return {
-        "generation_id": generation_id,
-        "document_id": str(row["document_id"]),
-    }
+    logger.warning(
+        "get_document_id_by_generation: generation=%s 404 — no doc_id en document_blocks ni matter_documents",
+        generation_id,
+    )
+    raise HTTPException(status_code=404, detail="no_blocks_for_generation")
 
 
 @router.get("/documents/{document_id}/audit")

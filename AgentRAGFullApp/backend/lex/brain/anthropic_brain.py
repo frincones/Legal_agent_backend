@@ -68,20 +68,71 @@ async def _resolve_document_id_from_blocks(pool, generation_id: Any) -> Optional
     Ahora consultamos la tabla document_blocks (que insert_blocks_batch llena
     con (document_id, generation_id) durante la generación) para recuperar
     el document_id real.
+
+    HOTFIX-6: log INFO siempre para diagnostico. Si query devuelve None,
+    intenta fallback por matter_documents (algunos paths persisten ahi).
     """
     if pool is None or generation_id is None:
+        logger.warning(
+            "_resolve_document_id_from_blocks: pool=%s generation_id=%s — early return None",
+            pool is not None, generation_id,
+        )
         return None
+    gen_id_str = str(generation_id)
     try:
         async with pool.acquire() as conn:
+            # Primary: document_blocks
             row = await conn.fetchrow(
                 "SELECT document_id FROM document_blocks "
                 "WHERE generation_id = $1::uuid "
                 "ORDER BY block_order ASC LIMIT 1",
-                str(generation_id),
+                gen_id_str,
             )
-            return str(row["document_id"]) if row and row["document_id"] else None
+            if row and row["document_id"]:
+                doc_id = str(row["document_id"])
+                logger.info(
+                    "_resolve_document_id_from_blocks: generation=%s → doc_id=%s (via document_blocks)",
+                    gen_id_str, doc_id,
+                )
+                return doc_id
+
+            # Fallback 1: contar cuantos blocks hay para ese generation_id
+            count_row = await conn.fetchrow(
+                "SELECT count(*) as n FROM document_blocks WHERE generation_id = $1::uuid",
+                gen_id_str,
+            )
+            n_blocks = count_row["n"] if count_row else 0
+            logger.warning(
+                "_resolve_document_id_from_blocks: generation=%s NO doc_id en document_blocks. "
+                "count=%d. Intentando fallback matter_documents...",
+                gen_id_str, n_blocks,
+            )
+
+            # Fallback 2: matter_documents (algunos paths persisten ahi en vez de document_blocks)
+            try:
+                row2 = await conn.fetchrow(
+                    "SELECT id FROM matter_documents "
+                    "WHERE generation_id = $1::uuid "
+                    "ORDER BY created_at ASC LIMIT 1",
+                    gen_id_str,
+                )
+                if row2 and row2["id"]:
+                    doc_id = str(row2["id"])
+                    logger.info(
+                        "_resolve_document_id_from_blocks: generation=%s → doc_id=%s (via matter_documents fallback)",
+                        gen_id_str, doc_id,
+                    )
+                    return doc_id
+            except Exception as e2:
+                logger.debug("matter_documents fallback query failed: %s", e2)
+
+            logger.warning(
+                "_resolve_document_id_from_blocks: generation=%s NO doc_id encontrado en ninguna tabla",
+                gen_id_str,
+            )
+            return None
     except Exception as e:
-        logger.debug("_resolve_document_id_from_blocks(%s) failed: %s", generation_id, e)
+        logger.warning("_resolve_document_id_from_blocks(%s) exception: %s", gen_id_str, e)
         return None
 
 
