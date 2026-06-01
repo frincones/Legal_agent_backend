@@ -776,6 +776,97 @@ def _strip_validation_markers(text: str) -> str:
 _PLACEHOLDER_RX = __import__("re").compile(r"\[[A-Z_][A-Z_0-9 ]*\]")
 
 
+# ============================================================
+# M21.HOTFIX-2 · post-process sanitizers
+# ============================================================
+# Detectado en testing manual 2026-06-01: el LLM ignoró el SKILL v1.1
+# blacklist y citó "art. 74 del Código General del Proceso" en un poder
+# notarial. También pegó placeholders sin espacios: "de[CIUDAD", "Yo,[NAME".
+# Este filtro defensivo corre POST-LLM como segunda línea de defensa.
+# ============================================================
+
+import re as _re
+
+# Patterns que eliminan referencias a Art. 74 CGP / Ley 1564/2012 (régimen
+# judicial mezclado con poder notarial - error común).
+_PODER_NOTARIAL_BLACKLIST_RX = [
+    # Capturar frase introductoria + cita CGP completa (para no dejar "en el." huérfano)
+    _re.compile(r"(?:,?\s*de\s+conformidad\s+con\s+lo\s+dispuesto\s+en\s+el\s+)?art[íi]culo\s+74\s+(?:y\s+siguientes\s+)?del\s+C[óo]digo\s+General\s+del\s+Proceso(?:\s+y\s+las?\s+normas\s+concordantes(?:\s+del\s+C[óo]digo\s+Civil(?:\s+colombiano)?)?)?", _re.IGNORECASE),
+    _re.compile(r",?\s*(?:y\s+(?:el\s+)?)?art\.?\s*74\s+(?:y\s+ss\.?\s+)?(?:del\s+)?CGP", _re.IGNORECASE),
+    _re.compile(r",?\s*Ley\s+1564\s+(?:de\s+)?2012", _re.IGNORECASE),
+    _re.compile(r",?\s*Ley\s+1996\s+(?:de\s+)?2019", _re.IGNORECASE),
+    _re.compile(r",?\s*Ley\s+1306\s+(?:de\s+)?2009", _re.IGNORECASE),
+]
+
+# Doc types donde aplica el blacklist notarial (no judicial)
+_NOTARIAL_DOC_TYPES = {
+    "poder_general", "poder_especial", "notarial_poder_general_co",
+    "notarial_poder_especial_co", "escritura_compraventa",
+    "revocatoria_poder", "declaracion_extrajuicio",
+}
+
+
+def _strip_blacklisted_citations(text: str, doc_type: str | None) -> str:
+    """Elimina citas blacklisted del cuerpo del texto según el doc_type."""
+    if not text or not doc_type:
+        return text
+    dt = (doc_type or "").lower().strip()
+    if dt in _NOTARIAL_DOC_TYPES:
+        for rx in _PODER_NOTARIAL_BLACKLIST_RX:
+            text = rx.sub("", text)
+        # Cleanup en cascada:
+        # 1. conectores huérfanos: ", el ,"  ", la ,"  → ","
+        text = _re.sub(r",\s*(?:el|la|los|las)\s*(?=[,\.])", "", text)
+        # 2. frases introductorias huérfanas tipo "de conformidad con lo dispuesto en el ."
+        text = _re.sub(
+            r",?\s*de\s+conformidad\s+con\s+lo\s+(?:dispuesto|establecido|previsto)\s+en\s+el\s*[\.\,]",
+            ".",
+            text,
+            flags=_re.IGNORECASE,
+        )
+        # 3. coma doble / coma+punto / coma orfana antes de "y"
+        text = _re.sub(r",\s*,", ",", text)
+        text = _re.sub(r",\s*\.", ".", text)
+        text = _re.sub(r",\s+y\s+", " y ", text)
+        # 4. " y normas concordantes" después de "Civil" sin coma intermedia
+        text = _re.sub(r"(Civil)\s*,?\s*y\s+(dem[áa]s)\s+", r"\1 y \2 ", text)
+        # 5. espacios múltiples + espacios antes de puntuación
+        text = _re.sub(r"\s{2,}", " ", text)
+        text = _re.sub(r"\s+([\.,;:])", r"\1", text)
+        # 6. coma orfana al inicio o final
+        text = _re.sub(r"^\s*,\s*", "", text)
+        text = _re.sub(r"\s*,\s*$", "", text)
+        # 7. punto duplicado al final
+        text = _re.sub(r"\.{2,}", ".", text)
+        text = text.strip()
+    return text
+
+
+def _normalize_placeholder_spacing(text: str) -> str:
+    """Asegura whitespace antes y después de cada [PLACEHOLDER].
+
+    Detectado en docs: "de[CIUDAD_DOMICILIO]", "Yo,[NOMBRE_PODERDANTE]",
+    "carácterGENERALy". El LLM omite espacios alrededor de brackets.
+    """
+    if not text or "[" not in text:
+        return text
+    # Insertar espacio antes de [ si está pegado a letra/dígito (NO a "(" o "/")
+    text = _re.sub(r"([a-zA-Z0-9áéíóúÁÉÍÓÚñÑ])\[([A-Z_][A-Z_0-9 ]*)\]", r"\1 [\2]", text)
+    # Insertar espacio después de ] si está pegado a letra/dígito (NO a "." "," ";")
+    text = _re.sub(r"\[([A-Z_][A-Z_0-9 ]*)\]([a-zA-Z0-9áéíóúÁÉÍÓÚñÑ])", r"[\1] \2", text)
+    return text
+
+
+def _apply_block_filters(text: str, doc_type: str | None = None) -> str:
+    """Pipeline completo de sanitización: validation_markers + spacing + blacklist."""
+    if not text:
+        return text
+    s = _strip_validation_markers(text)
+    s = _normalize_placeholder_spacing(s)
+    s = _strip_blacklisted_citations(s, doc_type)
+    return s
+
+
 def _clean_ciudad_fecha(val: Any) -> str:
     """M19.15.A.4 — si trae placeholders o vacío, devolver string vacío para que
     el builder lo rellene con ciudad por defecto + fecha actual."""
@@ -829,15 +920,16 @@ def _materialize_block(raw: dict, doc_type: str | None = None) -> Block | None:
     if not btype:
         return None
 
-    # Helper para runs (con strip de marcadores de validación — M19.15.A.2)
+    # Helper para runs (con sanitización pipeline M21.HOTFIX-2: markers + spacing + blacklist)
     def _runs(field_val: Any) -> list[Run]:
         if isinstance(field_val, str):
-            return [Run(text=_strip_validation_markers(field_val))]
+            return [Run(text=_apply_block_filters(field_val, doc_type))]
         if isinstance(field_val, list):
             return [
                 Run(
-                    text=_strip_validation_markers(
-                        r.get("text", "") if isinstance(r, dict) else str(r)
+                    text=_apply_block_filters(
+                        r.get("text", "") if isinstance(r, dict) else str(r),
+                        doc_type,
                     ),
                     bold=bool(r.get("bold", False)) if isinstance(r, dict) else False,
                     italic=bool(r.get("italic", False)) if isinstance(r, dict) else False,
@@ -856,16 +948,21 @@ def _materialize_block(raw: dict, doc_type: str | None = None) -> Block | None:
     def _s(key: str, default: str = "") -> str:
         v = raw.get(key)
         return default if v is None else str(v)
+
+    # M21.HOTFIX-2: aplicar pipeline también a campos text directos (title, headings)
+    def _st(key: str, default: str = "") -> str:
+        return _apply_block_filters(_s(key, default), doc_type)
+
     try:
         if btype == "title":
-            return TitleBlock(block_id=bid, text=_s("text"), level=int(raw.get("level") or 1))
+            return TitleBlock(block_id=bid, text=_st("text"), level=int(raw.get("level") or 1))
         if btype == "section_heading":
             return SectionHeadingBlock(
                 block_id=bid, roman=_s("roman"),
-                text=_s("text"), section_key=_s("section_key"),
+                text=_st("text"), section_key=_s("section_key"),
             )
         if btype == "subsection":
-            return SubsectionBlock(block_id=bid, number=_s("number"), text=_s("text"))
+            return SubsectionBlock(block_id=bid, number=_s("number"), text=_st("text"))
         if btype == "paragraph":
             return ParagraphBlock(
                 block_id=bid, runs=_runs(raw.get("runs", [])),
