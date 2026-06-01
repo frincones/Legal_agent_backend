@@ -63,6 +63,10 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_06_08_sprint_m21_s7_cookbooks.sql",
     # M21.S8 — Sprint 8 · Hardening (usage meters + rate limits + habeas data + admin audit)
     "2026_06_09_sprint_m21_s8_hardening.sql",
+    # M21 HOTFIX — schema drift cold_start_sessions + matter_history (detectado en testing manual)
+    "2026_06_10_fix_m21_schema_drift.sql",
+    # M21.01 v1.1 — refuerzo SKILL poder_general (blacklist + lexico notarial)
+    "2026_06_10_strengthen_m2101_poder_general.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
