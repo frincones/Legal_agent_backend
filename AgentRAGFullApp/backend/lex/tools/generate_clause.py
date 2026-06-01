@@ -47,7 +47,11 @@ class GenerateClauseTool(ToolDef):
         "required": ["doc_type", "section_key", "section_title", "intent"],
     }
     invokes_llm = True
-    timeout_seconds = 60.0
+    # M21.HOTFIX-4: subir timeout 60→180s. Generaciones grandes (SKILL v1.1 con
+    # pre-emit checks aumentó input prompt ~3KB) ocasionalmente toman 50-90s en
+    # Sonnet 4.6 + fallback OpenAI. 60s era insuficiente y se cancelaba el tool
+    # antes de que el fallback retornara, dejando 0 bloques en la generación.
+    timeout_seconds = 180.0
 
     def __init__(self, pool=None, anthropic_client=None, openai_client=None, **_: Any):
         self.pool = pool

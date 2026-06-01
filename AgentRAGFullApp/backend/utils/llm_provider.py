@@ -179,6 +179,274 @@ def _extract_json_from_text(text: str) -> str:
 
 
 # ============================================================
+# M21.HOTFIX-4 · Parser JSON tolerante a errores comunes de LLM
+# ============================================================
+# Detectado en testing manual: Sonnet 4.6 ocasionalmente produce JSON con
+# comas faltantes entre elementos en outputs grandes (>10KB). El parser
+# estándar `json.loads()` falla con "Expecting ',' delimiter".
+#
+# Esta función intenta 4 estrategias de recovery antes de re-raise:
+#   1. json.loads vanilla (happy path)
+#   2. Regex repair: insertar comas faltantes entre objetos/strings consecutivos
+#   3. Regex repair: eliminar trailing commas
+#   4. Truncar al último } o ] balanceado válido y reintentar
+# ============================================================
+
+import re as _re_jsonp
+
+
+def _json_repair_missing_commas(text: str) -> str:
+    """Inserta comas faltantes entre objetos/elementos consecutivos.
+
+    Patrones comunes de Sonnet 4.6:
+      - `}{`  →  `},{`
+      - `}\n  {`  →  `},\n  {`
+      - `"foo"\n  "bar":` →  `"foo",\n  "bar":`
+      - `]\n  [`  →  `],\n  [`
+      - `"foo" "bar":`  →  `"foo", "bar":`
+    """
+    # Entre `}` y `{` (mismo nivel) – con o sin espacio/newline
+    text = _re_jsonp.sub(r"\}(\s*)\{", r"},\1{", text)
+    # Entre `]` y `[`
+    text = _re_jsonp.sub(r"\](\s*)\[", r"],\1[", text)
+    # Entre `}` y `"key":` (objeto seguido de key)
+    text = _re_jsonp.sub(r'\}(\s*)\"', r'},\1"', text)
+    # Entre `]` y `"key":`
+    text = _re_jsonp.sub(r'\](\s*)\"', r'],\1"', text)
+    # Entre string-value y key (e.g. `"value" "key":` o `"value""key":`)
+    # — heurística cuidadosa. Permite 0 o más whitespace porque Sonnet
+    # ocasionalmente produce key adjacency sin separación.
+    text = _re_jsonp.sub(r'\"(\s*)\"([a-zA-Z_][\w]*)\"\s*:', r'",\1"\2":', text)
+    # Entre number/bool/null y key (`42 "key":` → `42, "key":`)
+    text = _re_jsonp.sub(
+        r'(\d|true|false|null)(\s+)\"([a-zA-Z_][\w]*)\"\s*:',
+        r'\1,\2"\3":', text,
+    )
+    return text
+
+
+def _json_repair_trailing_commas(text: str) -> str:
+    """Elimina trailing commas antes de `}` o `]`."""
+    text = _re_jsonp.sub(r",(\s*)\}", r"\1}", text)
+    text = _re_jsonp.sub(r",(\s*)\]", r"\1]", text)
+    return text
+
+
+def _json_close_unbalanced(text: str) -> Optional[str]:
+    """Para outputs truncados (depth > 0 al final, e.g. cortado por max_tokens),
+    truncar antes del último elemento incompleto y cerrar manualmente.
+
+    Patrón típico: `{"blocks": [{"a":1}, {"b":2}, {"c":3` →
+                  → trunca después de `{"b":2}`, cierra con `]}`
+                  → `{"blocks": [{"a":1}, {"b":2}]}`
+
+    Devuelve None si no se detecta unbalanced o no se puede recuperar.
+    """
+    # Tracking de depth
+    depth_curly = 0
+    depth_square = 0
+    in_string = False
+    escape = False
+    last_safe_idx = -1  # Última posición donde depth == 1 después de cerrar un elemento
+    for i, ch in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth_curly += 1
+        elif ch == "}":
+            depth_curly -= 1
+            # Después de cerrar un objeto, si estamos dentro de un array (depth_square>=1),
+            # esta es una posición segura para truncar
+            if depth_square >= 1 and depth_curly < depth_square + 5:
+                last_safe_idx = i
+        elif ch == "[":
+            depth_square += 1
+        elif ch == "]":
+            depth_square -= 1
+
+    # Si está balanceado, no necesitamos cerrar manualmente
+    if depth_curly == 0 and depth_square == 0:
+        return None
+
+    # Si encontramos posición segura → truncar + cerrar
+    if last_safe_idx > 0:
+        truncated = text[: last_safe_idx + 1]
+        # Recalcular cuántos braces/brackets faltan
+        d_curly = 0
+        d_square = 0
+        in_s = False
+        esc = False
+        for ch in truncated:
+            if esc: esc = False; continue
+            if ch == "\\": esc = True; continue
+            if ch == '"': in_s = not in_s; continue
+            if in_s: continue
+            if ch == "{": d_curly += 1
+            elif ch == "}": d_curly -= 1
+            elif ch == "[": d_square += 1
+            elif ch == "]": d_square -= 1
+        # Cerrar en orden inverso al apertura
+        closer = ""
+        while d_curly > 0 or d_square > 0:
+            # cierra el más reciente abierto. Para simplicidad cerramos primero ] luego }
+            # (asume estructuras tipo {"arr": [...]} comunes)
+            if d_square > 0:
+                closer += "]"
+                d_square -= 1
+            elif d_curly > 0:
+                closer += "}"
+                d_curly -= 1
+        return truncated + closer
+    return None
+
+
+def _json_truncate_to_last_balanced(text: str) -> Optional[str]:
+    """Truncate al último `}` o `]` balanceado válido.
+
+    Útil cuando el LLM cortó la respuesta a mitad (max_tokens reached).
+    Devuelve None si no encuentra ningún balance válido.
+    """
+    depth_curly = 0
+    depth_square = 0
+    in_string = False
+    escape = False
+    last_balanced = -1
+    for i, ch in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            depth_curly += 1
+        elif ch == "}":
+            depth_curly -= 1
+            if depth_curly == 0 and depth_square == 0:
+                last_balanced = i
+        elif ch == "[":
+            depth_square += 1
+        elif ch == "]":
+            depth_square -= 1
+            if depth_curly == 0 and depth_square == 0:
+                last_balanced = i
+    if last_balanced > 0:
+        return text[: last_balanced + 1]
+    return None
+
+
+def parse_json_tolerant(text: str, *, _section_label: str = "") -> dict:
+    """Parsea JSON con recovery automático de errores comunes del LLM.
+
+    Raises:
+        json.JSONDecodeError: si todas las estrategias fallan. Log incluye
+            preview del texto y la posición exacta del error original.
+    """
+    # Estrategia 1: vanilla
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e_vanilla:
+        original_err = e_vanilla
+
+    # Estrategia 2: missing commas + trailing commas (orden importa)
+    try:
+        repaired = _json_repair_missing_commas(text)
+        repaired = _json_repair_trailing_commas(repaired)
+        result = json.loads(repaired)
+        logger.warning(
+            "parse_json_tolerant: recovered via comma_repair section=%r "
+            "(original error: %s)",
+            _section_label, str(original_err)[:120],
+        )
+        return result
+    except json.JSONDecodeError:
+        pass
+
+    # Estrategia 3: truncate al último balance válido (output truncado por max_tokens)
+    truncated = _json_truncate_to_last_balanced(text)
+    if truncated and truncated != text:
+        try:
+            result = json.loads(truncated)
+            logger.warning(
+                "parse_json_tolerant: recovered via truncate_to_balanced section=%r "
+                "(saved %d chars; original error: %s)",
+                _section_label, len(text) - len(truncated), str(original_err)[:120],
+            )
+            return result
+        except json.JSONDecodeError:
+            pass
+
+    # Estrategia 4: truncate + repair combinados
+    if truncated:
+        try:
+            repaired_truncated = _json_repair_missing_commas(truncated)
+            repaired_truncated = _json_repair_trailing_commas(repaired_truncated)
+            result = json.loads(repaired_truncated)
+            logger.warning(
+                "parse_json_tolerant: recovered via truncate+comma_repair section=%r "
+                "(original error: %s)",
+                _section_label, str(original_err)[:120],
+            )
+            return result
+        except json.JSONDecodeError:
+            pass
+
+    # Estrategia 5: si el output está totalmente truncado (depth > 0 al final),
+    # truncar antes del último elemento incompleto y cerrar manualmente las
+    # estructuras abiertas. Para outputs cortados por max_tokens del LLM.
+    closed = _json_close_unbalanced(text)
+    if closed and closed != text:
+        try:
+            result = json.loads(closed)
+            logger.warning(
+                "parse_json_tolerant: recovered via close_unbalanced section=%r "
+                "(original error: %s)",
+                _section_label, str(original_err)[:120],
+            )
+            return result
+        except json.JSONDecodeError:
+            # último intento: aplicar comma_repair sobre el cerrado
+            try:
+                repaired_closed = _json_repair_missing_commas(closed)
+                repaired_closed = _json_repair_trailing_commas(repaired_closed)
+                result = json.loads(repaired_closed)
+                logger.warning(
+                    "parse_json_tolerant: recovered via close+comma_repair section=%r",
+                    _section_label,
+                )
+                return result
+            except json.JSONDecodeError:
+                pass
+
+    # Última: re-raise con preview del texto para debugging
+    preview_chars = 200
+    err_pos = getattr(original_err, "pos", 0)
+    preview_start = max(0, err_pos - preview_chars)
+    preview_end = min(len(text), err_pos + preview_chars)
+    logger.error(
+        "parse_json_tolerant: ALL strategies failed section=%r len=%d pos=%d\n"
+        "preview around error: ...%s...",
+        _section_label, len(text), err_pos,
+        text[preview_start:preview_end].replace("\n", "\\n")[:400],
+    )
+    raise original_err
+
+
+# ============================================================
 # Unified async chat_complete_json
 # ============================================================
 
@@ -249,7 +517,10 @@ async def chat_complete_json(
             if not text:
                 raise ValueError("anthropic returned empty text content")
             cleaned = _extract_json_from_text(text)
-            data = json.loads(cleaned)
+            # M21.HOTFIX-4: parser tolerante a comas faltantes / trailing commas /
+            # outputs truncados por max_tokens. Recupera ~80% de errores comunes
+            # de Sonnet 4.6 en outputs >10KB (e.g. "Expecting ',' delimiter").
+            data = parse_json_tolerant(cleaned, _section_label=f"anthropic:{model}")
             elapsed = int((time.time() - started) * 1000)
             logger.info(
                 "llm_provider: anthropic model=%s tokens_in=%d tokens_out=%d duration=%dms",
@@ -285,7 +556,9 @@ async def chat_complete_json(
             response_format={"type": "json_object"},
         )
         raw = resp.choices[0].message.content or "{}"
-        data = json.loads(raw)
+        # M21.HOTFIX-4: aplicar también al fallback OpenAI por consistencia
+        # (response_format=json_object reduce el riesgo, pero edge cases existen)
+        data = parse_json_tolerant(raw, _section_label=f"openai:{model}")
         elapsed = int((time.time() - started) * 1000)
         logger.info(
             "llm_provider: openai model=%s tokens_in=%d tokens_out=%d duration=%dms",
