@@ -62,12 +62,19 @@ class ToolRegistry:
             build_docx,
             narrate_progress,
             persist_audit,
+            # Sprint M21.S2 · Claude-for-Legal parity tools
+            register_matter,
+            load_company_profile,
+            cold_start_interview,
+            apply_guardrails,
         )
         modules = [
             load_skill_md, load_playbook, extract_data, load_matter_context, recall_memory,
             verify_citation, search_jurisprudence, search_brave_gov, fetch_mcp_official, check_derogation,
             generate_clause, check_completeness, check_coherence, validate_legal, calc_legal,
             build_docx, narrate_progress, persist_audit,
+            # Sprint M21.S2 (Claude-for-Legal parity)
+            register_matter, load_company_profile, cold_start_interview, apply_guardrails,
         ]
         for mod in modules:
             tool = mod.build_tool(

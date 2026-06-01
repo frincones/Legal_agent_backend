@@ -528,6 +528,9 @@ from api.admin_impersonate import router as admin_impersonate_router
 from api.admin_entitlements import router as admin_entitlements_router
 from api.entitlements_client import router as entitlements_client_router
 from api.onboarding import router as onboarding_router
+# Sprint M21.S2 · Claude-for-Legal parity (cold-start interview + matters_workspace)
+from api.onboarding_v2 import router as onboarding_v2_router
+from api.matters_workspace import router as matters_workspace_router
 from api.admin_helper import router as admin_helper_router, welcome_router as admin_welcome_router
 from api.public_landing import router as public_landing_router
 from api.admin_landing import changelog_router as admin_changelog_router, testimonials_router as admin_testimonials_router
@@ -664,6 +667,9 @@ app.include_router(admin_impersonate_router)
 app.include_router(admin_entitlements_router)
 app.include_router(entitlements_client_router)
 app.include_router(onboarding_router)
+# Sprint M21.S2 · LexAI v2 routers (cold-start + matters_workspace)
+app.include_router(onboarding_v2_router)
+app.include_router(matters_workspace_router)
 app.include_router(admin_helper_router)
 app.include_router(admin_welcome_router)
 app.include_router(public_landing_router)
