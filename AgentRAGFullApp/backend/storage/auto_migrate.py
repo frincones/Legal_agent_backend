@@ -51,6 +51,8 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_06_03_seed_m2101_poder_general.sql",
     # M21.02 — Pre-Sprint · Update SKILL poder_especial (Art 2158 CC + blacklist + notas)
     "2026_06_03_update_m2102_poder_especial_pulido.sql",
+    # M21.S1 — Sprint 1 · Fundaciones (7 tablas + RLS multi-tenant)
+    "2026_06_04_sprint_m21_foundations.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
