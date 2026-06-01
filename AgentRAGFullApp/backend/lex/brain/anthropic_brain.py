@@ -58,6 +58,45 @@ DEFAULT_MAX_PARALLEL_TOOLS = 3
 DEFAULT_RATE_LIMIT_RETRY_S = 8.0
 
 
+async def _persist_blocks_for_lean(
+    pool,
+    *,
+    generation_id: Any,
+    blocks: list[dict],
+) -> Optional[str]:
+    """M21.HOTFIX-7: persiste los blocks acumulados del path Lean en document_blocks.
+
+    Genera un document_id nuevo (uuid4) y llama BlocksRepo.insert_blocks_batch.
+    Retorna el document_id si se persistió OK, None si pool no disponible o no hay blocks.
+
+    Sin esto, el chat-over-document NO funciona porque el endpoint /chat consulta
+    document_blocks por document_id, que devuelve 0 rows.
+    """
+    if pool is None or not blocks:
+        logger.info(
+            "_persist_blocks_for_lean: skipping (pool=%s blocks=%d)",
+            pool is not None, len(blocks),
+        )
+        return None
+    try:
+        from lex.storage import BlocksRepo
+        new_doc_id = str(uuid4())
+        repo = BlocksRepo(pool)
+        inserted = await repo.insert_blocks_batch(
+            document_id=new_doc_id,
+            generation_id=str(generation_id),
+            blocks=blocks,
+        )
+        logger.info(
+            "_persist_blocks_for_lean: persisted %d/%d blocks for generation=%s → document=%s",
+            inserted, len(blocks), generation_id, new_doc_id,
+        )
+        return new_doc_id if inserted > 0 else None
+    except Exception as e:
+        logger.exception("_persist_blocks_for_lean failed: %s", e)
+        return None
+
+
 async def _resolve_document_id_from_blocks(pool, generation_id: Any) -> Optional[str]:
     """M21.HOTFIX-3: resuelve el document_id real desde document_blocks por generation_id.
 
@@ -208,6 +247,16 @@ class AnthropicBrain:
         stats = BrainStats()
         dispatcher = ToolDispatcher(persist_audit=True)
 
+        # M21.HOTFIX-7: ACUMULADOR DE BLOCKS para persistencia en BD.
+        # El path Lean nunca llamaba insert_blocks_batch, por lo que después
+        # de generar el documento NO se podía chatear sobre él (chat endpoint
+        # consulta document_blocks por document_id, que devolvía 0 rows).
+        # Aquí accumulamos cada block emitido por generate_clause y al final
+        # (antes del done event) los persistimos con un document_id nuevo.
+        accumulated_blocks: list[dict] = []
+        accumulated_document_id: Optional[str] = None
+        block_order_counter: int = 0
+
         # M20.14 Opcion 1: routing por complejidad.
         # - Doc types complejos (casacion, demanda_compleja, etc.) → Opus 4.x
         #   (capacidad 500K ITPM Tier 1, calidad maxima, mas caro).
@@ -314,8 +363,16 @@ class AnthropicBrain:
                             ),
                             "kind": "narration",
                         })
-                        # M21.HOTFIX-3: resolver document_id real desde document_blocks
-                        resolved_doc_id = await _resolve_document_id_from_blocks(
+                        # M21.HOTFIX-7: persistir accumulated_blocks ANTES del done
+                        # event para que el chat-over-document pueda recuperarlos.
+                        persisted_doc_id = await _persist_blocks_for_lean(
+                            ctx.pool,
+                            generation_id=ctx.generation_id,
+                            blocks=accumulated_blocks,
+                        )
+                        # Fallback: si por alguna razon no se persistio, intentar resolver
+                        # desde tablas existentes (legacy path quizas)
+                        resolved_doc_id = persisted_doc_id or await _resolve_document_id_from_blocks(
                             ctx.pool, ctx.generation_id,
                         )
                         yield _sse_bytes("done", {
@@ -323,7 +380,7 @@ class AnthropicBrain:
                             "matter_document_id": resolved_doc_id,
                             "duration_seconds": 0,
                             "cost_usd": stats.cost_usd,
-                            "total_blocks": 0,
+                            "total_blocks": len(accumulated_blocks),
                             "iterations": stats.iterations,
                             "tokens_input": stats.tokens_input,
                             "tokens_output": stats.tokens_output,
@@ -365,8 +422,16 @@ class AnthropicBrain:
                         "content": final_text,
                         "kind": "narration",
                     })
-                # M21.HOTFIX-3: resolver document_id real desde document_blocks
-                resolved_doc_id = await _resolve_document_id_from_blocks(
+                # M21.HOTFIX-7: persistir accumulated_blocks ANTES del done event
+                # para que el chat-over-document funcione (endpoint /chat consulta
+                # document_blocks por document_id).
+                persisted_doc_id = await _persist_blocks_for_lean(
+                    ctx.pool,
+                    generation_id=ctx.generation_id,
+                    blocks=accumulated_blocks,
+                )
+                # Fallback: si no se persistio, resolver desde tablas legacy
+                resolved_doc_id = persisted_doc_id or await _resolve_document_id_from_blocks(
                     ctx.pool, ctx.generation_id,
                 )
                 yield _sse_bytes("done", {
@@ -374,7 +439,7 @@ class AnthropicBrain:
                     "matter_document_id": resolved_doc_id,
                     "duration_seconds": 0,
                     "cost_usd": stats.cost_usd,
-                    "total_blocks": 0,
+                    "total_blocks": len(accumulated_blocks),
                     "iterations": stats.iterations,
                     "tokens_input": stats.tokens_input,
                     "tokens_output": stats.tokens_output,
@@ -411,6 +476,29 @@ class AnthropicBrain:
 
                 # Emitir SSE por cada tool_call + result
                 for call, result in zip(tool_calls, tool_results):
+                    # M21.HOTFIX-7: acumular blocks de generate_clause para persistencia
+                    if call.tool_name == "generate_clause" and result.ok:
+                        out = result.output or {}
+                        section_key = call.input.get("section_key", "default")
+                        section_blocks = out.get("blocks") or []
+                        for b in section_blocks:
+                            if not isinstance(b, dict):
+                                continue
+                            bid = b.get("block_id")
+                            btype = b.get("type") or b.get("block_type")
+                            if not bid or not btype:
+                                continue
+                            # block_data = todo el block sin block_id (que ya es column)
+                            block_data_payload = {k: v for k, v in b.items() if k != "block_id"}
+                            accumulated_blocks.append({
+                                "block_id": bid,
+                                "section_key": section_key,
+                                "block_order": block_order_counter,
+                                "block_type": btype,
+                                "block_data": block_data_payload,
+                            })
+                            block_order_counter += 1
+
                     for ev_bytes in map_tool_to_sse_events(
                         tool_name=call.tool_name,
                         tool_input=call.input,
