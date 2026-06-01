@@ -58,6 +58,33 @@ DEFAULT_MAX_PARALLEL_TOOLS = 3
 DEFAULT_RATE_LIMIT_RETRY_S = 8.0
 
 
+async def _resolve_document_id_from_blocks(pool, generation_id: Any) -> Optional[str]:
+    """M21.HOTFIX-3: resuelve el document_id real desde document_blocks por generation_id.
+
+    Antes el evento SSE 'done' emitía matter_document_id=None hardcoded, lo que
+    causaba que state.documentId en el frontend quedara null y el chat composer
+    hiciera early-return con "Espera a que termine la generación".
+
+    Ahora consultamos la tabla document_blocks (que insert_blocks_batch llena
+    con (document_id, generation_id) durante la generación) para recuperar
+    el document_id real.
+    """
+    if pool is None or generation_id is None:
+        return None
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT document_id FROM document_blocks "
+                "WHERE generation_id = $1::uuid "
+                "ORDER BY block_order ASC LIMIT 1",
+                str(generation_id),
+            )
+            return str(row["document_id"]) if row and row["document_id"] else None
+    except Exception as e:
+        logger.debug("_resolve_document_id_from_blocks(%s) failed: %s", generation_id, e)
+        return None
+
+
 @dataclass
 class BrainConfig:
     # M20.14 Opcion 1: routing por modelo según complejidad.
@@ -236,9 +263,13 @@ class AnthropicBrain:
                             ),
                             "kind": "narration",
                         })
+                        # M21.HOTFIX-3: resolver document_id real desde document_blocks
+                        resolved_doc_id = await _resolve_document_id_from_blocks(
+                            ctx.pool, ctx.generation_id,
+                        )
                         yield _sse_bytes("done", {
                             "generation_id": str(ctx.generation_id),
-                            "matter_document_id": None,
+                            "matter_document_id": resolved_doc_id,
                             "duration_seconds": 0,
                             "cost_usd": stats.cost_usd,
                             "total_blocks": 0,
@@ -283,9 +314,13 @@ class AnthropicBrain:
                         "content": final_text,
                         "kind": "narration",
                     })
+                # M21.HOTFIX-3: resolver document_id real desde document_blocks
+                resolved_doc_id = await _resolve_document_id_from_blocks(
+                    ctx.pool, ctx.generation_id,
+                )
                 yield _sse_bytes("done", {
                     "generation_id": str(ctx.generation_id),
-                    "matter_document_id": None,
+                    "matter_document_id": resolved_doc_id,
                     "duration_seconds": 0,
                     "cost_usd": stats.cost_usd,
                     "total_blocks": 0,

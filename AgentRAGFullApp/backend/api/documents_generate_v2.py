@@ -315,6 +315,40 @@ async def get_document_blocks(
     return {"document_id": document_id, "blocks": blocks, "total": len(blocks)}
 
 
+@router.get("/generation/{generation_id}/document")
+async def get_document_id_by_generation(
+    generation_id: str,
+    _claims: dict = Depends(_require_session),
+):
+    """M21.HOTFIX-3: lookup document_id desde generation_id.
+
+    Usado por el frontend como fallback cuando el stream SSE se cerró sin
+    emitir el evento 'done' (timeouts proxy, server crash post-blocks).
+    Permite al chat composer recuperar el documentId y no quedar bloqueado.
+    """
+    if not _flag_enabled():
+        raise HTTPException(status_code=503, detail="docgen_v2_disabled")
+    storage = await get_storage()
+    try:
+        async with storage.pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT document_id FROM document_blocks "
+                "WHERE generation_id = $1::uuid "
+                "ORDER BY block_order ASC LIMIT 1",
+                generation_id,
+            )
+    except Exception as e:
+        logger.warning("get_document_id_by_generation(%s) failed: %s", generation_id, e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+
+    if not row or not row["document_id"]:
+        raise HTTPException(status_code=404, detail="no_blocks_for_generation")
+    return {
+        "generation_id": generation_id,
+        "document_id": str(row["document_id"]),
+    }
+
+
 @router.get("/documents/{document_id}/audit")
 async def get_document_audit(
     document_id: str,
