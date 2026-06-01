@@ -420,7 +420,23 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("LexAI tool registration failed (non-fatal): %s", e)
 
+    # Sprint M21.S4: start background agents scheduler (non-fatal)
+    try:
+        from lex.agents.scheduler import start_scheduler as _start_agents_scheduler
+        _anthropic_for_agents = getattr(storage, "anthropic_client", None)
+        _start_agents_scheduler(storage.pool, anthropic_client=_anthropic_for_agents)
+        logger.info("M21.S4 agents.scheduler iniciado")
+    except Exception as e:
+        logger.warning("M21.S4 agents.scheduler start failed (non-fatal): %s", e)
+
     yield
+
+    # Sprint M21.S4: stop scheduler limpio
+    try:
+        from lex.agents.scheduler import stop_scheduler as _stop_agents_scheduler
+        await _stop_agents_scheduler()
+    except Exception as e:
+        logger.debug("M21.S4 agents.scheduler stop error: %s", e)
 
     # Cleanup on shutdown
     await close_storage()
@@ -531,6 +547,12 @@ from api.onboarding import router as onboarding_router
 # Sprint M21.S2 · Claude-for-Legal parity (cold-start interview + matters_workspace)
 from api.onboarding_v2 import router as onboarding_v2_router
 from api.matters_workspace import router as matters_workspace_router
+# Sprint M21.S4 · Background Agents API
+from api.agents import router as agents_router
+# Sprint M21.S5 · MCP Connectors Registry
+from api.mcp_registry import router as mcp_registry_router
+# Sprint M21.S6 · Plugin Marketplace
+from api.plugins import router as plugins_router
 from api.admin_helper import router as admin_helper_router, welcome_router as admin_welcome_router
 from api.public_landing import router as public_landing_router
 from api.admin_landing import changelog_router as admin_changelog_router, testimonials_router as admin_testimonials_router
@@ -670,6 +692,12 @@ app.include_router(onboarding_router)
 # Sprint M21.S2 · LexAI v2 routers (cold-start + matters_workspace)
 app.include_router(onboarding_v2_router)
 app.include_router(matters_workspace_router)
+# Sprint M21.S4 · agents API
+app.include_router(agents_router)
+# Sprint M21.S5 · MCP connectors registry
+app.include_router(mcp_registry_router)
+# Sprint M21.S6 · Plugin marketplace
+app.include_router(plugins_router)
 app.include_router(admin_helper_router)
 app.include_router(admin_welcome_router)
 app.include_router(public_landing_router)

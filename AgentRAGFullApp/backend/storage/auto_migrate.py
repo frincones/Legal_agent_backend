@@ -53,6 +53,12 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_06_03_update_m2102_poder_especial_pulido.sql",
     # M21.S1 — Sprint 1 · Fundaciones (7 tablas + RLS multi-tenant)
     "2026_06_04_sprint_m21_foundations.sql",
+    # M21.S4 — Sprint 4 · Background Agents (firm_background_jobs + agent_run_logs)
+    "2026_06_05_sprint_m21_s4_background_jobs.sql",
+    # M21.S5 — Sprint 5 · MCP Connectors Registry (mcp_connectors_registry + connector_health)
+    "2026_06_06_sprint_m21_s5_mcp_registry.sql",
+    # M21.S6 — Sprint 6 · Plugin Marketplace (plugin_registry + firm_plugin_installations)
+    "2026_06_07_sprint_m21_s6_plugins.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
