@@ -553,6 +553,10 @@ from api.agents import router as agents_router
 from api.mcp_registry import router as mcp_registry_router
 # Sprint M21.S6 · Plugin Marketplace
 from api.plugins import router as plugins_router
+# Sprint M21.S7 · Cookbooks
+from api.cookbooks import router as cookbooks_router
+# Sprint M21.S8 · Admin Hardening
+from api.admin_hardening import router as admin_hardening_router
 from api.admin_helper import router as admin_helper_router, welcome_router as admin_welcome_router
 from api.public_landing import router as public_landing_router
 from api.admin_landing import changelog_router as admin_changelog_router, testimonials_router as admin_testimonials_router
@@ -698,6 +702,10 @@ app.include_router(agents_router)
 app.include_router(mcp_registry_router)
 # Sprint M21.S6 · Plugin marketplace
 app.include_router(plugins_router)
+# Sprint M21.S7 · Cookbooks
+app.include_router(cookbooks_router)
+# Sprint M21.S8 · Admin hardening
+app.include_router(admin_hardening_router)
 app.include_router(admin_helper_router)
 app.include_router(admin_welcome_router)
 app.include_router(public_landing_router)

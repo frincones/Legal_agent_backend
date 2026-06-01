@@ -99,4 +99,12 @@ async def dispatch_agent(
         except Exception as e:
             logger.warning("dispatch_agent: update run log failed: %s", e)
 
+    # Sprint M21.S8 · record usage meter (best-effort)
+    try:
+        from lex.hardening.usage import record_usage
+        await record_usage(pool, firm_id=firm_id, resource_type="agent_run",
+                           count=1, cost_usd=float(result.cost_usd or 0))
+    except Exception as e:
+        logger.debug("dispatch_agent: record_usage failed: %s", e)
+
     return result

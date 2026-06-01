@@ -59,6 +59,10 @@ SPRINT_L_DOC_MIGRATIONS = [
     "2026_06_06_sprint_m21_s5_mcp_registry.sql",
     # M21.S6 — Sprint 6 · Plugin Marketplace (plugin_registry + firm_plugin_installations)
     "2026_06_07_sprint_m21_s6_plugins.sql",
+    # M21.S7 — Sprint 7 · Cookbooks (cookbook_registry + cookbook_runs + step_logs)
+    "2026_06_08_sprint_m21_s7_cookbooks.sql",
+    # M21.S8 — Sprint 8 · Hardening (usage meters + rate limits + habeas data + admin audit)
+    "2026_06_09_sprint_m21_s8_hardening.sql",
 ]
 
 # Tablas que las migraciones crean — usadas para detectar si ya están aplicadas.
